@@ -775,7 +775,7 @@
       "additionalProperties": {
         "$ref": "#/definitions/CommitTrailerValue"
       },
-      "description": "The trailers of an agent's commits, each on or off, by the trailer's key (#6365): Made-by, Cost, Tokens, Duration, Session, Fixes, Epic, Requested-by, Approved-by, Co-authored-by. Fixes also writes Refs. A key the machine does not know is kept and has no effect; a key no layer sets has its default (every key on, Cost off). Record trailers (Made-by, Session, Fixes, Epic, Requested-by, Approved-by, Co-authored-by): on is tighter. Spend trailers (Cost, Tokens, Duration): off is tighter. Its rules in policy/effective are commitTrailers.<key>."
+      "description": "The trailers of an agent's commits, each on or off, by the trailer's key (#6365, #7174): Managed-by, Runtime, Model, Cost, Tokens, Duration, Session, Fixes, Epic, Requested-by, Approved-by. Fixes also writes Refs. Co-authored-by is not a key: it is the runtime's own line, and the app never adds, changes or removes it. A key the machine does not know (also the old Made-by and Co-authored-by) is kept and has no effect; a key no layer sets has its default (every key on, Cost off). Record trailers (Managed-by, Runtime, Model, Session, Fixes, Epic, Requested-by, Approved-by): on is tighter. Spend trailers (Cost, Tokens, Duration): off is tighter. Its rules in policy/effective are commitTrailers.<key>."
     },
     "ConfigChoiceGroup": {
       "type": "object",
@@ -1102,18 +1102,6 @@
           "type": "object",
           "additionalProperties": {
             "$ref": "machines.schema.json#/definitions/MachineRef"
-          }
-        },
-        "gitFrom": {
-          "type": "object",
-          "additionalProperties": {
-            "$ref": "machines.schema.json#/definitions/MachineRef"
-          }
-        },
-        "gitAsks": {
-          "type": "array",
-          "items": {
-            "$ref": "#/definitions/GitAsk"
           }
         },
         "tunnel": {
@@ -1973,59 +1961,6 @@
         "mac"
       ]
     },
-    "GitAsk": {
-      "type": "object",
-      "properties": {
-        "server": {
-          "type": "string"
-        },
-        "from": {
-          "$ref": "machines.schema.json#/definitions/MachineRef"
-        }
-      },
-      "required": [
-        "server",
-        "from"
-      ],
-      "additionalProperties": false
-    },
-    "GitCredential": {
-      "type": "object",
-      "description": "A credential for one git command. Never printed, logged or kept.",
-      "properties": {
-        "username": {
-          "type": "string"
-        },
-        "password": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "username",
-        "password"
-      ],
-      "additionalProperties": false
-    },
-    "GitCredentialRequest": {
-      "type": "object",
-      "description": "git/credential, git/fill (#1122): only https, and only the server. `path` is the Go host's, unread by Swift.",
-      "properties": {
-        "protocol": {
-          "type": "string"
-        },
-        "host": {
-          "type": "string"
-        },
-        "path": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "protocol",
-        "host"
-      ],
-      "additionalProperties": false
-    },
     "GitTrailers": {
       "type": "object",
       "description": "The trailer block for a commit or a squash message (#6365), in order, one \"Key: value\" line each; empty when the rule turns every trailer off.",
@@ -2602,30 +2537,6 @@
       ],
       "additionalProperties": false
     },
-    "LendGit": {
-      "type": "object",
-      "properties": {
-        "host": {
-          "$ref": "machines.schema.json#/definitions/MachineRef"
-        },
-        "from": {
-          "$ref": "machines.schema.json#/definitions/MachineRef"
-        },
-        "server": {
-          "type": "string"
-        },
-        "allowed": {
-          "type": "boolean"
-        }
-      },
-      "required": [
-        "host",
-        "from",
-        "server",
-        "allowed"
-      ],
-      "additionalProperties": false
-    },
     "LendSignIn": {
       "type": "object",
       "description": "machines/lendSignIn (T091).",
@@ -3055,6 +2966,55 @@
       "required": [
         "request",
         "expires"
+      ],
+      "additionalProperties": false
+    },
+    "LockRecord": {
+      "type": "object",
+      "description": "A record that a client of a person's machine lock signed, for one or more of the person's machines (#7167). v is 1. person and root name the lock (root is the SHA-256 of its root entry's body). kind and subject say what the value is: setup.script is the approval of a set-up script (SetupScriptApproval), with the subject root or setup. scope says which machines take it: \"m:<machine id>\" (that one) or \"made\" (a machine as it is made). seq is at least 1 and goes up with each record of one kind and subject that one machine can take. content is the value's exact bytes, at most 256 KiB; empty content says that the value is removed. key is the signing key (X9.63) of a client of the lock. sig is ECDSA P-256 (r then s) with SHA-256 over \"agents-lock-record/1\", person, root in lower-case hex, kind, subject, scope, seq in decimal and the lower-case hex SHA-256 of content, each ended by a newline.",
+      "properties": {
+        "v": {
+          "type": "integer"
+        },
+        "person": {
+          "type": "string"
+        },
+        "root": {
+          "$ref": "core.schema.json#/definitions/Base64"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "subject": {
+          "type": "string"
+        },
+        "scope": {
+          "type": "string"
+        },
+        "seq": {
+          "type": "integer"
+        },
+        "content": {
+          "$ref": "core.schema.json#/definitions/Base64"
+        },
+        "key": {
+          "$ref": "core.schema.json#/definitions/Base64"
+        },
+        "sig": {
+          "$ref": "core.schema.json#/definitions/Base64"
+        }
+      },
+      "required": [
+        "v",
+        "person",
+        "root",
+        "kind",
+        "subject",
+        "scope",
+        "seq",
+        "content",
+        "key",
+        "sig"
       ],
       "additionalProperties": false
     },
@@ -5251,7 +5211,9 @@
         "marketplaces.customServers",
         "environment",
         "connectorTools",
-        "commitTrailers.Made-by",
+        "commitTrailers.Managed-by",
+        "commitTrailers.Runtime",
+        "commitTrailers.Model",
         "commitTrailers.Cost",
         "commitTrailers.Tokens",
         "commitTrailers.Duration",
@@ -5259,8 +5221,7 @@
         "commitTrailers.Fixes",
         "commitTrailers.Epic",
         "commitTrailers.Requested-by",
-        "commitTrailers.Approved-by",
-        "commitTrailers.Co-authored-by"
+        "commitTrailers.Approved-by"
       ],
       "description": "One rule a policy layer can set (#2957, data-model.md \"EffectiveRule\")."
     },
@@ -5692,6 +5653,14 @@
         "needsSignature": {
           "type": "boolean",
           "description": "The machine is Linux (#4058): the value opens only with the release key its control plane keeps, which the control plane gives only for an approval the person's client signed. An answer that allows the use carries approval; one without it is refused."
+        },
+        "client": {
+          "type": "string",
+          "description": "For pairing (#6875): the client id the terminal pairs with, which the approving window names in its addClient."
+        },
+        "key": {
+          "$ref": "core.schema.json#/definitions/Base64",
+          "description": "For pairing (#6875): the terminal's machine lock key (P-256, X9.63), which the approving window puts on the lock as an addClient."
         }
       },
       "required": [
@@ -5718,6 +5687,10 @@
         "approval": {
           "$ref": "#/definitions/LockDelivery",
           "description": "The answering client's signature of its answer (#4058), required when the request says needsSignature and the action is not deny: method secrets/approveUse, params the JSON text {\"request\":<the request's id>,\"name\",\"use\",\"place\",\"action\"} as the request names them, and a LockSignature to this machine by the client's lock key. The machine checks it against its lock and sends it to the control plane, which gives the release key only for a fresh one it has not seen."
+        },
+        "pairingCode": {
+          "type": "string",
+          "description": "For pairing (#6875): the client code that the approving window made with clients/startPairing for this Mac's control plane, required with once. agentsd gives it to the terminal that asked, and keeps it nowhere."
         }
       },
       "required": [
@@ -6810,7 +6783,7 @@
     },
     "SecretUse": {
       "type": "string",
-      "description": "What agentsd does with a secret with Ask before use (#4015): fill types it into a page (fill_secret), ci sends it to GitHub (set_ci_secret), mcp adds it to an HTTP MCP server's header or URL on each request agentsd sends the server for a session (#4120). terminal (#4179) prints a secret that does not ask to `agents-secret NAME` run with no session's grant, such as from a terminal: agentsd cannot tell that caller from an agent that dropped its grant. account (#4163) is not a secret's use: manage_accounts reads an account with Ask before use; the request names the account, and Always Approve turns its Ask before use off. browser and screen (#4264) are not a secret's use either: an agent's lease of the browser or the screen on a machine whose Browser or Desktop control is ask; name is the browser or the screen, place the machine, app the app drive_screen names, and Always Approve sets the setting to always. workflow and connector (#4538) are not a secret's use either: an agent asks to turn on a workflow of its folder that is the person's to turn on (manage_workflows enable), or to approve a server waiting in its folder's .agents/mcp.json (manage_connectors approve); name is the workflow's id or the server's name, place the folder's name, digest the server's entry as the agent saw it. Their answers are once (Approve: agentsd makes the change as the person) and deny.",
+      "description": "What agentsd does with a secret with Ask before use (#4015): fill types it into a page (fill_secret), ci sends it to GitHub (set_ci_secret), mcp adds it to an HTTP MCP server's header or URL on each request agentsd sends the server for a session (#4120). terminal (#4179) prints a secret that does not ask to `agents-secret NAME` run with no session's grant, such as from a terminal: agentsd cannot tell that caller from an agent that dropped its grant. account (#4163) is not a secret's use: manage_accounts reads an account with Ask before use; the request names the account, and Always Approve turns its Ask before use off. browser and screen (#4264) are not a secret's use either: an agent's lease of the browser or the screen on a machine whose Browser or Desktop control is ask; name is the browser or the screen, place the machine, app the app drive_screen names, and Always Approve sets the setting to always. workflow and connector (#4538) are not a secret's use either: an agent asks to turn on a workflow of its folder that is the person's to turn on (manage_workflows enable), or to approve a server waiting in its folder's .agents/mcp.json (manage_connectors approve); name is the workflow's id or the server's name, place the folder's name, digest the server's entry as the agent saw it. Their answers are once (Approve: agentsd makes the change as the person) and deny. pairing (#6875) is not a secret's use either: loops with no pairing asks this Mac's agentsd for one (clients/pairTerminal); name is the terminal's name, place the command that asked, client and key the client id and lock key it will pair with. Its answers are once (Approve, only from Agent Loops on this Mac, with pairingCode) and deny.",
       "enum": [
         "fill",
         "ci",
@@ -6820,7 +6793,8 @@
         "browser",
         "screen",
         "workflow",
-        "connector"
+        "connector",
+        "pairing"
       ]
     },
     "SecretsLeft": {
@@ -7057,6 +7031,23 @@
         "file",
         "revision",
         "sign"
+      ],
+      "additionalProperties": false
+    },
+    "SetupScriptApproval": {
+      "type": "object",
+      "description": "The content of a setup.script record (#7167): the script's SHA-256 in lower-case hexadecimal, and its length in bytes (at least 1).",
+      "properties": {
+        "hash": {
+          "type": "string"
+        },
+        "size": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "hash",
+        "size"
       ],
       "additionalProperties": false
     },
@@ -7680,6 +7671,51 @@
         "id",
         "name",
         "kind"
+      ],
+      "additionalProperties": false
+    },
+    "TerminalPairingReply": {
+      "type": "object",
+      "description": "clients/pairTerminal's answer: the code, once a person approved it; else the open request it waits on, and the words to say while it waits.",
+      "properties": {
+        "code": {
+          "type": "string",
+          "description": "A one-use client code, as loops auth login takes it."
+        },
+        "request": {
+          "$ref": "core.schema.json#/definitions/UUID"
+        },
+        "words": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "TerminalPairingRequest": {
+      "type": "object",
+      "description": "clients/pairTerminal (#6875): loops with no pairing on this Mac asks for one.",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "The terminal's name, as it pairs: loops on <host name>."
+        },
+        "client": {
+          "type": "string",
+          "description": "The client id it pairs with. The same id again waits on the same request."
+        },
+        "key": {
+          "$ref": "core.schema.json#/definitions/Base64",
+          "description": "Its machine lock key (P-256, X9.63)."
+        },
+        "command": {
+          "type": "string",
+          "description": "The name of the program that asked, as it says it: the request's place. agentsd cannot check it."
+        }
+      },
+      "required": [
+        "name",
+        "client",
+        "key"
       ],
       "additionalProperties": false
     },

@@ -35,6 +35,7 @@ func OpenStore(text string, env func(string) string, given *StoreCredentials) (s
 		if err := moveOldMachines(u.Path); err != nil {
 			return nil, err
 		}
+		// store-bounds: not a store: this opens the folder backend that the stores use
 		folder := store.NewFolder(u.Path)
 		if err := moveOldMachineKeys(context.Background(), folder); err != nil {
 			return nil, err

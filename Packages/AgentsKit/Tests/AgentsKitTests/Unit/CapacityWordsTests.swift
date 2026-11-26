@@ -25,6 +25,7 @@ struct CapacityWordsTests {
         #expect(CapacityWords.level(.full, reason: .memory) == "At memory capacity")
         #expect(CapacityWords.level(.near, reason: .cpu) == "Near CPU capacity")
         #expect(CapacityWords.level(.near, reason: .memory) == "Near memory capacity")
+        #expect(CapacityWords.level(.near, reason: .disk) == "Near disk capacity")
         #expect(CapacityWords.level(.full, reason: nil) == "At capacity")
         #expect(CapacityWords.level(.ok, reason: .cpu) == nil)
     }

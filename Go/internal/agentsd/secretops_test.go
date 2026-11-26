@@ -2,6 +2,7 @@ package agentsd
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -63,7 +64,8 @@ func TestEachUseOfASecretIsRecorded(t *testing.T) {
 	d, _ := start(t, t.TempDir())
 	t.Cleanup(d.Shutdown)
 	told := toldSecretOps(d)
-	values := []string{"flagged-4156-QX7Z", "docs-first-4156-WV3K", "docs-second-4156-JM8P", "session-4156-RB5T"}
+	// Each value's hint holds a character that is not in the base32 of rand.Text (#7440).
+	values := []string{"flagged-4156-QX8Z", "docs-first-4156-WV9K", "docs-second-4156-JM8P", "session-4156-RB0T"}
 
 	if err := d.saveSecret("API_TOKEN", values[0], true); err != nil {
 		t.Fatal(err)
@@ -203,20 +205,51 @@ func checkMCPReadsBatched(t *testing.T, ops []wire.SecretOperation, agent wire.U
 }
 
 // checkNoSecretHints checks that no value's last four characters are in the events, the
-// audit told or the record raw.
+// audit told or the record raw, in any field.
 func checkNoSecretHints(t *testing.T, d *Daemon, told []wire.SecretOperation, raw []byte, values []string) {
 	t.Helper()
 	d.eventMu.Lock()
 	events, _ := json.Marshal(d.eventList)
 	d.eventMu.Unlock()
 	sent, _ := json.Marshal(told)
+	if found := secretHintIn(values, map[string][]byte{"the events": events, "the audit": sent, "the record": raw}); found != "" {
+		t.Fatal(found)
+	}
+}
+
+// secretHintIn says which of blobs holds the hint (the last four characters) of one of
+// values, or "" when none does. A hint made only of rand.Text's base32 (A–Z, 2–7) is
+// refused: a random operation id holds one by chance, about 1 run in 2,000 (#7440).
+func secretHintIn(values []string, blobs map[string][]byte) string {
 	for _, v := range values {
 		hint := v[len(v)-4:]
-		for what, b := range map[string][]byte{"the events": events, "the audit": sent, "the record": raw} {
+		if strings.Trim(hint, "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567") == "" {
+			return "the hint " + hint + " is all base32: a random id can hold it"
+		}
+		for what, b := range blobs {
 			if strings.Contains(string(b), hint) {
-				t.Fatalf("%s have %s", what, hint)
+				return what + " have " + hint
 			}
 		}
+	}
+	return ""
+}
+
+// The hint check finds a hint in any field, and refuses a hint that a random id can hold.
+func TestSecretHintIn(t *testing.T) {
+	t.Parallel()
+
+	id := rand.Text()
+	place := "docs-RB0T"
+	op, _ := json.Marshal(wire.SecretOperation{ID: &id, Name: "DOCS_KEY", Place: &place})
+	if got := secretHintIn([]string{"session-4156-RB0T"}, map[string][]byte{"the audit": op}); got != "the audit have RB0T" {
+		t.Fatal(got)
+	}
+	// #7440: an id from rand.Text that holds the old hint RB5T.
+	id = "ABCDEFGHIJKLMNOPQRB5TUVWXY"
+	op, _ = json.Marshal(wire.SecretOperation{ID: &id, Name: "DOCS_KEY"})
+	if got := secretHintIn([]string{"session-4156-RB5T"}, map[string][]byte{"the audit": op}); !strings.Contains(got, "all base32") {
+		t.Fatal(got)
 	}
 }
 

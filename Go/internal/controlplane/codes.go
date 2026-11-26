@@ -88,6 +88,13 @@ type spent struct {
 // deletes them (#3748): a code is made only so fast (limits.go), but there was no count.
 const codesMost = 1000
 
+// codeMostBytes is the largest code (a workspace's host keys are in it), and spentMostBytes
+// the largest mark of who spent one. Both are refused before the code is spent (#7249).
+const (
+	codeMostBytes  = 16 << 10
+	spentMostBytes = 4 << 10
+)
+
 // countSuffix is how many of keys end in suffix.
 func countSuffix(keys []store.Key, suffix string) int {
 	n := 0
@@ -99,7 +106,10 @@ func countSuffix(keys []store.Key, suffix string) int {
 	return n
 }
 
-func codeKey(id string) string  { return "v1/codes/" + id + ".json" }
+// store-bounds: kind=document; count=1000 (and a .spent each); size=16KiB a record (4KiB a .spent); age=8d; applied=on write, refused, hourly, 24 hours after it expires
+func codeKey(id string) string { return "v1/codes/" + id + ".json" }
+
+// store-bounds: not a store: a code's mark, declared above
 func spentKey(id string) string { return "v1/codes/" + id + ".spent" }
 
 // Issue makes a code and writes it to the store, for clients/startPairing,
@@ -139,6 +149,9 @@ func (c *Codes) issue(ctx context.Context, host, browser bool, lifetime time.Dur
 	}
 	data, err := records.Encode(stored)
 	if err != nil {
+		return nil, "", err
+	}
+	if err := fitsRecord("The code", data, codeMostBytes); err != nil {
 		return nil, "", err
 	}
 	keys, err := c.Store.List(ctx, codesPrefix)
@@ -205,6 +218,9 @@ func (c *Codes) Stored(ctx context.Context, id string, spentToo bool) (*storedCo
 func (c *Codes) Spend(ctx context.Context, id string, by spent) (*spent, error) {
 	data, err := records.Encode(by)
 	if err != nil {
+		return nil, err
+	}
+	if err := fitsRecord("Who joins with the code", data, spentMostBytes); err != nil {
 		return nil, err
 	}
 	_, err = c.Store.Put(ctx, spentKey(id), data, store.Absent)

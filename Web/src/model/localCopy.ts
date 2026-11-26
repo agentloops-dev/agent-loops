@@ -410,7 +410,8 @@ export function transcriptEnd(store: Store, host: string, session: string, at: n
   return {
     kind: "transcript", ref: sessionRef(session), host, session, at,
     turns: { turns: store.turns.peek(), firstTurn: store.firstTurn.peek(), openStart: store.openTurnStart.peek(),
-      ...(store.firstPrompt.peek() === null ? {} : { firstPrompt: store.firstPrompt.peek()! }) },
+      ...(store.firstPrompt.peek() === null ? {} : { firstPrompt: store.firstPrompt.peek()! }),
+      ...(store.startRemoved.peek() === null ? {} : { startRemoved: store.startRemoved.peek()! }) },
     // The host's count, not this page's (#4794): a reconnect resumes from it, and an entry heard but
     // never written would count past it.
     page: { firstIndex, total: store.chatEnd() ?? firstIndex + kept.length, entries: kept },

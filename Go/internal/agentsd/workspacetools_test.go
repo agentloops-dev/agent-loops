@@ -104,7 +104,7 @@ func TestAnAgentsWorkspaceTools(t *testing.T) {
 		t.Fatalf("%+v", pending[0])
 	}
 	c.call(t, 2, "elicitations/answer", map[string]any{"requestID": pending[0].ID, "action": "accept", "content": map[string]any{"go": "yes"}})
-	if text := <-answered; text != "Made second. It joins as the host second on its first boot: wait for server.online." {
+	if text := <-answered; text != "Made second. list_machines gives its public addresses once its provider has them. It joins as the host second on its first boot: wait for server.online." {
 		t.Fatal(text)
 	}
 
@@ -226,7 +226,7 @@ func TestAYesAfterTheHoldStillMakesTheMachine(t *testing.T) {
 	waitFor(t, "both results in its chat", func() bool {
 		said := userMessages(d, a.ID)
 		return slices.Contains(said, "The person answered your card \"Claude (fix-login) wants to make a machine\". "+
-			"Made second. It joins as the host second on its first boot: wait for server.online.") &&
+			"Made second. list_machines gives its public addresses once its provider has them. It joins as the host second on its first boot: wait for server.online.") &&
 			slices.Contains(said, "The person answered your card \"Claude (fix-login) wants to delete a machine\". "+
 				"Nothing was deleted: the person said no, or didn’t answer.")
 	})
@@ -566,5 +566,41 @@ func TestAMachineIsFoundByEitherName(t *testing.T) {
 		if got := last(); got != tc.asks {
 			t.Errorf("%s asked %s, want %s", tc.name, got, tc.asks)
 		}
+	}
+}
+
+// list_machines shows each host's capacity with the figure's age, and "no figure" when it has
+// none or it is older than Auto trusts (#5875).
+func TestListMachinesShowsCapacityAndItsAge(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 11, 26, 12, 0, 0, 0, time.UTC)
+	at := func(ago time.Duration) *wire.Date { return new(wire.DateOf(now.Add(-ago))) }
+	level := func(l wire.CapacityLevel) *wire.CapacityLevel { return &l }
+	listed := wire.AgentMachines{Hosts: []wire.AgentMachinesHost{
+		{Name: "fresh", State: "online", Capacity: level(wire.CapacityLevelFull), LoadPerCore5: new(3.25), CapacityAt: at(30 * time.Second)},
+		{Name: "stale", State: "online", Capacity: level(wire.CapacityLevelOk), LoadPerCore5: new(0.5), CapacityAt: at(3 * time.Minute)},
+		{Name: "none", State: "online"}}}
+	note := workspacesNoteAt(listed, now)
+	for _, want := range []string{
+		"  - fresh: online (capacity full, load 3.25 per core (5 min), 30s ago)\n",
+		"  - stale: online (no figure)\n",
+		"  - none: online (no figure)"} {
+		if !strings.Contains(note, want) {
+			t.Errorf("missing %q in\n%s", want, note)
+		}
+	}
+}
+
+// list_machines gives a made machine's public addresses, from its provider's record (#7466).
+func TestListMachinesGivesAMachinesPublicAddresses(t *testing.T) {
+	listed := wire.AgentMachines{Providers: []wire.AgentMachinesProvider{{ID: "do", Name: "DigitalOcean",
+		Workspaces: []wire.AgentMachinesMachine{
+			{ID: "w1", Name: "pool-1", State: "running", Addresses: []string{"203.0.113.7", "2001:db8::7"}},
+			{ID: "w2", Name: "pool-2", State: "starting"}}}}}
+	note := workspacesNote(listed)
+	if !strings.Contains(note, "  - pool-1: running — not a host, addresses 203.0.113.7, 2001:db8::7\n") ||
+		!strings.Contains(note, "  - pool-2: starting — not a host\n") {
+		t.Fatal(note)
 	}
 }

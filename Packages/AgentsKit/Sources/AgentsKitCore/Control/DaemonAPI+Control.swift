@@ -13,13 +13,17 @@ public extension DaemonAPI.Method {
     static let hostsRemove = "machines/remove"
     /// Try Again on a machine's set-up (#5357).
     static let hostsRetrySetup = "machines/retrySetup"
+    /// `Empty` → `SetupRootCommand`, on the machine whose scripts they are (#7159): the line that
+    /// runs its approved root.sh as root on another machine, by hand.
+    static let setupRootCommand = "setup/rootCommand"
+    /// `Empty` → `SetupRootLog`, on the machine root.sh ran on (#7159): its root.log, for Show Log.
+    static let setupRootLog = "setup/rootLog"
+    /// `SetupRootAgain` → `Empty`, on the machine root.sh ran on (#7159): read its result again.
+    static let setupRootAgain = "setup/rootAgain"
     /// `{host, from, runtime, allowed}`: whether `host` may use `from`'s sign-in for a
     /// runtime, relayed through the control plane (058, T091). An operator's, after the
     /// window asked the person.
     static let hostsLendSignIn = "machines/lendSignIn"
-    /// `LendGit`: whether `host` may use `from`'s git access for one git server (#1122).
-    /// Any client's, after it asked the person; a no ends a waiting ask.
-    static let hostsLendGit = "machines/lendGit"
     /// `machines/sshHosts` (#610): the hosts in the control plane's ssh config, as `ssh -G`
     /// resolves each, with no network. `{destination}` resolves just that, as typed.
     /// `[SSHHost]`.
@@ -53,10 +57,6 @@ public extension DaemonAPI.Method {
     /// On the Mac's host (T091): start relaying a runtime's sign-in, and say what a server
     /// needs to use it. Never the token.
     static let relayGrant = "relay/grant"
-    /// `GitCredentialRequest` → `GitCredential` (#1122). Asked by the host's own git, through
-    /// `agentsd git-credential`, of its daemon on its socket only; then by that host of the
-    /// control plane on its channel 0.
-    static let gitCredential = "git/credential"
     static let clientsList = "clients/list"
     static let clientsStartPairing = "clients/startPairing"
     static let clientsStopPairing = "clients/stopPairing"
@@ -256,26 +256,51 @@ public extension DaemonAPI {
     }
 
     /// One step of a machine's set-up (#5357), as `MachineSetupStep` on the wire.
+    /// `setup/rootCommand` (#7159): the line to run as root, and the hash of the root.sh it runs.
+    struct SetupRootCommand: Codable, Sendable, Hashable {
+        public var command: String
+        public var hash: String
+        public init(command: String, hash: String) { self.command = command; self.hash = hash }
+    }
+
+    /// `setup/rootLog` (#7159): the end of root.log, and whether it is longer.
+    struct SetupRootLog: Codable, Sendable, Hashable {
+        public var text: String
+        public var cut: Bool
+        public init(text: String, cut: Bool) { self.text = text; self.cut = cut }
+    }
+
+    /// `setup/rootAgain` (#7159): with `rest`, the steps after Root set-up run too.
+    struct SetupRootAgain: Codable, Sendable, Hashable {
+        public var rest: Bool
+        public init(rest: Bool) { self.rest = rest }
+    }
+
     struct MachineSetupStep: Codable, Sendable, Hashable, Identifiable {
         public enum State: String, Codable, Sendable {
             case waiting, running, done, failed
             case needsYou = "needs-you"
         }
 
-        /// `create`, `join`, `install`, `compare`, `runtimes`, `projects`, `signIn` or `smoke`.
+        /// `create`, `join`, `install`, `compare`, `root`, `runtimes`, `user`, `projects`, `signIn` or `smoke`.
         public var id: String
         public var state: State
         public var startedAt: Date?
         public var endedAt: Date?
-        /// One line of what it is doing or did.
+        /// One line of what it is doing or did; for a failed Root set-up, root.log's last lines (#7154).
         public var detail: String?
         /// Why it failed, in the words of the provider or the machine.
         public var error: String?
         public var fromPool: Bool?
         public var slower: Bool?
+        /// The script that root set-up or your set-up ran (#7167, #7155): its SHA-256 in hexadecimal.
+        public var hash: String?
+        /// Done with a warning in its detail, such as a provider that can't run root set-up (#7154).
+        public var warning: Bool?
 
         public init(id: String, state: State, startedAt: Date? = nil, endedAt: Date? = nil, detail: String? = nil,
-                    error: String? = nil, fromPool: Bool? = nil, slower: Bool? = nil) {
+                    error: String? = nil, fromPool: Bool? = nil, slower: Bool? = nil, hash: String? = nil,
+                    warning: Bool? = nil) {
             self.id = id
             self.state = state
             self.startedAt = startedAt
@@ -284,6 +309,8 @@ public extension DaemonAPI {
             self.error = error
             self.fromPool = fromPool
             self.slower = slower
+            self.hash = hash
+            self.warning = warning
         }
     }
 
@@ -313,10 +340,6 @@ public extension DaemonAPI {
         public var machineID: String?
         /// The hosts whose sign-in this one may use, by runtime (T091).
         public var signInFrom: [String: MachineRef]?
-        /// The hosts whose git access this one may use, by git server (#1122).
-        public var gitFrom: [String: MachineRef]?
-        /// Its git asking to use a host's git access, waiting on a person's answer (#1122).
-        public var gitAsks: [GitAsk]?
         /// A server behind a bastion dials the control plane through a reverse tunnel the
         /// control plane holds over ssh (#435): how that session stands. Nil for a host
         /// that dials it directly.

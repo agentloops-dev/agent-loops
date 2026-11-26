@@ -32,6 +32,7 @@ const (
 	MachinesPrefix = "v1/machines/"
 	// OldMachinesPrefix is where builds before #2316 kept machines: moved to
 	// MachinesPrefix when a store opens or is copied (#2662).
+	// store-bounds: not a store: the old prefix; the store's open moves its records to MachinesPrefix and writes none here
 	OldMachinesPrefix = "v1/hosts/"
 	// store-bounds: kind=key-value; count=1; size=64KiB a record; age=until-deleted; applied=on write
 	SettingsKey = "v1/control.json"
@@ -348,7 +349,7 @@ func (r *Records) Clients() []ClientRecord {
 }
 
 // Hosts is every host that runs agents, by id. A machine with only the control role
-// (#6609) is not one: nothing dials in with it. Machines has both.
+// (#6609) is not one: it takes no agent work, though it may link (#7314). Machines has both.
 func (r *Records) Hosts() []MachineRecord { return r.machines(false) }
 
 // Machines is every machine, by id, also one that only runs the control plane.
@@ -841,6 +842,35 @@ func (r *Records) ChangeHost(ctx context.Context, id string, change func(*Machin
 	return nil
 }
 
+// DropGitLends deletes the git lends that #1122 kept in a machine's record (gitFrom) from
+// each record that still holds one (#7286). Git lending is removed and nothing reads them.
+// It writes only those records, and is safe to run on every start.
+func (r *Records) DropGitLends(ctx context.Context) error {
+	r.writing.Lock()
+	defer r.writing.Unlock()
+	r.mu.Lock()
+	var stale []held[MachineRecord]
+	for _, h := range r.hosts {
+		if h.record.gitLends {
+			stale = append(stale, h)
+		}
+	}
+	r.mu.Unlock()
+	for _, h := range stale {
+		c := h.record
+		c.gitLends = false
+		c.Rev++
+		kept, etag, err := write(ctx, r.Store, c, HostKey(c.ID), store.Matching(h.etag))
+		if err != nil {
+			return err
+		}
+		r.mu.Lock()
+		r.hosts[c.ID] = held[MachineRecord]{kept, etag}
+		r.mu.Unlock()
+	}
+	return nil
+}
+
 // ErrHostTaken is AddHost's refusal: a host of that id is already kept, here or at
 // another copy (#1996).
 var ErrHostTaken = errors.New("a host of that id is already enrolled")
@@ -909,7 +939,7 @@ func (r *Records) removeHost(ctx context.Context, id string, still func(MachineR
 		tombstone.Forgotten, tombstone.ForgottenAt = &yes, &now
 		tombstone.Rev++
 		// A tombstone keeps nothing that grows (#6758).
-		tombstone.SignInFrom, tombstone.GitFrom, tombstone.Workspace, tombstone.Labels, tombstone.Extra = nil, nil, nil, nil, nil
+		tombstone.SignInFrom, tombstone.Workspace, tombstone.Labels, tombstone.Extra = nil, nil, nil, nil
 		var err error
 		_, etag, err = write(ctx, r.Store, tombstone, HostKey(id), store.Matching(h.etag))
 		again, err := r.tombstoneAgain(ctx, err, attempt)

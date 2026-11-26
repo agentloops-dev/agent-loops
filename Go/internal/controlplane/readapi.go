@@ -14,6 +14,7 @@ import (
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/records"
 	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/store"
+	"github.com/agentloops-dev/agent-loops/Go/internal/sizewords"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -317,7 +318,7 @@ func (rt *readTokens) make(ctx context.Context, r wire.ReadTokenMake, actor wire
 	t := readTokenRecord{ID: hash[:12], Name: name, SHA256: hash, Made: wire.OrgRouteStamp{By: actor, At: wire.DateOf(now)}}
 	data, err := records.Encode(t)
 	if err == nil && len(data) > tokenMostBytes {
-		return wire.ReadTokenMade{}, fail(invalidParams, "What is kept of this token is too large: %d bytes, and the most is %d.", len(data), tokenMostBytes)
+		return wire.ReadTokenMade{}, fail(invalidParams, "This token is too large to keep: %s, and the most is %s. Give it a shorter name.", sizewords.Int(len(data)), sizewords.Int(tokenMostBytes))
 	}
 	if err == nil {
 		_, err = rt.s.cfg.Store.Put(ctx, readTokenKey(hash), data, store.Absent)

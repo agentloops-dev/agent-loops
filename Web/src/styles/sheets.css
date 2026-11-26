@@ -19,6 +19,7 @@ dialog.sheet:has(.settings-sheet) { width: min(760px, calc(100vw - 32px)); max-h
 .project-folders .path { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .not-committed-paths { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
 .not-committed-paths code { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: block; }
+.settings-grid button.link { font: inherit; cursor: pointer; border: none; background: none; padding: 0; color: var(--accent); box-shadow: none; }
 .switch-row { display: flex; gap: 8px; align-items: center; }
 .settings-sheet .sheet-actions { display: flex; gap: 8px; justify-content: flex-end; }
 .settings-sheet .sheet-actions.start { justify-content: flex-start; }

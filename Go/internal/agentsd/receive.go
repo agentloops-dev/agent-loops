@@ -73,6 +73,7 @@ func ownTreeOf(dir string, untracked bool) (head, tree string, err error) {
 	if err != nil {
 		return "", "", err
 	}
+	// store-bounds: not a store: a temporary git index.
 	tmp, err := os.CreateTemp("", "agents-send-index-")
 	if err != nil {
 		return "", "", err
@@ -80,6 +81,7 @@ func ownTreeOf(dir string, untracked bool) (head, tree string, err error) {
 	tmp.Close()
 	defer os.Remove(tmp.Name())
 	if b, err := os.ReadFile(index); err == nil {
+		// store-bounds: not a store: a temporary git index.
 		if err := os.WriteFile(tmp.Name(), b, 0o600); err != nil { //nolint:gosec // G703: our own CreateTemp file
 			_ = os.Remove(tmp.Name()) // with no copy, git add makes an index from nothing: slower, the same tree
 		}
@@ -442,6 +444,7 @@ func receiveApplyPatch(path, patch string) error {
 			return Invalid("The commits arrived, but the uncommitted changes did not apply: %s", err.Error())
 		}
 		if now, err := worktreeFingerprint(path); err == nil {
+			// store-bounds: not a store: a one-line mark in the repository's git folder, written again each time.
 			if err := os.WriteFile(sentMark(path), []byte(now+"\n"), 0o600); err != nil {
 				log.Printf("receive: could not mark %s as sent: %v", path, err)
 			}
@@ -465,6 +468,12 @@ func (d *Daemon) registerReceive() {
 		return d.receiveState(r)
 	})
 	On(d, wire.CallFoldersReceive, func(ctx context.Context, c *Client, r wire.ReceiveRequest) (wire.FolderSummary, error) {
-		return d.receive(r)
+		summary, err := d.receive(r)
+		if err == nil {
+			if path, err := receiveFolder(r.Folder); err == nil {
+				_ = d.afterReceive(path) // the send does not wait for the script
+			}
+		}
+		return summary, err
 	})
 }

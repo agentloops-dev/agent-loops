@@ -8,8 +8,8 @@ import SwiftUI
 /// when one is declared or held, and its processes (#3453). The Agent Loops version it runs, since
 /// when and with what changes, comes after the summary (#5273). Read with
 /// `machine/usage` when it opens and every few seconds while it is open, never otherwise.
-/// A machine a provider made has its provider's options and Unlink here, and one that uses a Mac's
-/// git access has Stop Lending (#3975: Settings ▸ Machines lists no machines now). This Mac's own
+/// A machine a provider made has its provider's options and Unlink here (#3975: Settings ▸
+/// Machines lists no machines now). This Mac's own
 /// settings stay in Settings ▸ Machines; Settings… goes there. The web page draws the same in Web/src/views/MachinePage.tsx.
 struct MachinePage: View {
     @Environment(AppModel.self) private var model
@@ -20,6 +20,9 @@ struct MachinePage: View {
     @State private var failure: String?
     /// When the last `machine/usage` read worked (#5146): a read that fails then says how old the page is.
     @State private var readAt: Date?
+    /// Root set-up by hand, and root.log (#7159).
+    @State private var rootSheet: RootSheet?
+    @AppStorage(FeatureFlag.machineScripts.key, store: WindowDefaults.store) private var scriptsOn = false
 
     private var name: String { model.hosts.label(host) }
     private var offline: Bool { model.hosts.isOffline(host) }
@@ -58,14 +61,32 @@ struct MachinePage: View {
                 Form {
                     if let row = model.hosts.controlRows[host], let setup = row.setup {
                         MachineSetupSection(row: row, setup: setup,
-                                            onRetry: { Task { await model.retrySetup(host) } },
-                                            onDelete: { Task { await model.deleteMachine(host) } }) {
+                                            onRetry: { Task { await retry(setup) } },
+                                            onDelete: { Task { await model.deleteMachine(host) } },
+                                            onRootCommand: { rootSheet = .command(failed: true) },
+                                            onRootLog: { rootSheet = .log }) {
                             MachineSignInCards(host: host)
                         }
                         // From a warm pool, or a claim that found it empty (#5366, board 4).
                         if let note = model.machinePoolNotes[row.name], !MachineSetupWords.foldedAway(setup) {
                             Section { Text(note).appText(.supporting).foregroundStyle(.secondary) }
                         }
+                    }
+                    // A Linux machine no provider made: root.sh by hand (#7159).
+                    if scriptsOn, host != .mac, !offline, let row = model.hosts.controlRows[host],
+                       row.workspace == nil, row.platform.lowercased().hasPrefix("linux"), model.host(host, has: Capability.machineRootSetup1) {
+                        OwnServerRootSection(name: name) { rootSheet = .command(failed: false) }
+                    }
+                    // The person's setup.sh: what it ran, Send Set-up… and Run Again (#7155).
+                    if let row = model.hosts.controlRows[host], model.showsMachineScripts(host) {
+                        MachineScriptsSection(host: host, row: row)
+                    }
+                    // It runs the control plane too: its level and figures, for an admin (#6591).
+                    if model.runsControlPlane(host) { ControlPlaneSection(host: host) }
+                    // Make This the Control Plane…, on a machine that does not run it, for an admin (#6614).
+                    if model.showsControlPlaneMove, let record = model.controlRecord(host),
+                       !model.runsControlCopy(record) {
+                        ControlMoveSection(host: host, record: record)
                     }
                     // Offline too, so a send that stopped keeps its Retry.
                     MachineSendsSection(host: host)
@@ -109,6 +130,12 @@ struct MachinePage: View {
             }
         }
         .navigationTitle(name)
+        .sheet(item: $rootSheet) { shown in
+            switch shown {
+            case .command(let failed): RootCommandSheet(host: host, name: name, failed: failed).paperSheet()
+            case .log: RootLogSheet(host: host, name: name).paperSheet()
+            }
+        }
         .task(id: offline ? nil : host) {
             guard !offline else { return }
             await MachineResourcesSection.read(model, on: host)
@@ -122,6 +149,16 @@ struct MachinePage: View {
                 if !offline { await read() }
                 try? await Task.sleep(for: .seconds(3))
             }
+        }
+    }
+
+    /// Try Again: your set-up runs on the machine itself (#7155), so it runs its copy again there;
+    /// any other step is the control plane's to run again.
+    private func retry(_ setup: DaemonAPI.MachineSetup) async {
+        if MachineSetupWords.failedStep(setup)?.id == "user" {
+            await model.runSetupAgain(host)
+        } else {
+            await model.retrySetup(host)
         }
     }
 
@@ -272,8 +309,7 @@ struct MachinePage: View {
 }
 
 /// What Settings ▸ Machines' menu had for one machine and its row's menu leaves out (#3975):
-/// a provider's options and Unlink (rare, so not in the row's menu; the wireframe's section 4),
-/// and Stop Lending for each git server it uses a Mac's access for (#1122).
+/// a provider's options and Unlink (rare, so not in the row's menu; the wireframe's section 4).
 private struct MachineLinkSections: View {
     @Environment(AppModel.self) private var model
     let row: DaemonAPI.ControlMachine
@@ -307,19 +343,6 @@ private struct MachineLinkSections: View {
                 Text("\(workspace.providerName) can no longer start or stop it.")
             }
         }
-        if let lent = row.gitFrom, !lent.isEmpty {
-            Section {
-                ForEach(lent.keys.sorted(), id: \.self) { server in
-                    Button(GitLendWords.revoke(server)) {
-                        Task { await model.stopLendingGit(row.id, from: lent[server]!, server: server) }
-                    }
-                }
-            } header: {
-                Text("Git access")
-            } footer: {
-                if let uses = GitLendWords.uses(row, name: { model.hosts.label($0) }) { Text(uses) }
-            }
-        }
     }
 
     /// When it starts again or stays up (#1004 FR-007), and the scheduled workflows it does
@@ -350,6 +373,11 @@ struct MachineRow: View {
     @Environment(AppModel.self) private var model
     let host: MachineRef
     let open: () -> Void
+
+    /// "Control plane near capacity", when it runs the control plane too (#6591).
+    private var controlLine: String? {
+        model.runsControlPlane(host) ? ControlPlaneMachine.agentsRowLine(model.controlPlaneLook(host)) : nil
+    }
     @State private var deleting = false
     /// What Delete loses: the worktrees on it with work not pushed (#3979), asked as it opens.
     @State private var deleteWork: DaemonAPI.StartedMachinePreview?
@@ -374,7 +402,8 @@ struct MachineRow: View {
         let dot = MachineDot.of(row, online: !model.hostUnreachable(host),
                                 starting: model.hostsBeingStarted.contains(host))
         let online = dot == .online && !model.diskWarns(host)
-        let words = state ?? (online ? model.work.sessionCounts(on: host).runningLine : nil)
+        // It runs the control plane too, and that is near or at capacity (#6591).
+        let words = state ?? controlLine ?? (online ? model.work.sessionCounts(on: host).runningLine : nil)
         HStack(alignment: .firstTextBaseline, spacing: 6) {
             // A laptop, a cloud or a rack, in its state's colour (#4113): the row has no dot.
             MachineIconView(symbol: MachineIcon.symbol(isThisMac: host == .mac, row: row),

@@ -279,6 +279,7 @@ func (in Installer) Add(st Staged, place Place, replace bool, now time.Time) (wi
 		if err := os.MkdirAll(filepath.Dir(in.journal()), 0o755); err != nil { //nolint:gosec // G301: the mode this folder always had; only its error is new
 			return err
 		}
+		// store-bounds: not a store: the journal of one install, removed when it ends.
 		return os.WriteFile(in.journal(), b, 0o644)
 	}
 	if writeJournal() != nil {

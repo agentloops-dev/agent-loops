@@ -308,6 +308,13 @@ func (d *Daemon) startFor(r wire.StartRequest, by startedBy) (wire.UUID, error) 
 		d.helperRequests(&r, starter)
 		d.inheritRequests(&r, starter)
 	}
+	// A start's labels are held to the same bounds as a later add (#7241): before, any number
+	// went on, and every add after that was refused.
+	if by.queued == nil {
+		if _, err := changeLabelsAs(by.owner, nil, r.Labels, nil, nil); err != nil {
+			return "", err
+		}
+	}
 	pick, client, levelsNote, err := d.resolveLevels(&r, by)
 	if err != nil {
 		return "", err

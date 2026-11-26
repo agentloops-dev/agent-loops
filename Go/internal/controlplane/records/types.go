@@ -153,9 +153,7 @@ type MachineRecord struct {
 	// The machine it runs on, so a window can tell a host on its own Mac (R11).
 	MachineID *string
 	// The hosts whose sign-in this host may use, by runtime (058, T091).
-	SignInFrom map[string]string
-	// The hosts whose git access this host may use, by git server (#1122).
-	GitFrom     map[string]string
+	SignInFrom  map[string]string
 	Owner       *string
 	Rev         int
 	Forgotten   *bool
@@ -170,6 +168,9 @@ type MachineRecord struct {
 	// What the machine does (#6609): RoleAgents, RoleControl or both. Empty is agents.
 	Roles []string
 	Extra Extra
+	// gitLends says the record as read still holds the git lends of #1122 (gitFrom), which
+	// DropGitLends deletes (#7286). It is never written.
+	gitLends bool
 }
 
 // The roles of a machine (#6609, epic #6608).
@@ -186,7 +187,8 @@ func (h MachineRecord) HasRole(role string) bool {
 	return slices.Contains(h.Roles, role)
 }
 
-// ControlOnly says the machine runs the control plane and no agents: nothing dials in with it.
+// ControlOnly says the machine runs the control plane and no agents. Its host, when one
+// joined with the control role alone (#7314), links only for the store copy and the handover.
 func (h MachineRecord) ControlOnly() bool { return !h.HasRole(RoleAgents) }
 
 // ControlOnlyRefusal is why a control-only machine is not removed or changed, in the words
@@ -222,25 +224,26 @@ func NormalRoles(roles []string) []string {
 }
 
 type hostJSON struct {
-	ID            string            `json:"id"`
-	Name          string            `json:"name"`
-	PublicKey     []byte            `json:"publicKey,omitempty"`
-	Reach         json.RawMessage   `json:"reach"`
-	Platform      string            `json:"platform"`
-	Version       string            `json:"version"`
-	Installed     bool              `json:"installed"`
-	MachineID     *string           `json:"machineID,omitempty"`
-	SignInFrom    map[string]string `json:"signInFrom,omitempty"`
-	GitFrom       map[string]string `json:"gitFrom,omitempty"`
-	Owner         *string           `json:"owner,omitempty"`
-	Rev           int               `json:"rev"`
-	Forgotten     *bool             `json:"forgotten,omitempty"`
-	ForgottenAt   *Stamp            `json:"forgottenAt,omitempty"`
-	KnownEpoch    *int              `json:"knownEpoch,omitempty"`
-	Workspace     json.RawMessage   `json:"workspace,omitempty"`
-	Expires       *Stamp            `json:"expires,omitempty"`
-	Labels        []string          `json:"labels,omitempty"`
-	Roles         []string          `json:"roles,omitempty"`
+	ID         string            `json:"id"`
+	Name       string            `json:"name"`
+	PublicKey  []byte            `json:"publicKey,omitempty"`
+	Reach      json.RawMessage   `json:"reach"`
+	Platform   string            `json:"platform"`
+	Version    string            `json:"version"`
+	Installed  bool              `json:"installed"`
+	MachineID  *string           `json:"machineID,omitempty"`
+	SignInFrom map[string]string `json:"signInFrom,omitempty"`
+	// GitFrom is only read, so that DropGitLends can delete it (#7286); it is never written.
+	GitFrom     map[string]string `json:"gitFrom,omitempty"`
+	Owner       *string           `json:"owner,omitempty"`
+	Rev         int               `json:"rev"`
+	Forgotten   *bool             `json:"forgotten,omitempty"`
+	ForgottenAt *Stamp            `json:"forgottenAt,omitempty"`
+	KnownEpoch  *int              `json:"knownEpoch,omitempty"`
+	Workspace   json.RawMessage   `json:"workspace,omitempty"`
+	Expires     *Stamp            `json:"expires,omitempty"`
+	Labels      []string          `json:"labels,omitempty"`
+	Roles       []string          `json:"roles,omitempty"`
 }
 
 // dialOut is MachineReach.dialOut: every host connects out now (058, T073); a record that
@@ -249,7 +252,7 @@ var dialOut = json.RawMessage(`{"dialOut":{}}`)
 
 func (h MachineRecord) MarshalJSON() ([]byte, error) {
 	return encodeKeeping(hostJSON{h.ID, h.Name, h.PublicKey, dialOut, h.Platform, h.Version, h.Installed, h.MachineID,
-		h.SignInFrom, h.GitFrom, h.Owner, h.Rev, h.Forgotten, h.ForgottenAt, h.KnownEpoch,
+		h.SignInFrom, nil, h.Owner, h.Rev, h.Forgotten, h.ForgottenAt, h.KnownEpoch,
 		h.Workspace, h.Expires, h.Labels, NormalRoles(h.Roles)}, h.Extra)
 }
 
@@ -260,7 +263,8 @@ func (h *MachineRecord) UnmarshalJSON(data []byte) error {
 		return err
 	}
 	*h = MachineRecord{j.ID, j.Name, j.PublicKey, j.Platform, j.Version, j.Installed, j.MachineID, j.SignInFrom,
-		j.GitFrom, j.Owner, j.Rev, j.Forgotten, j.ForgottenAt, j.KnownEpoch, j.Workspace, j.Expires, j.Labels, j.Roles, extra}
+		j.Owner, j.Rev, j.Forgotten, j.ForgottenAt, j.KnownEpoch, j.Workspace, j.Expires, j.Labels, j.Roles, extra,
+		j.GitFrom != nil}
 	return nil
 }
 

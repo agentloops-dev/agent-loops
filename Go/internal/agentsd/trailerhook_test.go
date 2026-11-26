@@ -19,28 +19,31 @@ import (
 func TestRewriteTrailersWritesTheBlockAsTheLastParagraph(t *testing.T) {
 	t.Parallel()
 
-	block := []string{"Made-by: claude-code:claude-opus-5-5", "Session: s1", "Refs: #7"}
+	block := []string{"Runtime: claude-code", "Session: s1", "Refs: #7"}
 	for _, c := range []struct {
 		name, msg string
 		off       []string
 		want      string
 	}{
 		{"a subject alone", "Fix it\n", nil,
-			"Fix it\n\nMade-by: claude-code:claude-opus-5-5\nSession: s1\nRefs: #7\n"},
+			"Fix it\n\nRuntime: claude-code\nSession: s1\nRefs: #7\n"},
 		{"a body, no newline at the end", "Fix it\n\nWhy it broke.", nil,
-			"Fix it\n\nWhy it broke.\n\nMade-by: claude-code:claude-opus-5-5\nSession: s1\nRefs: #7\n"},
+			"Fix it\n\nWhy it broke.\n\nRuntime: claude-code\nSession: s1\nRefs: #7\n"},
 		{"a person's trailer stays, an off one goes", "Fix it\n\nSigned-off-by: P <p@example.com>\nCost: $3.10\n", []string{"Cost"},
-			"Fix it\n\nSigned-off-by: P <p@example.com>\nMade-by: claude-code:claude-opus-5-5\nSession: s1\nRefs: #7\n"},
+			"Fix it\n\nSigned-off-by: P <p@example.com>\nRuntime: claude-code\nSession: s1\nRefs: #7\n"},
 		{"a typed single trailer is the block's, a line already there is not doubled", "Fix it\n\nSession: old\nRefs: #7\n", nil,
-			"Fix it\n\nRefs: #7\nMade-by: claude-code:claude-opus-5-5\nSession: s1\n"},
-		{"Fixes off takes out Refs, and co-authors in any case", "Fix it\n\nRefs: #9\nCo-Authored-By: C <c@example.com>\n", []string{"Fixes", "Co-authored-by"},
-			"Fix it\n\nMade-by: claude-code:claude-opus-5-5\nSession: s1\nRefs: #7\n"},
+			"Fix it\n\nRefs: #7\nRuntime: claude-code\nSession: s1\n"},
+		{"Fixes off takes out Refs", "Fix it\n\nRefs: #9\n", []string{"Fixes"},
+			"Fix it\n\nRuntime: claude-code\nSession: s1\nRefs: #7\n"},
+		{"the runtime's Co-authored-by stays, once, also with an old layer's Co-authored-by off (#7174)",
+			"Fix it\n\nGenerated with a runtime\n\nCo-Authored-By: Claude <noreply@anthropic.com>\n", []string{"Co-authored-by"},
+			"Fix it\n\nGenerated with a runtime\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nRuntime: claude-code\nSession: s1\nRefs: #7\n"},
 		{"a last paragraph of prose is not a block", "Fix it\n\nThis: is a sentence with a colon\nand more words.\n", nil,
-			"Fix it\n\nThis: is a sentence with a colon\nand more words.\n\nMade-by: claude-code:claude-opus-5-5\nSession: s1\nRefs: #7\n"},
+			"Fix it\n\nThis: is a sentence with a colon\nand more words.\n\nRuntime: claude-code\nSession: s1\nRefs: #7\n"},
 		{"the editor's comments stay after the block", "Fix it\n\n# Please enter the commit message.\n#\n# On branch x\n", nil,
-			"Fix it\n\nMade-by: claude-code:claude-opus-5-5\nSession: s1\nRefs: #7\n\n# Please enter the commit message.\n#\n# On branch x\n"},
+			"Fix it\n\nRuntime: claude-code\nSession: s1\nRefs: #7\n\n# Please enter the commit message.\n#\n# On branch x\n"},
 		{"commit -v's scissors and diff stay after it", "Fix it\n# ------------------------ >8 ------------------------\ndiff --git a/x b/x\n", nil,
-			"Fix it\n\nMade-by: claude-code:claude-opus-5-5\nSession: s1\nRefs: #7\n\n# ------------------------ >8 ------------------------\ndiff --git a/x b/x\n"},
+			"Fix it\n\nRuntime: claude-code\nSession: s1\nRefs: #7\n\n# ------------------------ >8 ------------------------\ndiff --git a/x b/x\n"},
 		{"an empty message stays empty, for git to refuse", "\n# Please enter the commit message.\n", nil,
 			"\n# Please enter the commit message.\n"},
 	} {
@@ -49,7 +52,11 @@ func TestRewriteTrailersWritesTheBlockAsTheLastParagraph(t *testing.T) {
 		}
 	}
 	// A rule that turns every trailer off takes the whole block out.
-	if got := rewriteTrailers("Fix it\n\nMade-by: x\nCost: $1\n", "#", nil, []string{"Made-by", "Cost"}); got != "Fix it\n" {
+	if got := rewriteTrailers("Fix it\n\nRuntime: x\nCost: $1\n", "#", nil, []string{"Runtime", "Cost"}); got != "Fix it\n" {
+		t.Errorf("%q", got)
+	}
+	// The hook never adds a Co-authored-by, also when the daemon's lines have one.
+	if got := rewriteTrailers("Fix it\n", "#", []string{"Co-authored-by: X <x@example.com>"}, nil); got != "Fix it\n" {
 		t.Errorf("%q", got)
 	}
 	// The same block again changes nothing.
@@ -113,7 +120,7 @@ func TestTheHookChainsToTheFoldersOwnAndLeavesTheMainCheckout(t *testing.T) {
 
 	// A fake agents-trailers on PATH stands in for agentsd.
 	bin := t.TempDir()
-	writeFileMode(t, filepath.Join(bin, trailersCommandName), []byte("#!/bin/sh\nprintf 'Made-by: fake\\n' >> \"$1\"\n"), 0o755)
+	writeFileMode(t, filepath.Join(bin, trailersCommandName), []byte("#!/bin/sh\nprintf 'Runtime: fake\\n' >> \"$1\"\n"), 0o755)
 	path := "PATH=" + bin + string(os.PathListSeparator) + os.Getenv("PATH")
 
 	// A person's commit: the folder's hook runs, and no block.
@@ -128,7 +135,7 @@ func TestTheHookChainsToTheFoldersOwnAndLeavesTheMainCheckout(t *testing.T) {
 	if out, err := gitWithEnv(t, root, session, "commit", "-q", "--allow-empty", "-m", "by an agent"); err != nil {
 		t.Fatal(err, out)
 	}
-	if m := lastMessage(t, root); m != "by an agent\n\nFolder-hook: ran\nMade-by: fake" {
+	if m := lastMessage(t, root); m != "by an agent\n\nFolder-hook: ran\nRuntime: fake" {
 		t.Fatalf("%q", m)
 	}
 	// --no-verify skips both.
@@ -166,7 +173,7 @@ func TestTheHookChainsToTheFoldersOwnAndLeavesTheMainCheckout(t *testing.T) {
 	if out, err := gitWithEnv(t, root, append(session, "HUSKY_MARK="+mark), "commit", "-q", "--allow-empty", "-m", "husky"); err != nil {
 		t.Fatal(err, out)
 	}
-	if m := lastMessage(t, root); m != "husky\n\nHusky: ran\nMade-by: fake" {
+	if m := lastMessage(t, root); m != "husky\n\nHusky: ran\nRuntime: fake" {
 		t.Fatalf("%q", m)
 	}
 	if _, err := os.Stat(mark); err != nil {
@@ -301,7 +308,7 @@ func TestAgentsTrailersWritesTheSessionsBlock(t *testing.T) {
 	got := string(b)
 	// Cost is off by default, so the typed one goes; the person's trailer stays.
 	if !strings.Contains(got, "Signed-off-by: P <p@example.com>\n") || strings.Contains(got, "Cost:") ||
-		!strings.Contains(got, "Session: "+string(id)+"\n") || !strings.Contains(got, "Made-by: ") {
+		!strings.Contains(got, "Session: "+string(id)+"\n") || !strings.Contains(got, "Managed-by: Agent Loops") {
 		t.Fatalf("%q", got)
 	}
 

@@ -353,6 +353,9 @@ type Agent struct {
 
 	// The project its folder is in (#3276), as the folder's .agents/folder.json names it now. Absent for a folder in no project.
 	Project *string `json:"project,omitzero"`
+
+	// What is going on in the session, in a few sentences, written by a short call to the runtime's fastest model when a client opens the session in summary mode (#7321, epic #7318), not by the agent. Absent until one is written.
+	Summary *SessionSummary `json:"summary,omitzero"`
 }
 
 type AgentArchivedReason string
@@ -460,6 +463,18 @@ type AgentMachinesHost struct {
 	Name string `json:"name"`
 
 	State string `json:"state"`
+
+	// The machine's capacity level as it last pushed it (#5875), so an agent does not start heavy work on a full machine. Absent before its first push.
+	Capacity *CapacityLevel `json:"capacity,omitzero"`
+
+	// Its 5-minute load per core when it last pushed.
+	LoadPerCore5 *float64 `json:"loadPerCore5,omitzero"`
+
+	// When the control plane last heard its capacity. A figure older than 2 minutes is no figure (Auto's rule).
+	CapacityAt *Date `json:"capacityAt,omitzero"`
+
+	// The machine's platform as it announced it (macOS 15, Linux), so Autopilot (#5900) sends a linux-ok issue to a Linux machine. Absent when it did not say.
+	Platform *string `json:"platform,omitzero"`
 }
 
 type AgentMachinesMachine struct {
@@ -477,6 +492,9 @@ type AgentMachinesMachine struct {
 
 	// Why it failed, on a make that failed (#4706).
 	Reason *string `json:"reason,omitzero"`
+
+	// Its public addresses, IPv4 then IPv6, from the provider's own record (#7466).
+	Addresses []string `json:"addresses,omitzero"`
 }
 
 type AgentMachinesProvider struct {
@@ -1311,6 +1329,62 @@ type AutoSkip struct {
 	RuntimeID string `json:"runtimeID"`
 
 	Reason string `json:"reason"`
+}
+
+// What Autopilot starts in a folder (#5898, epic #5897). Off starts nothing; high starts only work whose priority is high; on starts any ready work. Absent is off.
+type AutopilotMode string
+
+const AutopilotModeOff AutopilotMode = "off"
+const AutopilotModeHigh AutopilotMode = "high"
+const AutopilotModeOn AutopilotMode = "on"
+
+type AutopilotRequest struct {
+	Folder URL `json:"folder"`
+}
+
+type AutopilotRow struct {
+	// The issue or epic, as the forge names it (#123).
+	Ref string `json:"ref"`
+
+	Kind AutopilotRowKind `json:"kind"`
+
+	State AutopilotRowState `json:"state"`
+
+	// Why it waits or is paused: one of `limit running`, `limit open-prs`, `capacity near`, `capacity full`, `on hold`, `blocked by #n`, `paused: main red`, `paused: over budget`, `mode high`. Empty when it started.
+	Reason string `json:"reason"`
+
+	// The session Autopilot started for it; absent until it started one.
+	Session *UUID `json:"session,omitzero"`
+
+	Since Date `json:"since"`
+}
+
+// A lead is for an epic; a lane is for an issue.
+type AutopilotRowKind string
+
+const AutopilotRowKindLead AutopilotRowKind = "lead"
+const AutopilotRowKindLane AutopilotRowKind = "lane"
+
+type AutopilotRowState string
+
+const AutopilotRowStateStarted AutopilotRowState = "started"
+const AutopilotRowStateWaiting AutopilotRowState = "waiting"
+const AutopilotRowStatePaused AutopilotRowState = "paused"
+
+type AutopilotSetRequest struct {
+	Folder URL `json:"folder"`
+
+	Mode AutopilotMode `json:"mode"`
+}
+
+type AutopilotStatus struct {
+	Mode AutopilotMode `json:"mode"`
+
+	// When Autopilot last looked at the folder's work; absent when it never has.
+	LastRunAt *Date `json:"lastRunAt,omitzero"`
+
+	// The newest 100 rows, the newest first.
+	Rows []AutopilotRow `json:"rows"`
 }
 
 type BackgroundItem struct {
@@ -2340,11 +2414,12 @@ const CapacityLevelOk CapacityLevel = "ok"
 const CapacityLevelNear CapacityLevel = "near"
 const CapacityLevelFull CapacityLevel = "full"
 
-// What put a machine near or at capacity (#6596): cpu (its load per core) or memory (critical memory pressure). It stays while the level waits to fall. Absent at ok.
+// What put a machine near or at capacity (#6596): cpu (its load per core), memory (critical memory pressure) or disk (disk pressure, #7300). It stays while the level waits to fall. Absent at ok.
 type CapacityReason string
 
 const CapacityReasonCpu CapacityReason = "cpu"
 const CapacityReasonMemory CapacityReason = "memory"
+const CapacityReasonDisk CapacityReason = "disk"
 
 // machine/capacity (#5374): a host tells the control plane its capacity level and 5-minute load per core, on connect and when either moves enough to matter.
 type CapacityReport struct {
@@ -3041,7 +3116,7 @@ type CommitTrailerValue string
 const CommitTrailerValueOn CommitTrailerValue = "on"
 const CommitTrailerValueOff CommitTrailerValue = "off"
 
-// The trailers of an agent's commits, each on or off, by the trailer's key (#6365): Made-by, Cost, Tokens, Duration, Session, Fixes, Epic, Requested-by, Approved-by, Co-authored-by. Fixes also writes Refs. A key the machine does not know is kept and has no effect; a key no layer sets has its default (every key on, Cost off). Record trailers (Made-by, Session, Fixes, Epic, Requested-by, Approved-by, Co-authored-by): on is tighter. Spend trailers (Cost, Tokens, Duration): off is tighter. Its rules in policy/effective are commitTrailers.<key>.
+// The trailers of an agent's commits, each on or off, by the trailer's key (#6365, #7174): Managed-by, Runtime, Model, Cost, Tokens, Duration, Session, Fixes, Epic, Requested-by, Approved-by. Fixes also writes Refs. Co-authored-by is not a key: it is the runtime's own line, and the app never adds, changes or removes it. A key the machine does not know (also the old Made-by and Co-authored-by) is kept and has no effect; a key no layer sets has its default (every key on, Cost off). Record trailers (Managed-by, Runtime, Model, Session, Fixes, Epic, Requested-by, Approved-by): on is tighter. Spend trailers (Cost, Tokens, Duration): off is tighter. Its rules in policy/effective are commitTrailers.<key>.
 type CommitTrailers map[string]CommitTrailerValue
 
 type ConfigChoice struct {
@@ -3716,6 +3791,9 @@ type ControlCapacityBoard struct {
 type ControlCapacityCopy struct {
 	Copy string `json:"copy"`
 
+	// The id of the machine record that runs this copy (#6609, #6591): the row in Machines it is the level of. Absent from an older copy, and from a hosted copy, which has no machine record.
+	Machine *string `json:"machine,omitzero"`
+
 	Level CapacityLevel `json:"level"`
 
 	Reason string `json:"reason"`
@@ -3773,6 +3851,18 @@ type ControlEligible struct {
 	Ok bool `json:"ok"`
 
 	Reasons []ControlEligibleReason `json:"reasons"`
+
+	// Where the control plane reached the machine's control role, as a person reads it (#7313): its domain, or its public address, with the port when it is not 443. Absent when it did not reach it there, or reached it by its tunnel.
+	Address *string `json:"address,omitzero"`
+
+	// The machine's memory, as it said it (#7313). Absent when it did not say.
+	MemoryBytes *int64 `json:"memoryBytes,omitzero"`
+
+	// The free space on its fullest disk, as it said it (#7313). Absent when it did not say.
+	DiskFreeBytes *int64 `json:"diskFreeBytes,omitzero"`
+
+	// About how long a move to the machine keeps the control plane frozen, in seconds, from the store's size and the copy's batches (#7395). Changes are refused while it is frozen. Absent from a control plane before #7395.
+	FrozenSeconds *int64 `json:"frozenSeconds,omitzero"`
 }
 
 // One reason a machine cannot take the control role (#6611), with its words for the person.
@@ -3847,10 +3937,6 @@ type ControlMachine struct {
 
 	SignInFrom map[string]MachineRef `json:"signInFrom,omitzero"`
 
-	GitFrom map[string]MachineRef `json:"gitFrom,omitzero"`
-
-	GitAsks []GitAsk `json:"gitAsks,omitzero"`
-
 	Tunnel *MachineTunnel `json:"tunnel,omitzero"`
 
 	Workspace *MachineWorkspace `json:"workspace,omitzero"`
@@ -3891,6 +3977,67 @@ type ControlMachine struct {
 	AutoLabels []string `json:"autoLabels,omitzero"`
 }
 
+// One move of the control plane to another machine (#6612, epic #6608), as v1/moves/<id>.json keeps it: at most 20, for 90 days. At most one runs at a time.
+type ControlMove struct {
+	ID string `json:"id"`
+
+	// The copy that moves: its id.
+	From string `json:"from"`
+
+	To MachineRef `json:"to"`
+
+	// The machine's name when the move started.
+	ToName string `json:"toName"`
+
+	Phase ControlMovePhase `json:"phase"`
+
+	// With failed: the step that failed.
+	FailedPhase *ControlMovePhase `json:"failedPhase,omitzero"`
+
+	// Where the new copy answers, once it said so.
+	Address *string `json:"address,omitzero"`
+
+	// With copying: the records copied so far (#7395). control/moveChanged says it every few seconds during the copy.
+	Copied *int64 `json:"copied,omitzero"`
+
+	// With copying: the records the copy takes (#7395).
+	Total *int64 `json:"total,omitzero"`
+
+	// With forwarding: until when the old copy sends members to the new one (30 days at most).
+	ForwardingUntil *Date `json:"forwardingUntil,omitzero"`
+
+	StartedAt Date `json:"startedAt"`
+
+	UpdatedAt Date `json:"updatedAt"`
+
+	// With failed: what went wrong, in words. The old copy serves again.
+	Error *string `json:"error,omitzero"`
+
+	// The person who started it.
+	By string `json:"by"`
+}
+
+// Where a move stands (#6612), in this order: checking, control/eligible's checks; receiving, the new machine is given the control key, sealed to its own key, and starts a copy that is empty; frozen, the old copy changes no record; copying, the store goes to the new copy; forwarding, the new copy took over and the old one sends members to it (30 days at most); done, the new copy took over at the old address. failed: a step failed, and the old copy serves again.
+type ControlMovePhase string
+
+const ControlMovePhaseChecking ControlMovePhase = "checking"
+const ControlMovePhaseCopying ControlMovePhase = "copying"
+const ControlMovePhaseReceiving ControlMovePhase = "receiving"
+const ControlMovePhaseFrozen ControlMovePhase = "frozen"
+const ControlMovePhaseForwarding ControlMovePhase = "forwarding"
+const ControlMovePhaseDone ControlMovePhase = "done"
+const ControlMovePhaseFailed ControlMovePhase = "failed"
+
+// control/move (#6612): the machine to move the control plane to.
+type ControlMoveRequest struct {
+	Machine MachineRef `json:"machine"`
+}
+
+// control/move's answer: the move, started. control/moveChanged says each step after.
+type ControlMoveResult struct {
+	Move ControlMove `json:"move"`
+}
+
 // control/moved: where the control plane is now (T085).
 type ControlMoved struct {
 	URL string `json:"url"`
@@ -3900,6 +4047,11 @@ type ControlMoved struct {
 	ControlKey Data `json:"controlKey"`
 
 	Name string `json:"name"`
+}
+
+// control/moves/list (#6612): the newest moves first, at most 20.
+type ControlMoves struct {
+	Moves []ControlMove `json:"moves"`
 }
 
 // The control plane's new key (#997, spec 736 FR-043), in ok to a member that proved itself with the previous one. proof is the HMAC of the new key under the member's shared key from the previous one, so only the holder of the previous key could have made it. The member trusts the new key from then on, with no new pairing.
@@ -3956,6 +4108,26 @@ type ControlPushItem struct {
 	Alert bool `json:"alert"`
 
 	Headline *Headline `json:"headline,omitzero"`
+}
+
+// control/receive's answer: where the machine's copy answers now, empty and receiving, and its certificate's pin when it has its own.
+type ControlReceive struct {
+	URL string `json:"url"`
+
+	Pin *string `json:"pin,omitzero"`
+}
+
+// control/receive (#6612): the control plane asks a machine with the control role to start its copy empty, to receive a move. The control key is sealed to the machine's own key, with the move, the machine and the control key's public half as its associated data.
+type ControlReceiveRequest struct {
+	Move string `json:"move"`
+
+	// The address that clients reach the machine at, as control/eligible found it.
+	URL string `json:"url"`
+
+	// The control key's public half (X9.63).
+	ControlKey Data `json:"controlKey"`
+
+	Key SealedEnvelope `json:"key"`
 }
 
 type ControlStatus struct {
@@ -5844,6 +6016,9 @@ type Folder struct {
 
 	HelperLimits *HelperLimits `json:"helperLimits,omitzero"`
 
+	// What Autopilot may start in this folder (#5898). Absent is off.
+	Autopilot *FolderAutopilot `json:"autopilot,omitzero"`
+
 	DiskSpace *DiskThresholds `json:"diskSpace,omitzero"`
 
 	Pinned *bool `json:"pinned,omitzero"`
@@ -5853,6 +6028,15 @@ type Folder struct {
 
 	// The project's working hours (#4821), for a workflow's hours: working and hours: not-working, from .agents/folder.json. Absent is 09:00-17:00, Mon-Fri. Never named.
 	WorkingHours *WorkflowHours `json:"workingHours,omitzero"`
+}
+
+type FolderAutopilot struct {
+	Mode AutopilotMode `json:"mode"`
+
+	// Who chose the mode: a person's name, or the name of what set it.
+	SetBy string `json:"setBy"`
+
+	SetAt Date `json:"setAt"`
 }
 
 type FolderDetection struct {
@@ -6669,7 +6853,7 @@ type ForgeNextRequest struct {
 	Level *string `json:"level,omitzero"`
 }
 
-// A row of forge/next (#5689): an item that is ready (open, not an epic unless the level is epic, no open blocked by, and not taken: no session on this machine that is not archived is labelled with it, no open pull request fixes it, and it has no assignee), or one that is on hold and otherwise ready. place is its place, 1 first. The order: not on hold first; then priority high, medium, none, low; then the milestone's due date, the earliest first, no due date last; then the oldest (createdAt, then the lowest number). reasons are short words for the keys that put it there, as priority high, milestone Work, due 20 Nov, and oldest (when its age put it above the next row). onHold says it is on hold: it is never the next one, and its first reason is on hold.
+// A row of forge/next (#5689): an item that is ready (open, not an epic unless the level is epic, no open blocked by, and not taken: no session on this machine that is not archived is labelled with it, no open pull request fixes it, and it has no assignee), or one that is on hold and otherwise ready. place is its place, 1 first. The order: not on hold first; then priority high, medium, none, low; then size (its size: label, #7034), XS, S, M, L, XL, no size last; then the oldest (createdAt, then the lowest number). A milestone's due date gives no place. reasons are short words for the keys that put it there, as priority high, size S (or no size), and oldest (when its age put it above the next row). onHold says it is on hold: it is never the next one, and its first reason is on hold.
 type ForgeNextRow struct {
 	Item ForgeItem `json:"item"`
 
@@ -6685,7 +6869,7 @@ type ForgeNodeRequest struct {
 	Node LineageNode `json:"node"`
 }
 
-// forge/plan (#3267): an epic and its plan. children are its sub-issues (at most 100), step by step, in the forge's order within a step. steps are the children of each step, the first first. lead is the session on this machine, not archived, that works on the epic in lineage (its label #<n>, or the Linear key) and is labelled lead. standing is set only for a standing epic (#3661): its children are then the open issues of its query, not its sub-issues, at most 100, in the order of forge/next (#5689: not on hold first, then priority, the milestone's due date and the oldest), all in one step 1; its item has no progress.
+// forge/plan (#3267): an epic and its plan. children are its sub-issues (at most 100), step by step, in the forge's order within a step. steps are the children of each step, the first first. lead is the session on this machine, not archived, that works on the epic in lineage (its label #<n>, or the Linear key) and is labelled lead. standing is set only for a standing epic (#3661): its children are then the open issues of its query, not its sub-issues, at most 100, in the order of forge/next (#5689: not on hold first, then priority, size and the oldest), all in one step 1; its item has no progress.
 type ForgePlan struct {
 	Item ForgeItem `json:"item"`
 
@@ -6904,28 +7088,6 @@ type FoundFolder struct {
 	IsRepository bool `json:"isRepository"`
 
 	IsFolder bool `json:"isFolder"`
-}
-
-type GitAsk struct {
-	Server string `json:"server"`
-
-	From MachineRef `json:"from"`
-}
-
-// A credential for one git command. Never printed, logged or kept.
-type GitCredential struct {
-	Username string `json:"username"`
-
-	Password string `json:"password"`
-}
-
-// git/credential, git/fill (#1122): only https, and only the server. `path` is the Go host's, unread by Swift.
-type GitCredentialRequest struct {
-	Protocol string `json:"protocol"`
-
-	Host string `json:"host"`
-
-	Path *string `json:"path,omitzero"`
 }
 
 // The trailer block for a commit or a squash message (#6365), in order, one "Key: value" line each; empty when the rule turns every trailer off.
@@ -7394,16 +7556,6 @@ type LeaseSnapshot struct {
 
 type LeaseTokenRequest struct {
 	Token string `json:"token"`
-}
-
-type LendGit struct {
-	Host MachineRef `json:"host"`
-
-	From MachineRef `json:"from"`
-
-	Server string `json:"server"`
-
-	Allowed bool `json:"allowed"`
 }
 
 // machines/lendSignIn (T091).
@@ -8534,6 +8686,29 @@ type LockJoinStarted struct {
 	Expires Date `json:"expires"`
 }
 
+// A record that a client of a person's machine lock signed, for one or more of the person's machines (#7167). v is 1. person and root name the lock (root is the SHA-256 of its root entry's body). kind and subject say what the value is: setup.script is the approval of a set-up script (SetupScriptApproval), with the subject root or setup. scope says which machines take it: "m:<machine id>" (that one) or "made" (a machine as it is made). seq is at least 1 and goes up with each record of one kind and subject that one machine can take. content is the value's exact bytes, at most 256 KiB; empty content says that the value is removed. key is the signing key (X9.63) of a client of the lock. sig is ECDSA P-256 (r then s) with SHA-256 over "agents-lock-record/1", person, root in lower-case hex, kind, subject, scope, seq in decimal and the lower-case hex SHA-256 of content, each ended by a newline.
+type LockRecord struct {
+	V int64 `json:"v"`
+
+	Person string `json:"person"`
+
+	Root Data `json:"root"`
+
+	Kind string `json:"kind"`
+
+	Subject string `json:"subject"`
+
+	Scope string `json:"scope"`
+
+	Seq int64 `json:"seq"`
+
+	Content Data `json:"content"`
+
+	Key Data `json:"key"`
+
+	Sig Data `json:"sig"`
+}
+
 // A request signed by its sender's own key (#3492, D6, D7): a client's kept request for a machine that is not there, or a machine's call to another of its person's machines. It goes as the request's "lock" member. sig is ECDSA P-256 (r then s) with SHA-256 over "agents-lock-request/1\n", to, "\n", at in decimal, "\n", the method, "\n", then the params as sent. to is the machine's id; a machine may leave it out for another machine it named by name. at is seconds since 1970. The machine refuses one whose key its lock does not name, older than a day, or seen before.
 type LockSignature struct {
 	To *string `json:"to,omitzero"`
@@ -9293,6 +9468,9 @@ type MachineAnnounce struct {
 	MachineID string `json:"machineID"`
 
 	Implementation *string `json:"implementation,omitzero"`
+
+	// What the machine does (#6609, #7314): agents, control or both, from its install. Absent means agents. A machine with control alone runs no agents: it keeps a link for the store copy and the handover, and the control plane opens no client's channel to it.
+	Roles []string `json:"roles,omitzero"`
 }
 
 // machines/botKey through machine/machines (#3950): one of the person's machines gives the bot's key, sealed, to another of theirs (copy), or tells it to forget it (drop). Exactly one of them.
@@ -9337,6 +9515,14 @@ type MachineConnections struct {
 	MachineName string `json:"machineName"`
 
 	Connections ConnectionsList `json:"connections"`
+}
+
+// Where a machine's control role serves (#7313): the domain its certificate is for, when it has one, and the port. With no domain, the control plane dials the public address that the machine's uplink comes from.
+type MachineControlAddress struct {
+	Domain *string `json:"domain,omitzero"`
+
+	// From 1 to 65535; a hello with another is taken as none.
+	Port int64 `json:"port"`
 }
 
 // A conversation of messages/conversationsAll (#5571) with the machine whose connector has it.
@@ -9489,6 +9675,9 @@ type MachineHello struct {
 
 	// The levels of this host's capabilities that are not GA (#6579). None from a host older than that.
 	Maturity Maturity `json:"maturity,omitzero"`
+
+	// Where this machine's own control plane serves, when its install gave it the control role (agentsd install --control, #6610, #7313). Absent when it has none, and from an older host.
+	Control *MachineControlAddress `json:"control,omitzero"`
 }
 
 // The control plane's answer to machine/hello (#4100): what it can do, so the host asks only what it answers, such as machine/accounts with machine.accounts/1. An older control plane answers {}: no list, so the host asks it nothing new.
@@ -9506,6 +9695,9 @@ type MachineInfo struct {
 	State string `json:"state"`
 
 	SSH *string `json:"ssh,omitzero"`
+
+	// Its public addresses, IPv4 then IPv6, from the provider's own record (#7466): an agent reaches root@<address> with the Agent Loops ssh key.
+	Addresses []string `json:"addresses,omitzero"`
 
 	Tunnel *bool `json:"tunnel,omitzero"`
 
@@ -9774,6 +9966,12 @@ type MachineSetup struct {
 	ReadyAt *Date `json:"readyAt,omitzero"`
 }
 
+// machines/setupDeliver through machine/machines (#7155): one of the person's machines, the sender, gives another of theirs a set-up script. The control plane sends that machine's setup/deliver as the sender signed it, and keeps nothing of the text.
+type MachineSetupDeliver struct {
+	// The machine's id, as the person's lock names it.
+	Host string `json:"host"`
+}
+
 // A project folder a pool machine gets: path is the folder on its sources, project the project id it joins there, and sources the person's machines that have it, those online first.
 type MachineSetupProject struct {
 	Path string `json:"path"`
@@ -9810,6 +10008,12 @@ type MachineSetupReport struct {
 
 	// The digits the host shows for its join token (controllink.TokenCode), said with the compare step: the control plane compares them with the ones it made (#5359).
 	Code *string `json:"code,omitzero"`
+
+	// The SHA-256, in lower-case hexadecimal, of the script that the root or user step runs (#7167).
+	Hash *string `json:"hash,omitzero"`
+
+	// The step is done with a warning in its detail, such as a provider that cannot run root set-up (#7167).
+	Warning *bool `json:"warning,omitzero"`
 }
 
 type MachineSetupSource struct {
@@ -9845,9 +10049,15 @@ type MachineSetupStep struct {
 	FromPool *bool `json:"fromPool,omitzero"`
 
 	Slower *bool `json:"slower,omitzero"`
+
+	// The SHA-256, in lower-case hexadecimal, of the script that the root or user step runs (#7167).
+	Hash *string `json:"hash,omitzero"`
+
+	// The step is done with a warning in its detail, such as a provider that cannot run root set-up (#7167).
+	Warning *bool `json:"warning,omitzero"`
 }
 
-// The eight steps, in order: create machine, join machine, install Agents, compare digits, install runtimes, send projects, sign in to runtimes, smoke session.
+// The steps: create machine, join machine, install Agents, compare digits, install runtimes, send projects, sign in to runtimes, smoke session (#5353), and root set-up and your set-up, each only when its script was sent (#7167). The control plane reads a set-up by step id: a client that does not know an id shows it as its name.
 type MachineSetupStepID string
 
 const MachineSetupStepIDCreate MachineSetupStepID = "create"
@@ -9858,6 +10068,8 @@ const MachineSetupStepIDRuntimes MachineSetupStepID = "runtimes"
 const MachineSetupStepIDProjects MachineSetupStepID = "projects"
 const MachineSetupStepIDSignIn MachineSetupStepID = "signIn"
 const MachineSetupStepIDSmoke MachineSetupStepID = "smoke"
+const MachineSetupStepIDRoot MachineSetupStepID = "root"
+const MachineSetupStepIDUser MachineSetupStepID = "user"
 
 // machine/setupWork: what the set-up of the machine that asks has left (#6890, #6896). pool: a warm pool made it. claimed: a person claimed it, and from is the first of steps 6 to 8 that waits to run (absent: none does now). done: nothing is left to ask for. projects: the project folders to get, at their last commit. An unclaimed machine does step 6 and stops.
 type MachineSetupWork struct {
@@ -12245,7 +12457,9 @@ const PolicyRuleNameMarketplacesAllowed PolicyRuleName = "marketplaces.allowed"
 const PolicyRuleNameMarketplacesCustomServers PolicyRuleName = "marketplaces.customServers"
 const PolicyRuleNameEnvironment PolicyRuleName = "environment"
 const PolicyRuleNameConnectorTools PolicyRuleName = "connectorTools"
-const PolicyRuleNameCommitTrailersMadeBy PolicyRuleName = "commitTrailers.Made-by"
+const PolicyRuleNameCommitTrailersManagedBy PolicyRuleName = "commitTrailers.Managed-by"
+const PolicyRuleNameCommitTrailersRuntime PolicyRuleName = "commitTrailers.Runtime"
+const PolicyRuleNameCommitTrailersModel PolicyRuleName = "commitTrailers.Model"
 const PolicyRuleNameCommitTrailersCost PolicyRuleName = "commitTrailers.Cost"
 const PolicyRuleNameCommitTrailersTokens PolicyRuleName = "commitTrailers.Tokens"
 const PolicyRuleNameCommitTrailersDuration PolicyRuleName = "commitTrailers.Duration"
@@ -12254,7 +12468,6 @@ const PolicyRuleNameCommitTrailersFixes PolicyRuleName = "commitTrailers.Fixes"
 const PolicyRuleNameCommitTrailersEpic PolicyRuleName = "commitTrailers.Epic"
 const PolicyRuleNameCommitTrailersRequestedBy PolicyRuleName = "commitTrailers.Requested-by"
 const PolicyRuleNameCommitTrailersApprovedBy PolicyRuleName = "commitTrailers.Approved-by"
-const PolicyRuleNameCommitTrailersCoAuthoredBy PolicyRuleName = "commitTrailers.Co-authored-by"
 
 // The rules a layer sets (#2957, data-model.md "PolicyRules"): the same shape on the organisation, your and a folder's layer (FR-002). Every field is optional: absent sets nothing.
 type PolicyRules struct {
@@ -13871,6 +14084,12 @@ type RequestSecretUse struct {
 
 	// The machine is Linux (#4058): the value opens only with the release key its control plane keeps, which the control plane gives only for an approval the person's client signed. An answer that allows the use carries approval; one without it is refused.
 	NeedsSignature *bool `json:"needsSignature,omitzero"`
+
+	// For pairing (#6875): the client id the terminal pairs with, which the approving window names in its addClient.
+	Client *string `json:"client,omitzero"`
+
+	// For pairing (#6875): the terminal's machine lock key (P-256, X9.63), which the approving window puts on the lock as an addClient.
+	Key Data `json:"key,omitzero"`
 }
 
 // A person's answer to a secret's use (#4015). once allows this use; session every use at this place until the session ends or is archived; always adds a grant for this place, for every session; hour (terminal only, #4179) allows every call of agents-secret NAME with no session's grant for one hour, kept in agentsd's memory only; deny refuses it. A terminal's use takes once, hour or deny. Only the control and device roles answer.
@@ -13879,6 +14098,9 @@ type RequestSecretUseAnswer struct {
 
 	// The answering client's signature of its answer (#4058), required when the request says needsSignature and the action is not deny: method secrets/approveUse, params the JSON text {"request":<the request's id>,"name","use","place","action"} as the request names them, and a LockSignature to this machine by the client's lock key. The machine checks it against its lock and sends it to the control plane, which gives the release key only for a fresh one it has not seen.
 	Approval *LockDelivery `json:"approval,omitzero"`
+
+	// For pairing (#6875): the client code that the approving window made with clients/startPairing for this Mac's control plane, required with once. agentsd gives it to the terminal that asked, and keeps it nowhere.
+	PairingCode *string `json:"pairingCode,omitzero"`
 }
 
 type RequestSource string
@@ -14805,7 +15027,7 @@ type SecretTerminalValue struct {
 	Words *string `json:"words,omitzero"`
 }
 
-// What agentsd does with a secret with Ask before use (#4015): fill types it into a page (fill_secret), ci sends it to GitHub (set_ci_secret), mcp adds it to an HTTP MCP server's header or URL on each request agentsd sends the server for a session (#4120). terminal (#4179) prints a secret that does not ask to `agents-secret NAME` run with no session's grant, such as from a terminal: agentsd cannot tell that caller from an agent that dropped its grant. account (#4163) is not a secret's use: manage_accounts reads an account with Ask before use; the request names the account, and Always Approve turns its Ask before use off. browser and screen (#4264) are not a secret's use either: an agent's lease of the browser or the screen on a machine whose Browser or Desktop control is ask; name is the browser or the screen, place the machine, app the app drive_screen names, and Always Approve sets the setting to always. workflow and connector (#4538) are not a secret's use either: an agent asks to turn on a workflow of its folder that is the person's to turn on (manage_workflows enable), or to approve a server waiting in its folder's .agents/mcp.json (manage_connectors approve); name is the workflow's id or the server's name, place the folder's name, digest the server's entry as the agent saw it. Their answers are once (Approve: agentsd makes the change as the person) and deny.
+// What agentsd does with a secret with Ask before use (#4015): fill types it into a page (fill_secret), ci sends it to GitHub (set_ci_secret), mcp adds it to an HTTP MCP server's header or URL on each request agentsd sends the server for a session (#4120). terminal (#4179) prints a secret that does not ask to `agents-secret NAME` run with no session's grant, such as from a terminal: agentsd cannot tell that caller from an agent that dropped its grant. account (#4163) is not a secret's use: manage_accounts reads an account with Ask before use; the request names the account, and Always Approve turns its Ask before use off. browser and screen (#4264) are not a secret's use either: an agent's lease of the browser or the screen on a machine whose Browser or Desktop control is ask; name is the browser or the screen, place the machine, app the app drive_screen names, and Always Approve sets the setting to always. workflow and connector (#4538) are not a secret's use either: an agent asks to turn on a workflow of its folder that is the person's to turn on (manage_workflows enable), or to approve a server waiting in its folder's .agents/mcp.json (manage_connectors approve); name is the workflow's id or the server's name, place the folder's name, digest the server's entry as the agent saw it. Their answers are once (Approve: agentsd makes the change as the person) and deny. pairing (#6875) is not a secret's use either: loops with no pairing asks this Mac's agentsd for one (clients/pairTerminal); name is the terminal's name, place the command that asked, client and key the client id and lock key it will pair with. Its answers are once (Approve, only from Agent Loops on this Mac, with pairingCode) and deny.
 type SecretUse string
 
 const SecretUseFill SecretUse = "fill"
@@ -14817,6 +15039,7 @@ const SecretUseBrowser SecretUse = "browser"
 const SecretUseScreen SecretUse = "screen"
 const SecretUseWorkflow SecretUse = "workflow"
 const SecretUseConnector SecretUse = "connector"
+const SecretUsePairing SecretUse = "pairing"
 
 // control/secretsLeft (#1760, FR-026): to the person's own clients, when one of their machines was removed with secrets on it.
 type SecretsLeft struct {
@@ -15246,6 +15469,30 @@ type SessionSecrets struct {
 	Secrets []SessionSecret `json:"secrets"`
 }
 
+// A session's summary (#7321): at most 600 characters of text, when it was written, the last turn it read, and the model that wrote it.
+type SessionSummary struct {
+	// What is going on: two to four sentences, at most 600 characters. Empty until the first is written.
+	Text string `json:"text"`
+
+	// When the text was written: the view's Last update.
+	At *Date `json:"at,omitzero"`
+
+	// The TurnSummary.id of the last turn the text read, so a turn is not read twice.
+	ThroughTurn *UUID `json:"throughTurn,omitzero"`
+
+	State SessionSummaryState `json:"state"`
+
+	// The model that wrote the text.
+	Model *string `json:"model,omitzero"`
+}
+
+// Where a session's summary is: being written; written; or the last try failed, and the text of the one before it stays.
+type SessionSummaryState string
+
+const SessionSummaryStateWriting SessionSummaryState = "writing"
+const SessionSummaryStateWritten SessionSummaryState = "written"
+const SessionSummaryStateFailed SessionSummaryState = "failed"
+
 type SessionsListRequest struct {
 	RuntimeID string `json:"runtimeID"`
 
@@ -15390,6 +15637,98 @@ type SettleUntrustedYourPolicyRequest struct {
 	Revision int64 `json:"revision"`
 
 	Sign bool `json:"sign"`
+}
+
+// setup/approve (#7167): a client of the person's lock approves the text of one of this machine's set-up scripts as it is now, for machines as they are made (scope made) or for one machine (m:<id>). approval is a setup.script record whose subject is script and whose content is the script's hash and size; empty content takes the approval of that scope away. The machine keeps the text and the approval only when the record checks against its lock, its number is not lower than the last of its scope, and the file is that text.
+type SetupApprove struct {
+	Script string `json:"script"`
+
+	Approval LockRecord `json:"approval"`
+}
+
+// setup/deliver (#7155, gate 1 of #7151, section 3): a machine of the person's lock, the sender, gives this machine a set-up script with its approval, signed for this machine. This machine takes it only by the four rules of section 3 (setupdelivery.go), keeps it in <root>/machine-setup.json, and runs it as its user, as the step user (Your set-up). made: an automatic send to a machine as it is made or claimed, with an approval of scope made, which a machine takes once.
+type SetupDeliver struct {
+	Script string `json:"script"`
+
+	Text string `json:"text"`
+
+	Approval LockRecord `json:"approval"`
+
+	Made *bool `json:"made,omitzero"`
+}
+
+// setup/rootAgain (#7159): read root.sh's result on this machine again.
+type SetupRootAgain struct {
+	// Then run the steps after Root set-up too, as Try Again does after it failed.
+	Rest bool `json:"rest"`
+}
+
+// setup/rootCommand (#7159): the command a person runs as root on a machine that cannot run root.sh by itself, such as their own server or a made machine whose root.sh failed. It runs the root.sh that a client approved for made machines, once, and leaves its result where Root set-up reads it.
+type SetupRootCommand struct {
+	// One line to paste in a terminal there: the script in base64, run with sudo.
+	Command string `json:"command"`
+
+	// The hash of the root.sh it runs.
+	Hash string `json:"hash"`
+}
+
+// setup/rootLog (#7159): this machine's root.log, from its last root.sh run, for Show Log.
+type SetupRootLog struct {
+	// The end of root.log, at most 64 KiB; empty when there is none.
+	Text string `json:"text"`
+
+	// The log is longer, and text is only its end.
+	Cut bool `json:"cut"`
+}
+
+// One set-up script on this machine (#7167): root (root.sh) or setup (setup.sh) in ~/.agents/machine-setup/. present: the file is there. text, hash and size are the file as it is now (hash: SHA-256 in lower-case hexadecimal); problem says why they are absent from a file that is there (over its limit, or unreadable). approvedText and approvedHash are the text a client approved last, and approvals the records in force for it, one a scope. changed: the file is not the approved text, so it is not used until a client approves it. nextSeq is the number to sign the next approval with.
+type SetupScript struct {
+	Name string `json:"name"`
+
+	Present bool `json:"present"`
+
+	Text *string `json:"text,omitzero"`
+
+	Hash *string `json:"hash,omitzero"`
+
+	Size *int64 `json:"size,omitzero"`
+
+	Problem *string `json:"problem,omitzero"`
+
+	ApprovedText *string `json:"approvedText,omitzero"`
+
+	ApprovedHash *string `json:"approvedHash,omitzero"`
+
+	Approvals []LockRecord `json:"approvals"`
+
+	Changed bool `json:"changed"`
+
+	NextSeq int64 `json:"nextSeq"`
+}
+
+// The content of a setup.script record (#7167): the script's SHA-256 in lower-case hexadecimal, and its length in bytes (at least 1).
+type SetupScriptApproval struct {
+	Hash string `json:"hash"`
+
+	Size int64 `json:"size"`
+}
+
+// setup/scripts (#7167): this machine's two set-up scripts, root then setup, as a client reads them to approve one.
+type SetupScripts struct {
+	Scripts []SetupScript `json:"scripts"`
+}
+
+// setup/send (#7155, gate 1 of #7151, section 3): Send Set-up. A client of the person's lock asks this machine, the sender, to send its setup.sh to the machine host and run it there. approval is a setup.script record of setup, scope m:<host>, of the file as it is now: the sender keeps it as setup/approve does, then sends the approved text, signed by this machine for host, through the control plane (machines/setupDeliver). It answers when host took it, which then runs it.
+type SetupSend struct {
+	// The machine's id, as the person's lock names it.
+	Host string `json:"host"`
+
+	Approval LockRecord `json:"approval"`
+}
+
+// setup/wanted (#7155): the control plane tells the machine that carries a provider that a machine it made (or a warm pool's machine that a person claimed) is ready for the person's setup.sh. It carries no text; the sender sends it only with an approval of scope made, and the target takes one such send.
+type SetupWanted struct {
+	Host string `json:"host"`
 }
 
 type SharedInstructions struct {
@@ -16219,6 +16558,14 @@ type StopBackgroundRequest struct {
 	ItemID string `json:"itemID"`
 }
 
+// What happens to a store over its limit (#7408), by its declaration: refuse, a new write is refused until it is within its limit again; write, the next write removes what is past the limit; hourly or daily, the sweep removes what is past the limit each hour or each day.
+type StoreAtLimit string
+
+const StoreAtLimitRefuse StoreAtLimit = "refuse"
+const StoreAtLimitWrite StoreAtLimit = "write"
+const StoreAtLimitHourly StoreAtLimit = "hourly"
+const StoreAtLimitDaily StoreAtLimit = "daily"
+
 type StoreNotes struct {
 	Notes []string `json:"notes"`
 }
@@ -16274,6 +16621,9 @@ type StoreSize struct {
 
 	// When this store's measurement ended.
 	MeasuredAt *Date `json:"measuredAt,omitzero"`
+
+	// What happens to the store when it is over its limit (#7408). Absent from a host too old to say.
+	AtLimit *StoreAtLimit `json:"atLimit,omitzero"`
 }
 
 // over: past a limit, whatever the measurement's age. stale: older than twice the cadence (2 h on a machine, 12 h on the control plane). unavailable: not measured, or with no measure that a limit can be compared with; why says which.
@@ -16435,6 +16785,31 @@ type TeamWorkflowRuns struct {
 // console/teamWorkflows' answer (#1804, M6): every bot, for an admin.
 type TeamWorkflows struct {
 	Bots []TeamBot `json:"bots"`
+}
+
+// clients/pairTerminal's answer: the code, once a person approved it; else the open request it waits on, and the words to say while it waits.
+type TerminalPairingReply struct {
+	// A one-use client code, as loops auth login takes it.
+	Code *string `json:"code,omitzero"`
+
+	Request *UUID `json:"request,omitzero"`
+
+	Words *string `json:"words,omitzero"`
+}
+
+// clients/pairTerminal (#6875): loops with no pairing on this Mac asks for one.
+type TerminalPairingRequest struct {
+	// The terminal's name, as it pairs: loops on <host name>.
+	Name string `json:"name"`
+
+	// The client id it pairs with. The same id again waits on the same request.
+	Client string `json:"client"`
+
+	// Its machine lock key (P-256, X9.63).
+	Key Data `json:"key"`
+
+	// The name of the program that asked, as it says it: the request's place. agentsd cannot check it.
+	Command *string `json:"command,omitzero"`
 }
 
 type TimeBucket struct {
@@ -16880,6 +17255,9 @@ type TurnsPage struct {
 	OpenStart int64 `json:"openStart"`
 
 	FirstPrompt *int64 `json:"firstPrompt,omitzero"`
+
+	// When the 90-day or size trim took the start of this chat (#7405): the line every client shows where its start was, once it shows the first turn kept. Absent when nothing was removed.
+	StartRemoved *string `json:"startRemoved,omitzero"`
 }
 
 type TurnsRequest struct {
@@ -17958,7 +18336,7 @@ type WorkTimelineRelease struct {
 	URL *string `json:"url,omitzero"`
 }
 
-// work/timeline (#4172): the epics of a project (its id, from a folder's .agents/folder.json) that overlap from to to. With first, the answer can be partial (#7027): ask again without it for all of it.
+// work/timeline (#4172): the epics of a project (its id, from a folder's .agents/folder.json) that overlap from to to. With first, the answer can be partial (#7027): ask again without it for all of it. With onHold (#7335), the open epics on hold come too, each with its children and with no forecast, after the others in the order of forge/next; with none, an epic on hold is left out and its children are not read. Either way they are not in the forecast's history.
 type WorkTimelineRequest struct {
 	Project string `json:"project"`
 
@@ -17967,6 +18345,8 @@ type WorkTimelineRequest struct {
 	To Date `json:"to"`
 
 	First *bool `json:"first,omitzero"`
+
+	OnHold *bool `json:"onHold,omitzero"`
 }
 
 // A line of an epic in work/timeline (#4172): from its first child's start to its last child's close.

@@ -73,6 +73,7 @@ enum BackgroundOutput {
         let local = FileManager.default.temporaryDirectory
             .appendingPathComponent("\(prefix)\(item.id)")
             .appendingPathExtension(ext)
+        // store-bounds: not a store: a copy in the temporary folder, for the person's editor to open; WindowDefaults.sweep removes it
         guard (try? text.write(to: local, atomically: true, encoding: .utf8)) != nil else { return }
         // Async because this function already is: the synchronous open is not the one
         // a concurrent context is offered.

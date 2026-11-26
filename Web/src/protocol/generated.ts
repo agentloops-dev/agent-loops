@@ -97,6 +97,7 @@ export const Failure = {
   sandboxWillNotStart: -32061,
   sessionGone: -32003,
   sessionLiveElsewhere: -32097,
+  setupScriptChanged: -32111,
   shellNotLive: -32011,
   shellWillNotStart: -32010,
   signInWanted: -32070,
@@ -432,6 +433,12 @@ export interface Agent {
    * for a folder in no project.
    */
   project?: string;
+  /**
+   * What is going on in the session, in a few sentences, written by a short call to the runtime's
+   * fastest model when a client opens the session in summary mode (#7321, epic #7318), not by the
+   * agent. Absent until one is written.
+   */
+  summary?: SessionSummary;
 }
 
 export type AgentArchivedReason =
@@ -527,6 +534,23 @@ export interface AgentMachines {
 export interface AgentMachinesHost {
   name: string;
   state: string;
+  /**
+   * The machine's capacity level as it last pushed it (#5875), so an agent does not start heavy
+   * work on a full machine. Absent before its first push.
+   */
+  capacity?: CapacityLevel;
+  /** Its 5-minute load per core when it last pushed. */
+  loadPerCore5?: number;
+  /**
+   * When the control plane last heard its capacity. A figure older than 2 minutes is no figure
+   * (Auto's rule).
+   */
+  capacityAt?: WireDate;
+  /**
+   * The machine's platform as it announced it (macOS 15, Linux), so Autopilot (#5900) sends a
+   * linux-ok issue to a Linux machine. Absent when it did not say.
+   */
+  platform?: string;
 }
 
 export interface AgentMachinesMachine {
@@ -538,6 +562,8 @@ export interface AgentMachinesMachine {
   cost?: string;
   /** Why it failed, on a make that failed (#4706). */
   reason?: string;
+  /** Its public addresses, IPv4 then IPv6, from the provider's own record (#7466). */
+  addresses?: string[];
 }
 
 export interface AgentMachinesProvider {
@@ -1241,6 +1267,58 @@ export interface AutoSettings {
 export interface AutoSkip {
   runtimeID: string;
   reason: string;
+}
+
+/**
+ * What Autopilot starts in a folder (#5898, epic #5897). Off starts nothing; high starts only work
+ * whose priority is high; on starts any ready work. Absent is off.
+ */
+export type AutopilotMode =
+  | "off"
+  | "high"
+  | "on";
+
+export interface AutopilotRequest {
+  folder: URLString;
+}
+
+export interface AutopilotRow {
+  /** The issue or epic, as the forge names it (#123). */
+  ref: string;
+  kind: AutopilotRowKind;
+  state: AutopilotRowState;
+  /**
+   * Why it waits or is paused: one of `limit running`, `limit open-prs`, `capacity near`, `capacity
+   * full`, `on hold`, `blocked by #n`, `paused: main red`, `paused: over budget`, `mode high`.
+   * Empty when it started.
+   */
+  reason: string;
+  /** The session Autopilot started for it; absent until it started one. */
+  session?: UUID;
+  since: WireDate;
+}
+
+/** A lead is for an epic; a lane is for an issue. */
+export type AutopilotRowKind =
+  | "lead"
+  | "lane";
+
+export type AutopilotRowState =
+  | "started"
+  | "waiting"
+  | "paused";
+
+export interface AutopilotSetRequest {
+  folder: URLString;
+  mode: AutopilotMode;
+}
+
+export interface AutopilotStatus {
+  mode: AutopilotMode;
+  /** When Autopilot last looked at the folder's work; absent when it never has. */
+  lastRunAt?: WireDate;
+  /** The newest 100 rows, the newest first. */
+  rows: AutopilotRow[];
 }
 
 export interface BackgroundItem {
@@ -2238,12 +2316,13 @@ export type CapacityLevel =
   | "full";
 
 /**
- * What put a machine near or at capacity (#6596): cpu (its load per core) or memory (critical
- * memory pressure). It stays while the level waits to fall. Absent at ok.
+ * What put a machine near or at capacity (#6596): cpu (its load per core), memory (critical memory
+ * pressure) or disk (disk pressure, #7300). It stays while the level waits to fall. Absent at ok.
  */
 export type CapacityReason =
   | "cpu"
-  | "memory";
+  | "memory"
+  | "disk";
 
 /**
  * machine/capacity (#5374): a host tells the control plane its capacity level and 5-minute load per
@@ -2758,12 +2837,14 @@ export type CommitTrailerValue =
   | "off";
 
 /**
- * The trailers of an agent's commits, each on or off, by the trailer's key (#6365): Made-by, Cost,
- * Tokens, Duration, Session, Fixes, Epic, Requested-by, Approved-by, Co-authored-by. Fixes also
- * writes Refs. A key the machine does not know is kept and has no effect; a key no layer sets has
- * its default (every key on, Cost off). Record trailers (Made-by, Session, Fixes, Epic,
- * Requested-by, Approved-by, Co-authored-by): on is tighter. Spend trailers (Cost, Tokens,
- * Duration): off is tighter. Its rules in policy/effective are commitTrailers.<key>.
+ * The trailers of an agent's commits, each on or off, by the trailer's key (#6365, #7174):
+ * Managed-by, Runtime, Model, Cost, Tokens, Duration, Session, Fixes, Epic, Requested-by,
+ * Approved-by. Fixes also writes Refs. Co-authored-by is not a key: it is the runtime's own line,
+ * and the app never adds, changes or removes it. A key the machine does not know (also the old
+ * Made-by and Co-authored-by) is kept and has no effect; a key no layer sets has its default (every
+ * key on, Cost off). Record trailers (Managed-by, Runtime, Model, Session, Fixes, Epic,
+ * Requested-by, Approved-by): on is tighter. Spend trailers (Cost, Tokens, Duration): off is
+ * tighter. Its rules in policy/effective are commitTrailers.<key>.
  */
 export type CommitTrailers = Record<string, CommitTrailerValue>;
 
@@ -3488,6 +3569,11 @@ export interface ControlCapacityBoard {
 /** One live control plane copy's most recent capacity look (#6590). */
 export interface ControlCapacityCopy {
   copy: string;
+  /**
+   * The id of the machine record that runs this copy (#6609, #6591): the row in Machines it is the
+   * level of. Absent from an older copy, and from a hosted copy, which has no machine record.
+   */
+  machine?: string;
   level: CapacityLevel;
   reason: string;
   loadPerCore: number;
@@ -3536,6 +3622,22 @@ export interface ControlCutOff {
 export interface ControlEligible {
   ok: boolean;
   reasons: ControlEligibleReason[];
+  /**
+   * Where the control plane reached the machine's control role, as a person reads it (#7313): its
+   * domain, or its public address, with the port when it is not 443. Absent when it did not reach
+   * it there, or reached it by its tunnel.
+   */
+  address?: string;
+  /** The machine's memory, as it said it (#7313). Absent when it did not say. */
+  memoryBytes?: number;
+  /** The free space on its fullest disk, as it said it (#7313). Absent when it did not say. */
+  diskFreeBytes?: number;
+  /**
+   * About how long a move to the machine keeps the control plane frozen, in seconds, from the
+   * store's size and the copy's batches (#7395). Changes are refused while it is frozen. Absent
+   * from a control plane before #7395.
+   */
+  frozenSeconds?: number;
 }
 
 /** One reason a machine cannot take the control role (#6611), with its words for the person. */
@@ -3605,8 +3707,6 @@ export interface ControlMachine {
   reach: string;
   machineID?: string;
   signInFrom?: Record<string, MachineRef>;
-  gitFrom?: Record<string, MachineRef>;
-  gitAsks?: GitAsk[];
   tunnel?: MachineTunnel;
   workspace?: MachineWorkspace;
   implementation?: string;
@@ -3660,12 +3760,76 @@ export interface ControlMachine {
   autoLabels?: string[];
 }
 
+/**
+ * One move of the control plane to another machine (#6612, epic #6608), as v1/moves/<id>.json keeps
+ * it: at most 20, for 90 days. At most one runs at a time.
+ */
+export interface ControlMove {
+  id: string;
+  /** The copy that moves: its id. */
+  from: string;
+  to: MachineRef;
+  /** The machine's name when the move started. */
+  toName: string;
+  phase: ControlMovePhase;
+  /** With failed: the step that failed. */
+  failedPhase?: ControlMovePhase;
+  /** Where the new copy answers, once it said so. */
+  address?: string;
+  /**
+   * With copying: the records copied so far (#7395). control/moveChanged says it every few seconds
+   * during the copy.
+   */
+  copied?: number;
+  /** With copying: the records the copy takes (#7395). */
+  total?: number;
+  /** With forwarding: until when the old copy sends members to the new one (30 days at most). */
+  forwardingUntil?: WireDate;
+  startedAt: WireDate;
+  updatedAt: WireDate;
+  /** With failed: what went wrong, in words. The old copy serves again. */
+  error?: string;
+  /** The person who started it. */
+  by: string;
+}
+
+/**
+ * Where a move stands (#6612), in this order: checking, control/eligible's checks; receiving, the
+ * new machine is given the control key, sealed to its own key, and starts a copy that is empty;
+ * frozen, the old copy changes no record; copying, the store goes to the new copy; forwarding, the
+ * new copy took over and the old one sends members to it (30 days at most); done, the new copy took
+ * over at the old address. failed: a step failed, and the old copy serves again.
+ */
+export type ControlMovePhase =
+  | "checking"
+  | "copying"
+  | "receiving"
+  | "frozen"
+  | "forwarding"
+  | "done"
+  | "failed";
+
+/** control/move (#6612): the machine to move the control plane to. */
+export interface ControlMoveRequest {
+  machine: MachineRef;
+}
+
+/** control/move's answer: the move, started. control/moveChanged says each step after. */
+export interface ControlMoveResult {
+  move: ControlMove;
+}
+
 /** control/moved: where the control plane is now (T085). */
 export interface ControlMoved {
   url: string;
   pin?: string;
   controlKey: Base64;
   name: string;
+}
+
+/** control/moves/list (#6612): the newest moves first, at most 20. */
+export interface ControlMoves {
+  moves: ControlMove[];
 }
 
 /**
@@ -3724,6 +3888,29 @@ export interface ControlPushItem {
   needID: NeedID;
   alert: boolean;
   headline?: Headline;
+}
+
+/**
+ * control/receive's answer: where the machine's copy answers now, empty and receiving, and its
+ * certificate's pin when it has its own.
+ */
+export interface ControlReceive {
+  url: string;
+  pin?: string;
+}
+
+/**
+ * control/receive (#6612): the control plane asks a machine with the control role to start its copy
+ * empty, to receive a move. The control key is sealed to the machine's own key, with the move, the
+ * machine and the control key's public half as its associated data.
+ */
+export interface ControlReceiveRequest {
+  move: string;
+  /** The address that clients reach the machine at, as control/eligible found it. */
+  url: string;
+  /** The control key's public half (X9.63). */
+  controlKey: Base64;
+  key: SealedEnvelope;
 }
 
 export interface ControlStatus {
@@ -5448,6 +5635,8 @@ export interface Folder {
   archivedAt?: WireDate;
   addedAt: WireDate;
   helperLimits?: HelperLimits;
+  /** What Autopilot may start in this folder (#5898). Absent is off. */
+  autopilot?: FolderAutopilot;
   diskSpace?: DiskThresholds;
   pinned?: boolean;
   /** Absent is off (#2352). */
@@ -5457,6 +5646,13 @@ export interface Folder {
    * from .agents/folder.json. Absent is 09:00-17:00, Mon-Fri. Never named.
    */
   workingHours?: WorkflowHours;
+}
+
+export interface FolderAutopilot {
+  mode: AutopilotMode;
+  /** Who chose the mode: a person's name, or the name of what set it. */
+  setBy: string;
+  setAt: WireDate;
 }
 
 export interface FolderDetection {
@@ -6329,10 +6525,11 @@ export interface ForgeNextRequest {
  * no open blocked by, and not taken: no session on this machine that is not archived is labelled
  * with it, no open pull request fixes it, and it has no assignee), or one that is on hold and
  * otherwise ready. place is its place, 1 first. The order: not on hold first; then priority high,
- * medium, none, low; then the milestone's due date, the earliest first, no due date last; then the
- * oldest (createdAt, then the lowest number). reasons are short words for the keys that put it
- * there, as priority high, milestone Work, due 20 Nov, and oldest (when its age put it above the
- * next row). onHold says it is on hold: it is never the next one, and its first reason is on hold.
+ * medium, none, low; then size (its size: label, #7034), XS, S, M, L, XL, no size last; then the
+ * oldest (createdAt, then the lowest number). A milestone's due date gives no place. reasons are
+ * short words for the keys that put it there, as priority high, size S (or no size), and oldest
+ * (when its age put it above the next row). onHold says it is on hold: it is never the next one,
+ * and its first reason is on hold.
  */
 export interface ForgeNextRow {
   item: ForgeItem;
@@ -6352,8 +6549,8 @@ export interface ForgeNodeRequest {
  * lead is the session on this machine, not archived, that works on the epic in lineage (its label
  * #<n>, or the Linear key) and is labelled lead. standing is set only for a standing epic (#3661):
  * its children are then the open issues of its query, not its sub-issues, at most 100, in the order
- * of forge/next (#5689: not on hold first, then priority, the milestone's due date and the oldest),
- * all in one step 1; its item has no progress.
+ * of forge/next (#5689: not on hold first, then priority, size and the oldest), all in one step 1;
+ * its item has no progress.
  */
 export interface ForgePlan {
   item: ForgeItem;
@@ -6581,27 +6778,6 @@ export interface FoundFolder {
   exists: boolean;
   isRepository: boolean;
   isFolder: boolean;
-}
-
-export interface GitAsk {
-  server: string;
-  from: MachineRef;
-}
-
-/** A credential for one git command. Never printed, logged or kept. */
-export interface GitCredential {
-  username: string;
-  password: string;
-}
-
-/**
- * git/credential, git/fill (#1122): only https, and only the server. `path` is the Go host's,
- * unread by Swift.
- */
-export interface GitCredentialRequest {
-  protocol: string;
-  host: string;
-  path?: string;
 }
 
 /**
@@ -7001,13 +7177,6 @@ export interface LeaseSnapshot {
 
 export interface LeaseTokenRequest {
   token: string;
-}
-
-export interface LendGit {
-  host: MachineRef;
-  from: MachineRef;
-  server: string;
-  allowed: boolean;
 }
 
 /** machines/lendSignIn (T091). */
@@ -8300,6 +8469,31 @@ export interface LockJoinStarted {
 }
 
 /**
+ * A record that a client of a person's machine lock signed, for one or more of the person's
+ * machines (#7167). v is 1. person and root name the lock (root is the SHA-256 of its root entry's
+ * body). kind and subject say what the value is: setup.script is the approval of a set-up script
+ * (SetupScriptApproval), with the subject root or setup. scope says which machines take it:
+ * "m:<machine id>" (that one) or "made" (a machine as it is made). seq is at least 1 and goes up
+ * with each record of one kind and subject that one machine can take. content is the value's exact
+ * bytes, at most 256 KiB; empty content says that the value is removed. key is the signing key
+ * (X9.63) of a client of the lock. sig is ECDSA P-256 (r then s) with SHA-256 over
+ * "agents-lock-record/1", person, root in lower-case hex, kind, subject, scope, seq in decimal and
+ * the lower-case hex SHA-256 of content, each ended by a newline.
+ */
+export interface LockRecord {
+  v: number;
+  person: string;
+  root: Base64;
+  kind: string;
+  subject: string;
+  scope: string;
+  seq: number;
+  content: Base64;
+  key: Base64;
+  sig: Base64;
+}
+
+/**
  * A request signed by its sender's own key (#3492, D6, D7): a client's kept request for a machine
  * that is not there, or a machine's call to another of its person's machines. It goes as the
  * request's "lock" member. sig is ECDSA P-256 (r then s) with SHA-256 over
@@ -8808,6 +9002,12 @@ export interface MachineAnnounce {
   version: string;
   machineID: string;
   implementation?: string;
+  /**
+   * What the machine does (#6609, #7314): agents, control or both, from its install. Absent means
+   * agents. A machine with control alone runs no agents: it keeps a link for the store copy and the
+   * handover, and the control plane opens no client's channel to it.
+   */
+  roles?: ("agents" | "control")[];
 }
 
 /**
@@ -8862,6 +9062,17 @@ export interface MachineConnections {
   machine: MachineRef;
   machineName: string;
   connections: ConnectionsList;
+}
+
+/**
+ * Where a machine's control role serves (#7313): the domain its certificate is for, when it has
+ * one, and the port. With no domain, the control plane dials the public address that the machine's
+ * uplink comes from.
+ */
+export interface MachineControlAddress {
+  domain?: string;
+  /** From 1 to 65535; a hello with another is taken as none. */
+  port: number;
 }
 
 /** A conversation of messages/conversationsAll (#5571) with the machine whose connector has it. */
@@ -9010,6 +9221,11 @@ export interface MachineHello {
    * that.
    */
   maturity?: Maturity;
+  /**
+   * Where this machine's own control plane serves, when its install gave it the control role
+   * (agentsd install --control, #6610, #7313). Absent when it has none, and from an older host.
+   */
+  control?: MachineControlAddress;
 }
 
 /**
@@ -9033,6 +9249,11 @@ export interface MachineInfo {
   name: string;
   state: string;
   ssh?: string;
+  /**
+   * Its public addresses, IPv4 then IPv6, from the provider's own record (#7466): an agent reaches
+   * root@<address> with the Agent Loops ssh key.
+   */
+  addresses?: string[];
   tunnel?: boolean;
   /**
    * Its ssh host key is made again at each start, as a Google Cloud workstation's is (#1701): after
@@ -9307,6 +9528,16 @@ export interface MachineSetup {
 }
 
 /**
+ * machines/setupDeliver through machine/machines (#7155): one of the person's machines, the sender,
+ * gives another of theirs a set-up script. The control plane sends that machine's setup/deliver as
+ * the sender signed it, and keeps nothing of the text.
+ */
+export interface MachineSetupDeliver {
+  /** The machine's id, as the person's lock names it. */
+  host: string;
+}
+
+/**
  * A project folder a pool machine gets: path is the folder on its sources, project the project id
  * it joins there, and sources the person's machines that have it, those online first.
  */
@@ -9344,6 +9575,15 @@ export interface MachineSetupReport {
    * step: the control plane compares them with the ones it made (#5359).
    */
   code?: string;
+  /**
+   * The SHA-256, in lower-case hexadecimal, of the script that the root or user step runs (#7167).
+   */
+  hash?: string;
+  /**
+   * The step is done with a warning in its detail, such as a provider that cannot run root set-up
+   * (#7167).
+   */
+  warning?: boolean;
 }
 
 export interface MachineSetupSource {
@@ -9373,11 +9613,22 @@ export interface MachineSetupStep {
   error?: string;
   fromPool?: boolean;
   slower?: boolean;
+  /**
+   * The SHA-256, in lower-case hexadecimal, of the script that the root or user step runs (#7167).
+   */
+  hash?: string;
+  /**
+   * The step is done with a warning in its detail, such as a provider that cannot run root set-up
+   * (#7167).
+   */
+  warning?: boolean;
 }
 
 /**
- * The eight steps, in order: create machine, join machine, install Agents, compare digits, install
- * runtimes, send projects, sign in to runtimes, smoke session.
+ * The steps: create machine, join machine, install Agents, compare digits, install runtimes, send
+ * projects, sign in to runtimes, smoke session (#5353), and root set-up and your set-up, each only
+ * when its script was sent (#7167). The control plane reads a set-up by step id: a client that does
+ * not know an id shows it as its name.
  */
 export type MachineSetupStepID =
   | "create"
@@ -9387,7 +9638,9 @@ export type MachineSetupStepID =
   | "runtimes"
   | "projects"
   | "signIn"
-  | "smoke";
+  | "smoke"
+  | "root"
+  | "user";
 
 /**
  * machine/setupWork: what the set-up of the machine that asks has left (#6890, #6896). pool: a warm
@@ -11688,7 +11941,9 @@ export type PolicyRuleName =
   | "marketplaces.customServers"
   | "environment"
   | "connectorTools"
-  | "commitTrailers.Made-by"
+  | "commitTrailers.Managed-by"
+  | "commitTrailers.Runtime"
+  | "commitTrailers.Model"
   | "commitTrailers.Cost"
   | "commitTrailers.Tokens"
   | "commitTrailers.Duration"
@@ -11696,8 +11951,7 @@ export type PolicyRuleName =
   | "commitTrailers.Fixes"
   | "commitTrailers.Epic"
   | "commitTrailers.Requested-by"
-  | "commitTrailers.Approved-by"
-  | "commitTrailers.Co-authored-by";
+  | "commitTrailers.Approved-by";
 
 /**
  * The rules a layer sets (#2957, data-model.md "PolicyRules"): the same shape on the organisation,
@@ -13279,6 +13533,16 @@ export interface RequestSecretUse {
    * that allows the use carries approval; one without it is refused.
    */
   needsSignature?: boolean;
+  /**
+   * For pairing (#6875): the client id the terminal pairs with, which the approving window names in
+   * its addClient.
+   */
+  client?: string;
+  /**
+   * For pairing (#6875): the terminal's machine lock key (P-256, X9.63), which the approving window
+   * puts on the lock as an addClient.
+   */
+  key?: Base64;
 }
 
 /**
@@ -13299,6 +13563,12 @@ export interface RequestSecretUseAnswer {
    * seen.
    */
   approval?: LockDelivery;
+  /**
+   * For pairing (#6875): the client code that the approving window made with clients/startPairing
+   * for this Mac's control plane, required with once. agentsd gives it to the terminal that asked,
+   * and keeps it nowhere.
+   */
+  pairingCode?: string;
 }
 
 export type RequestSource =
@@ -14162,7 +14432,11 @@ export interface SecretTerminalValue {
  * person's to turn on (manage_workflows enable), or to approve a server waiting in its folder's
  * .agents/mcp.json (manage_connectors approve); name is the workflow's id or the server's name,
  * place the folder's name, digest the server's entry as the agent saw it. Their answers are once
- * (Approve: agentsd makes the change as the person) and deny.
+ * (Approve: agentsd makes the change as the person) and deny. pairing (#6875) is not a secret's use
+ * either: loops with no pairing asks this Mac's agentsd for one (clients/pairTerminal); name is the
+ * terminal's name, place the command that asked, client and key the client id and lock key it will
+ * pair with. Its answers are once (Approve, only from Agent Loops on this Mac, with pairingCode)
+ * and deny.
  */
 export type SecretUse =
   | "fill"
@@ -14173,7 +14447,8 @@ export type SecretUse =
   | "browser"
   | "screen"
   | "workflow"
-  | "connector";
+  | "connector"
+  | "pairing";
 
 /**
  * control/secretsLeft (#1760, FR-026): to the person's own clients, when one of their machines was
@@ -14581,6 +14856,34 @@ export interface SessionSecrets {
   secrets: SessionSecret[];
 }
 
+/**
+ * A session's summary (#7321): at most 600 characters of text, when it was written, the last turn
+ * it read, and the model that wrote it.
+ */
+export interface SessionSummary {
+  /**
+   * What is going on: two to four sentences, at most 600 characters. Empty until the first is
+   * written.
+   */
+  text: string;
+  /** When the text was written: the view's Last update. */
+  at?: WireDate;
+  /** The TurnSummary.id of the last turn the text read, so a turn is not read twice. */
+  throughTurn?: UUID;
+  state: SessionSummaryState;
+  /** The model that wrote the text. */
+  model?: string;
+}
+
+/**
+ * Where a session's summary is: being written; written; or the last try failed, and the text of the
+ * one before it stays.
+ */
+export type SessionSummaryState =
+  | "writing"
+  | "written"
+  | "failed";
+
 export interface SessionsListRequest {
   runtimeID: string;
   cwd: URLString;
@@ -14721,6 +15024,122 @@ export interface SettleUntrustedYourPolicyRequest {
   file: string;
   revision: number;
   sign: boolean;
+}
+
+/**
+ * setup/approve (#7167): a client of the person's lock approves the text of one of this machine's
+ * set-up scripts as it is now, for machines as they are made (scope made) or for one machine
+ * (m:<id>). approval is a setup.script record whose subject is script and whose content is the
+ * script's hash and size; empty content takes the approval of that scope away. The machine keeps
+ * the text and the approval only when the record checks against its lock, its number is not lower
+ * than the last of its scope, and the file is that text.
+ */
+export interface SetupApprove {
+  script: "root" | "setup";
+  approval: LockRecord;
+}
+
+/**
+ * setup/deliver (#7155, gate 1 of #7151, section 3): a machine of the person's lock, the sender,
+ * gives this machine a set-up script with its approval, signed for this machine. This machine takes
+ * it only by the four rules of section 3 (setupdelivery.go), keeps it in <root>/machine-setup.json,
+ * and runs it as its user, as the step user (Your set-up). made: an automatic send to a machine as
+ * it is made or claimed, with an approval of scope made, which a machine takes once.
+ */
+export interface SetupDeliver {
+  script: "setup";
+  text: string;
+  approval: LockRecord;
+  made?: boolean;
+}
+
+/** setup/rootAgain (#7159): read root.sh's result on this machine again. */
+export interface SetupRootAgain {
+  /** Then run the steps after Root set-up too, as Try Again does after it failed. */
+  rest: boolean;
+}
+
+/**
+ * setup/rootCommand (#7159): the command a person runs as root on a machine that cannot run root.sh
+ * by itself, such as their own server or a made machine whose root.sh failed. It runs the root.sh
+ * that a client approved for made machines, once, and leaves its result where Root set-up reads it.
+ */
+export interface SetupRootCommand {
+  /** One line to paste in a terminal there: the script in base64, run with sudo. */
+  command: string;
+  /** The hash of the root.sh it runs. */
+  hash: string;
+}
+
+/** setup/rootLog (#7159): this machine's root.log, from its last root.sh run, for Show Log. */
+export interface SetupRootLog {
+  /** The end of root.log, at most 64 KiB; empty when there is none. */
+  text: string;
+  /** The log is longer, and text is only its end. */
+  cut: boolean;
+}
+
+/**
+ * One set-up script on this machine (#7167): root (root.sh) or setup (setup.sh) in
+ * ~/.agents/machine-setup/. present: the file is there. text, hash and size are the file as it is
+ * now (hash: SHA-256 in lower-case hexadecimal); problem says why they are absent from a file that
+ * is there (over its limit, or unreadable). approvedText and approvedHash are the text a client
+ * approved last, and approvals the records in force for it, one a scope. changed: the file is not
+ * the approved text, so it is not used until a client approves it. nextSeq is the number to sign
+ * the next approval with.
+ */
+export interface SetupScript {
+  name: "root" | "setup";
+  present: boolean;
+  text?: string;
+  hash?: string;
+  size?: number;
+  problem?: string;
+  approvedText?: string;
+  approvedHash?: string;
+  approvals: LockRecord[];
+  changed: boolean;
+  nextSeq: number;
+}
+
+/**
+ * The content of a setup.script record (#7167): the script's SHA-256 in lower-case hexadecimal, and
+ * its length in bytes (at least 1).
+ */
+export interface SetupScriptApproval {
+  hash: string;
+  size: number;
+}
+
+/**
+ * setup/scripts (#7167): this machine's two set-up scripts, root then setup, as a client reads them
+ * to approve one.
+ */
+export interface SetupScripts {
+  scripts: SetupScript[];
+}
+
+/**
+ * setup/send (#7155, gate 1 of #7151, section 3): Send Set-up. A client of the person's lock asks
+ * this machine, the sender, to send its setup.sh to the machine host and run it there. approval is
+ * a setup.script record of setup, scope m:<host>, of the file as it is now: the sender keeps it as
+ * setup/approve does, then sends the approved text, signed by this machine for host, through the
+ * control plane (machines/setupDeliver). It answers when host took it, which then runs it.
+ */
+export interface SetupSend {
+  /** The machine's id, as the person's lock names it. */
+  host: string;
+  approval: LockRecord;
+}
+
+/**
+ * setup/wanted (#7155): the control plane tells the machine that carries a provider that a machine
+ * it made (or a warm pool's machine that a person claimed) is ready for the person's setup.sh. It
+ * carries no text; the sender sends it only with an approval of scope made, and the target takes
+ * one such send.
+ */
+export interface SetupWanted {
+  host: string;
 }
 
 export interface SharedInstructions {
@@ -15474,6 +15893,17 @@ export interface StopBackgroundRequest {
   itemID: string;
 }
 
+/**
+ * What happens to a store over its limit (#7408), by its declaration: refuse, a new write is
+ * refused until it is within its limit again; write, the next write removes what is past the limit;
+ * hourly or daily, the sweep removes what is past the limit each hour or each day.
+ */
+export type StoreAtLimit =
+  | "refuse"
+  | "write"
+  | "hourly"
+  | "daily";
+
 export interface StoreNotes {
   notes: string[];
 }
@@ -15521,6 +15951,10 @@ export interface StoreSize {
   percentRecords?: number;
   /** When this store's measurement ended. */
   measuredAt?: WireDate;
+  /**
+   * What happens to the store when it is over its limit (#7408). Absent from a host too old to say.
+   */
+  atLimit?: StoreAtLimit;
 }
 
 /**
@@ -15681,6 +16115,32 @@ export interface TeamWorkflowRuns {
 /** console/teamWorkflows' answer (#1804, M6): every bot, for an admin. */
 export interface TeamWorkflows {
   bots: TeamBot[];
+}
+
+/**
+ * clients/pairTerminal's answer: the code, once a person approved it; else the open request it
+ * waits on, and the words to say while it waits.
+ */
+export interface TerminalPairingReply {
+  /** A one-use client code, as loops auth login takes it. */
+  code?: string;
+  request?: UUID;
+  words?: string;
+}
+
+/** clients/pairTerminal (#6875): loops with no pairing on this Mac asks for one. */
+export interface TerminalPairingRequest {
+  /** The terminal's name, as it pairs: loops on <host name>. */
+  name: string;
+  /** The client id it pairs with. The same id again waits on the same request. */
+  client: string;
+  /** Its machine lock key (P-256, X9.63). */
+  key: Base64;
+  /**
+   * The name of the program that asked, as it says it: the request's place. agentsd cannot check
+   * it.
+   */
+  command?: string;
 }
 
 export interface TimeBucket {
@@ -15891,6 +16351,11 @@ export interface TurnsPage {
   firstTurn: number;
   openStart: number;
   firstPrompt?: number;
+  /**
+   * When the 90-day or size trim took the start of this chat (#7405): the line every client shows
+   * where its start was, once it shows the first turn kept. Absent when nothing was removed.
+   */
+  startRemoved?: string;
 }
 
 export interface TurnsRequest {
@@ -16963,13 +17428,16 @@ export interface WorkTimelineRelease {
 /**
  * work/timeline (#4172): the epics of a project (its id, from a folder's .agents/folder.json) that
  * overlap from to to. With first, the answer can be partial (#7027): ask again without it for all
- * of it.
+ * of it. With onHold (#7335), the open epics on hold come too, each with its children and with no
+ * forecast, after the others in the order of forge/next; with none, an epic on hold is left out and
+ * its children are not read. Either way they are not in the forecast's history.
  */
 export interface WorkTimelineRequest {
   project: string;
   from: WireDate;
   to: WireDate;
   first?: boolean;
+  onHold?: boolean;
 }
 
 /**
@@ -17455,6 +17923,8 @@ export interface Methods {
   "auto/preview": { params: AutoPreviewRequest; result: AutoPreview };
   "auto/set": { params: AutoSettings; result: AutoSettings };
   "auto/state": { params: Empty; result: AutoSettings };
+  "autopilot/set": { params: AutopilotSetRequest; result: AutopilotStatus };
+  "autopilot/status": { params: AutopilotRequest; result: AutopilotStatus };
   "backups/configure": { params: BackupSettings; result: BackupState };
   "backups/make": { params: BackupMakeRequest; result: BackupState };
   "backups/restore": { params: BackupRestoreRequest; result: BackupRestoreResult };
@@ -17512,6 +17982,8 @@ export interface Methods {
   "control/capacity": { params: Empty; result: ControlCapacityBoard };
   "control/connectAnother": { params: ConnectAnotherRequest; result: Empty };
   "control/eligible": { params: ControlEligibleRequest; result: ControlEligible };
+  "control/move": { params: ControlMoveRequest; result: ControlMoveResult };
+  "control/moves/list": { params: Empty; result: ControlMoves };
   "control/planeMove": { params: PlaneMoveAsk; result: Empty };
   "control/restart": { params: Empty; result: Empty };
   "control/retryWeb": { params: Empty; result: WebRemoteStatus };
@@ -17655,7 +18127,6 @@ export interface Methods {
   "machines/install": { params: MachineInstall; result: JSONValue };
   "machines/joinRequests": { params: Empty; result: JoinRequest[] };
   "machines/lastHeard": { params: MachineRequest; result: MachineLastHeard };
-  "machines/lendGit": { params: LendGit; result: Empty };
   "machines/link": { params: MachineLink; result: ControlMachine };
   "machines/list": { params: MachineListQuery; result: ControlMachine[] | MachineList };
   "machines/listKept": { params: KeptListQuery; result: KeptList };
@@ -17952,6 +18423,8 @@ export const MethodTarget = {
   "auto/preview": "host",
   "auto/set": "host",
   "auto/state": "host",
+  "autopilot/set": "host",
+  "autopilot/status": "host",
   "backups/configure": "host",
   "backups/make": "host",
   "backups/restore": "host",
@@ -18009,6 +18482,8 @@ export const MethodTarget = {
   "control/capacity": "control",
   "control/connectAnother": "control",
   "control/eligible": "control",
+  "control/move": "control",
+  "control/moves/list": "control",
   "control/planeMove": "control",
   "control/restart": "control",
   "control/retryWeb": "control",
@@ -18152,7 +18627,6 @@ export const MethodTarget = {
   "machines/install": "control",
   "machines/joinRequests": "control",
   "machines/lastHeard": "control",
-  "machines/lendGit": "control",
   "machines/link": "control",
   "machines/list": "control",
   "machines/listKept": "control",
@@ -18423,6 +18897,7 @@ export interface Notifications {
   "control/lockChanged": LockHead;
   "control/lockJoinDecided": LockJoinDecided;
   "control/lockJoinRequested": LockJoinRequest;
+  "control/moveChanged": ControlMove;
   "control/orgRoutesChanged": Empty;
   "control/peopleChanged": PeopleChanged;
   "control/planeMoveReported": PlaneMoveReport;
@@ -18480,7 +18955,7 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   AddFolderRequest: { required: ["folder"], optional: ["project"] },
   Admitted: { required: [], optional: ["client", "host"] },
   AdoptRequest: { required: ["runtimeID", "sessionID", "cwd"], optional: [] },
-  Agent: { required: ["id", "runtimeID", "cwd", "state", "startOptions", "advertisedOptions", "availableCommands", "createdAt", "lastActivityAt"], optional: ["revision", "title", "labels", "priority", "prioritySet", "prioritySource", "runtimeSessionID", "runtimeKeepsCopy", "browserUsedAt", "isUnread", "isMuted", "reportSeenAt", "endedReason", "archivedReason", "usage", "lastTurnUsage", "costToDate", "costCeiling", "tokensToDate", "tokenCeiling", "plans", "background", "additionalDirectories", "mcpServers", "queuedPrompts", "suggestedPrompts", "startedByWorkflow", "purpose", "startedByRun", "startedByAgent", "chainDepth", "eventWait", "worktree", "pendingMove", "startingPoint", "startRequestID", "persona", "restartPickUps", "report", "outcomeAsked", "archiveRequest", "afterTurn", "archivedAt", "archiveWhy", "sandboxOverride", "effectiveSandbox", "pendingSandboxFailure", "desktopControlPause", "missingFolder", "listsLeftOut", "titleIsPersons", "runtimeTitle", "madeInRoot", "queuedStart", "branchedFrom", "movedFrom", "fileToSee", "continueWhenBack", "runningTool", "accountID", "auto", "clientPermission", "levels", "voiceHungUpAt", "goal", "project"] },
+  Agent: { required: ["id", "runtimeID", "cwd", "state", "startOptions", "advertisedOptions", "availableCommands", "createdAt", "lastActivityAt"], optional: ["revision", "title", "labels", "priority", "prioritySet", "prioritySource", "runtimeSessionID", "runtimeKeepsCopy", "browserUsedAt", "isUnread", "isMuted", "reportSeenAt", "endedReason", "archivedReason", "usage", "lastTurnUsage", "costToDate", "costCeiling", "tokensToDate", "tokenCeiling", "plans", "background", "additionalDirectories", "mcpServers", "queuedPrompts", "suggestedPrompts", "startedByWorkflow", "purpose", "startedByRun", "startedByAgent", "chainDepth", "eventWait", "worktree", "pendingMove", "startingPoint", "startRequestID", "persona", "restartPickUps", "report", "outcomeAsked", "archiveRequest", "afterTurn", "archivedAt", "archiveWhy", "sandboxOverride", "effectiveSandbox", "pendingSandboxFailure", "desktopControlPause", "missingFolder", "listsLeftOut", "titleIsPersons", "runtimeTitle", "madeInRoot", "queuedStart", "branchedFrom", "movedFrom", "fileToSee", "continueWhenBack", "runningTool", "accountID", "auto", "clientPermission", "levels", "voiceHungUpAt", "goal", "project", "summary"] },
   AgentChanges: { required: ["epoch", "revision", "removed", "all"], optional: [] },
   AgentConfigEditorFile: { required: ["path", "content"], optional: [] },
   AgentConfigEditorRequest: { required: ["kind"], optional: ["folder"] },
@@ -18489,8 +18964,8 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   AgentConfigFileRequest: { required: ["path", "time", "counter"], optional: ["contents", "deleted"] },
   AgentConfigFiles: { required: ["files"], optional: ["updated"] },
   AgentMachines: { required: ["providers"], optional: ["hosts"] },
-  AgentMachinesHost: { required: ["name", "state"], optional: [] },
-  AgentMachinesMachine: { required: ["id", "name", "state"], optional: ["host", "hostState", "cost", "reason"] },
+  AgentMachinesHost: { required: ["name", "state"], optional: ["capacity", "loadPerCore5", "capacityAt", "platform"] },
+  AgentMachinesMachine: { required: ["id", "name", "state"], optional: ["host", "hostState", "cost", "reason", "addresses"] },
   AgentMachinesProvider: { required: ["id", "name", "canMake", "canDelete", "workspaces"], optional: ["options"] },
   AgentRemovedNotification: { required: ["agentID"], optional: [] },
   AgentRequest: { required: ["agentID"], optional: [] },
@@ -18551,6 +19026,10 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   AutoPreviewRequest: { required: ["cwd"], optional: ["levels", "sandbox", "needs"] },
   AutoSettings: { required: ["order", "excluded", "overrides"], optional: ["setBy"] },
   AutoSkip: { required: ["runtimeID", "reason"], optional: [] },
+  AutopilotRequest: { required: ["folder"], optional: [] },
+  AutopilotRow: { required: ["ref", "kind", "state", "reason", "since"], optional: ["session"] },
+  AutopilotSetRequest: { required: ["folder", "mode"], optional: [] },
+  AutopilotStatus: { required: ["mode", "rows"], optional: ["lastRunAt"] },
   BackgroundItem: { required: ["id", "kind", "name", "state", "canStop", "isStopping", "startedAt"], optional: ["taskType", "detail", "command", "parentID", "toolCallID", "outputFilePath", "summary", "lastToolName", "endedAt"] },
   Backup: { required: ["id", "machine", "rootID", "madeAt", "bytes", "agents", "thisMachine"], optional: [] },
   BackupMakeRequest: { required: [], optional: ["wait"] },
@@ -18712,24 +19191,30 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   ContinueWhenBack: { required: ["at", "resetKnown"], optional: [] },
   ControlAuth: { required: ["id", "nonce", "mac", "kind"], optional: ["epoch", "capabilities", "page", "publicKey"] },
   ControlCapacityBoard: { required: ["copies"], optional: [] },
-  ControlCapacityCopy: { required: ["copy", "level", "reason", "loadPerCore", "loadPerCore5", "pressureMemoryFullAvg60", "pressureIOFullAvg60", "memoryAvailableBytes", "swapUsedPercent", "heapInuseBytes", "goroutines", "openFiles", "storeFiles", "storeBytes", "at"], optional: [] },
+  ControlCapacityCopy: { required: ["copy", "level", "reason", "loadPerCore", "loadPerCore5", "pressureMemoryFullAvg60", "pressureIOFullAvg60", "memoryAvailableBytes", "swapUsedPercent", "heapInuseBytes", "goroutines", "openFiles", "storeFiles", "storeBytes", "at"], optional: ["machine"] },
   ControlClientChanged: { required: [], optional: ["client", "removed"] },
   ControlCodeShown: { required: ["text", "expires"], optional: ["command"] },
   ControlCutOff: { required: ["why"], optional: ["provider"] },
-  ControlEligible: { required: ["ok", "reasons"], optional: [] },
+  ControlEligible: { required: ["ok", "reasons"], optional: ["address", "memoryBytes", "diskFreeBytes", "frozenSeconds"] },
   ControlEligibleReason: { required: ["reason", "text"], optional: [] },
   ControlEligibleRequest: { required: ["machine"], optional: ["allowSleep"] },
   ControlEndpoint: { required: ["url"], optional: ["pin"] },
   ControlHello: { required: ["v", "name", "control", "nonce", "copy"], optional: ["previous"] },
   ControlInstallProgress: { required: ["name", "step"], optional: [] },
-  ControlMachine: { required: ["id", "name", "platform", "version", "state", "reach"], optional: ["machineID", "signInFrom", "gitFrom", "gitAsks", "tunnel", "workspace", "implementation", "capabilities", "maturity", "missing", "owner", "capacity", "loadPerCore5", "capacityAt", "setup", "roles", "labels", "autoLabels"] },
+  ControlMachine: { required: ["id", "name", "platform", "version", "state", "reach"], optional: ["machineID", "signInFrom", "tunnel", "workspace", "implementation", "capabilities", "maturity", "missing", "owner", "capacity", "loadPerCore5", "capacityAt", "setup", "roles", "labels", "autoLabels"] },
+  ControlMove: { required: ["id", "from", "to", "toName", "phase", "startedAt", "updatedAt", "by"], optional: ["failedPhase", "address", "copied", "total", "forwardingUntil", "error"] },
+  ControlMoveRequest: { required: ["machine"], optional: [] },
+  ControlMoveResult: { required: ["move"], optional: [] },
   ControlMoved: { required: ["url", "controlKey", "name"], optional: ["pin"] },
+  ControlMoves: { required: ["moves"], optional: [] },
   ControlNewKey: { required: ["key", "proof"], optional: [] },
   ControlNotice: { required: ["kind", "words"], optional: ["user", "group"] },
   ControlOK: { required: ["mac"], optional: ["host", "endpoints", "epoch", "newKey"] },
   ControlPerson: { required: ["id", "name", "role"], optional: ["localOwner"] },
   ControlPush: { required: ["sealed"], optional: [] },
   ControlPushItem: { required: ["needID", "alert"], optional: ["headline"] },
+  ControlReceive: { required: ["url"], optional: ["pin"] },
+  ControlReceiveRequest: { required: ["move", "url", "controlKey", "key"], optional: [] },
   ControlStatus: { required: ["name", "version", "machineID"], optional: ["homeHost", "startedAt", "port", "you", "web", "restartable", "publicWeb", "publicViews", "thisMacHost", "folderDetection", "unjoinedTunnels", "capabilities", "maturity", "required", "person", "joinCommand"] },
   Cost: { required: ["amount", "currency"], optional: [] },
   CostLimits: { required: [], optional: ["perAgent", "daily", "perAgentTokens", "dailyTokens"] },
@@ -18868,7 +19353,8 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   FirstBuildStartRequest: { required: ["idea", "starter", "runtimeID"], optional: ["another"] },
   FleetBoard: { required: ["machines"], optional: [] },
   FleetMachine: { required: ["host", "ownerName", "bot"], optional: ["running", "heardAt"] },
-  Folder: { required: ["folder", "addedAt"], optional: ["archivedAt", "helperLimits", "diskSpace", "pinned", "prCostComment", "workingHours"] },
+  Folder: { required: ["folder", "addedAt"], optional: ["archivedAt", "helperLimits", "autopilot", "diskSpace", "pinned", "prCostComment", "workingHours"] },
+  FolderAutopilot: { required: ["mode", "setBy", "setAt"], optional: [] },
   FolderDetection: { required: ["enabled", "paths"], optional: [] },
   FolderHunk: { required: ["oldStart", "newStart", "noNewlineAtEnd", "lines"], optional: [] },
   FolderMCPServer: { required: ["name", "summary", "approval", "missingSecrets", "secretNames", "entryDigest"], optional: ["managed", "signIn", "views", "approvedFrom"] },
@@ -18948,9 +19434,6 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   ForgeStart: { required: ["prompt", "labels"], optional: ["worktree"] },
   ForgeTransition: { required: ["id", "name"], optional: ["category"] },
   FoundFolder: { required: ["folder", "exists", "isRepository", "isFolder"], optional: ["typed"] },
-  GitAsk: { required: ["server", "from"], optional: [] },
-  GitCredential: { required: ["username", "password"], optional: [] },
-  GitCredentialRequest: { required: ["protocol", "host"], optional: ["path"] },
   GitTrailers: { required: ["lines"], optional: [] },
   GitTrailersRequest: { required: ["session"], optional: ["pr"] },
   Goal: { required: ["objective", "status", "at"], optional: ["iterations", "reason", "tokensUsed", "tokenBudget", "timeUsedSeconds"] },
@@ -18994,7 +19477,6 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   LeaseRequest: { required: ["token", "name"], optional: ["minutes", "wait"] },
   LeaseSnapshot: { required: ["resources", "at"], optional: [] },
   LeaseTokenRequest: { required: ["token"], optional: [] },
-  LendGit: { required: ["host", "from", "server", "allowed"], optional: [] },
   LendSignIn: { required: ["host", "from", "runtime", "allowed"], optional: [] },
   Levels: { required: [], optional: ["model", "permission", "permissionRequests"] },
   LineMember: { required: ["agentID", "askedAt", "isCallOpen"], optional: [] },
@@ -19072,6 +19554,7 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   LockJoinNonce: { required: ["request", "nonce"], optional: [] },
   LockJoinRequest: { required: ["request", "client", "name", "kind", "key", "commitment", "expires"], optional: ["machine", "nonce", "answeredBy", "reveal", "compared"] },
   LockJoinStarted: { required: ["request", "expires"], optional: [] },
+  LockRecord: { required: ["v", "person", "root", "kind", "subject", "scope", "seq", "content", "key", "sig"], optional: [] },
   LockSignature: { required: ["at", "key", "sig"], optional: ["to"] },
   MCPAddAnswer: { required: [], optional: ["server", "error"] },
   MCPAddByHandRequest: { required: ["verifyID", "destination"], optional: [] },
@@ -19121,12 +19604,13 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   MachineAgents: { required: ["host", "version", "history", "others"], optional: ["since", "previous", "changes", "changesError"] },
   MachineAgentsOther: { required: ["host", "name", "version"], optional: ["since", "ahead", "behind"] },
   MachineAgentsVersion: { required: ["version"], optional: ["since"] },
-  MachineAnnounce: { required: ["publicKey", "name", "platform", "version", "machineID"], optional: ["implementation"] },
+  MachineAnnounce: { required: ["publicKey", "name", "platform", "version", "machineID"], optional: ["implementation", "roles"] },
   MachineBotKey: { required: ["host"], optional: ["copy", "drop"] },
   MachineCatalog: { required: ["items"], optional: [] },
   MachineClient: { required: ["id", "kind", "publicKey"], optional: ["person"] },
   MachineClients: { required: ["clients"], optional: ["user"] },
   MachineConnections: { required: ["machine", "machineName", "connections"], optional: [] },
+  MachineControlAddress: { required: ["port"], optional: ["domain"] },
   MachineConversation: { required: ["machine", "machineName", "conversation"], optional: [] },
   MachineCounts: { required: ["state", "labels", "provider", "os", "version"], optional: [] },
   MachineCursor: { required: ["machine", "cursor"], optional: [] },
@@ -19139,9 +19623,9 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   MachineFolderSent: { required: [], optional: ["state", "folder", "facts", "pack", "read", "seed", "partsAtOnce"] },
   MachineForgeBoards: { required: ["machine", "machineName", "boards"], optional: [] },
   MachineForgeList: { required: ["machine", "machineName", "list"], optional: [] },
-  MachineHello: { required: ["version", "platform", "machineID"], optional: ["host", "name", "implementation", "capabilities", "maturity"] },
+  MachineHello: { required: ["version", "platform", "machineID"], optional: ["host", "name", "implementation", "capabilities", "maturity", "control"] },
   MachineHelloAnswer: { required: [], optional: ["capabilities"] },
-  MachineInfo: { required: ["id", "name", "state"], optional: ["ssh", "tunnel", "hostKeyRenews", "cost", "idleTimeoutMinutes", "host", "reason", "joining", "notJoined", "setup"] },
+  MachineInfo: { required: ["id", "name", "state"], optional: ["ssh", "addresses", "tunnel", "hostKeyRenews", "cost", "idleTimeoutMinutes", "host", "reason", "joining", "notJoined", "setup"] },
   MachineInstall: { required: ["destination"], optional: ["name", "key", "trust", "tunnel", "provider", "workspace"] },
   MachineJoinAsk: { required: ["name", "platform", "publicKey"], optional: ["version", "machineID", "person"] },
   MachineJoinDecision: { required: ["result"], optional: ["host", "controlKey", "name"] },
@@ -19166,11 +19650,12 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   MachineSessionCall: { required: ["host", "call"], optional: [] },
   MachineSessionStart: { required: ["host", "start"], optional: [] },
   MachineSetup: { required: ["steps", "startedAt"], optional: ["readyAt"] },
+  MachineSetupDeliver: { required: ["host"], optional: [] },
   MachineSetupProject: { required: ["path", "sources"], optional: ["project"] },
   MachineSetupProjects: { required: ["pool", "finished", "folders"], optional: ["detail", "problem"] },
-  MachineSetupReport: { required: ["step", "state"], optional: ["detail", "error", "fromPool", "code"] },
+  MachineSetupReport: { required: ["step", "state"], optional: ["detail", "error", "fromPool", "code", "hash", "warning"] },
   MachineSetupSource: { required: ["machine", "name", "online"], optional: [] },
-  MachineSetupStep: { required: ["id", "state"], optional: ["startedAt", "endedAt", "detail", "error", "fromPool", "slower"] },
+  MachineSetupStep: { required: ["id", "state"], optional: ["startedAt", "endedAt", "detail", "error", "fromPool", "slower", "hash", "warning"] },
   MachineSetupWork: { required: ["pool", "claimed", "done", "projects"], optional: ["from"] },
   MachineStatus: { required: ["idle", "running"], optional: ["schedule"] },
   MachineStop: { required: ["host"], optional: ["confirmRunning"] },
@@ -19470,8 +19955,8 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   RequestDetail: { required: [], optional: ["elicitation", "secretUse"] },
   RequestForge: { required: ["provider", "repo", "item", "number", "url", "label", "checklist", "seenAt"], optional: ["screenshots", "author", "updatedAt"] },
   RequestFormAnswer: { required: ["action"], optional: ["content"] },
-  RequestSecretUse: { required: ["name", "use", "place"], optional: ["call", "app", "digest", "sessionOnly", "needsSignature"] },
-  RequestSecretUseAnswer: { required: ["action"], optional: ["approval"] },
+  RequestSecretUse: { required: ["name", "use", "place"], optional: ["call", "app", "digest", "sessionOnly", "needsSignature", "client", "key"] },
+  RequestSecretUseAnswer: { required: ["action"], optional: ["approval", "pairingCode"] },
   RequestUpdate: { required: ["request"], optional: [] },
   RequestWaiter: { required: ["agent", "since"], optional: [] },
   RequestsAnswer: { required: ["id", "answer"], optional: [] },
@@ -19577,6 +20062,7 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   SessionSecretRemoveRequest: { required: ["agentID", "name"], optional: [] },
   SessionSecretSetRequest: { required: ["agentID", "name", "value"], optional: ["needsApproval", "description"] },
   SessionSecrets: { required: ["secrets"], optional: [] },
+  SessionSummary: { required: ["text", "state"], optional: ["at", "throughTurn", "model"] },
   SessionsListRequest: { required: ["runtimeID", "cwd"], optional: [] },
   SetCeilingRequest: { required: ["agentID"], optional: ["ceiling", "tokenCeiling"] },
   SetClientPermissionRequest: { required: ["agentID"], optional: ["mode"] },
@@ -19598,6 +20084,16 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   SetWorkingHoursRequest: { required: ["folder"], optional: ["hours"] },
   SetYourPolicyRequest: { required: ["rules", "revision"], optional: [] },
   SettleUntrustedYourPolicyRequest: { required: ["file", "revision", "sign"], optional: [] },
+  SetupApprove: { required: ["script", "approval"], optional: [] },
+  SetupDeliver: { required: ["script", "text", "approval"], optional: ["made"] },
+  SetupRootAgain: { required: ["rest"], optional: [] },
+  SetupRootCommand: { required: ["command", "hash"], optional: [] },
+  SetupRootLog: { required: ["text", "cut"], optional: [] },
+  SetupScript: { required: ["name", "present", "approvals", "changed", "nextSeq"], optional: ["text", "hash", "size", "problem", "approvedText", "approvedHash"] },
+  SetupScriptApproval: { required: ["hash", "size"], optional: [] },
+  SetupScripts: { required: ["scripts"], optional: [] },
+  SetupSend: { required: ["host", "approval"], optional: [] },
+  SetupWanted: { required: ["host"], optional: [] },
   SharedInstructions: { required: ["path", "exists", "reach"], optional: [] },
   SharedLook: { required: ["kind", "page", "item", "text"], optional: [] },
   SharedMCP: { required: ["file", "servers", "app", "runtimeOnly"], optional: ["problem"] },
@@ -19676,7 +20172,7 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   StartingPoint: { required: ["repository", "commit"], optional: [] },
   StopBackgroundRequest: { required: ["agentID", "itemID"], optional: [] },
   StoreNotes: { required: ["notes"], optional: [] },
-  StoreSize: { required: ["id", "owner", "scope", "kind", "state"], optional: ["why", "bytes", "records", "averageRecordBytes", "maxBytes", "maxRecords", "limitPer", "percentBytes", "percentRecords", "measuredAt"] },
+  StoreSize: { required: ["id", "owner", "scope", "kind", "state"], optional: ["why", "bytes", "records", "averageRecordBytes", "maxBytes", "maxRecords", "limitPer", "percentBytes", "percentRecords", "measuredAt", "atLimit"] },
   StoreSizes: { required: ["stores", "total"], optional: ["cursor"] },
   StoreSizesQuery: { required: [], optional: ["cursor", "limit"] },
   SuggestedPrompt: { required: ["id", "label", "prompt"], optional: [] },
@@ -19690,6 +20186,8 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   TeamTriggerSent: { required: ["taken"], optional: [] },
   TeamWorkflowRuns: { required: ["workflow", "runs"], optional: ["lastRunAt"] },
   TeamWorkflows: { required: ["bots"], optional: [] },
+  TerminalPairingReply: { required: [], optional: ["code", "request", "words"] },
+  TerminalPairingRequest: { required: ["name", "client", "key"], optional: ["command"] },
   TimeBucket: { required: ["agent", "tools", "others", "person", "turns"], optional: [] },
   TimeHistory: { required: ["hours", "days", "now", "recap", "records"], optional: ["timeZone", "approvalWait"] },
   TimeRecord: { required: ["value", "day"], optional: [] },
@@ -19705,7 +20203,7 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   TurnSummary: { required: ["id", "start", "end"], optional: ["ask", "outcome", "steps", "usage"] },
   TurnUndo: { required: ["turn", "putBack"], optional: [] },
   TurnUsage: { required: ["totalTokens", "inputTokens", "outputTokens"], optional: ["thoughtTokens", "cachedReadTokens", "cachedWriteTokens", "cost", "route", "relayTokens"] },
-  TurnsPage: { required: ["turns", "firstTurn", "openStart"], optional: ["firstPrompt"] },
+  TurnsPage: { required: ["turns", "firstTurn", "openStart"], optional: ["firstPrompt", "startRemoved"] },
   TurnsRequest: { required: ["agentID", "limit"], optional: ["before"] },
   UndoTurnRequest: { required: ["agentID", "turn"], optional: ["confirmed"] },
   UndoTurnResult: { required: ["putBack", "changedSince"], optional: [] },
@@ -19781,7 +20279,7 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   WorkTimelineEpic: { required: ["item", "createdAt", "children", "segments"], optional: ["stateReason", "closedAt", "forecast"] },
   WorkTimelineForecast: { required: ["low", "mid", "high"], optional: ["waits"] },
   WorkTimelineRelease: { required: ["tag", "at", "repo"], optional: ["url"] },
-  WorkTimelineRequest: { required: ["project", "from", "to"], optional: ["first"] },
+  WorkTimelineRequest: { required: ["project", "from", "to"], optional: ["first", "onHold"] },
   WorkTimelineSegment: { required: [], optional: ["startedAt", "closedAt"] },
   Workflow: { required: ["workflowID", "folder", "name", "triggers", "mode", "prompt", "unknownFields", "settings"], optional: ["problem", "cooldown", "hours", "enabled", "archived", "whenDone", "continueWhenBack", "muted", "runsOn"] },
   WorkflowApproval: { required: ["digest", "isNew"], optional: ["note"] },

@@ -78,10 +78,17 @@ struct FolderListView: View {
         let making = model.machinesBeingMade + model.machinesMaking.count
         // Seven or fewer are drawn as they are: nothing asks about their sessions (P20261117-1).
         let ranks = MachinesGroup.ranks(machines.count, making: making)
+        // The control plane's machines stay in the group, as a pinned one does (#6591).
         let listed = machines.map { host in
-            MachinesGroup.Machine(host: host, pinned: pins.contains(host), active: ranks && model.machineIsActive(host))
+            MachinesGroup.Machine(host: host, pinned: pins.contains(host) || model.runsControlPlane(host),
+                                  active: ranks && model.machineIsActive(host))
         }
         return MachinesGroup.rows(listed, making: making)
+    }
+
+    /// The machines that run the control plane first (#6591), when the person sees them as such.
+    private func controlFirst(_ hosts: [MachineRef]) -> [MachineRef] {
+        hosts.filter { model.runsControlPlane($0) } + hosts.filter { !model.runsControlPlane($0) }
     }
 
     /// No runtime can be started on: Runtimes' icon says so in red (#587); one nearly used
@@ -261,9 +268,16 @@ struct FolderListView: View {
                 // At most seven rows, then All Machines (N) (#5286).
                 let rows = machineRows
                 Section(isExpanded: $showsMachines) {
-                    ForEach(rows.machines, id: \.self) { host in
-                        MachineRow(host: host) { picked = [.machine(host)] }
-                            .appText(.supporting).sidebarInk(.machine(host)).tag(SidebarItem.machine(host))
+                    // The control plane's machines first, for an admin with its flag (#6591).
+                    ForEach(controlFirst(rows.machines), id: \.self) { host in
+                        Group {
+                            if model.runsControlPlane(host), ControlPlaneMachine.controlOnly(model.controlPlaneHosts?.first { $0.id == host }) {
+                                ControlPlaneRow(host: host) { picked = [.machine(host)] }
+                            } else {
+                                MachineRow(host: host) { picked = [.machine(host)] }
+                            }
+                        }
+                        .appText(.supporting).sidebarInk(.machine(host)).tag(SidebarItem.machine(host))
                     }
                     // The machines New Machine is making, and the ones the control plane gave up
                     // waiting for (#4610), and every other machine of the person's that never
@@ -289,13 +303,12 @@ struct FolderListView: View {
                 // The Achievements page (#3986), always first.
                 AchievementsRow().activityIcon("multiply.circle")
                     .appText(.supporting).sidebarInk(.achievements).tag(SidebarItem.achievements)
-                SpendingRow(selection: $selection).activityIcon("dollarsign.circle",
-                                                                warns: model.costState?.daySpendIsCloseToFull == true)
-                    .appText(.supporting).sidebarInk(.spending).tag(SidebarItem.spending)
-                TokensRow().activityIcon("number", warns: model.costState?.dayTokensAreCloseToFull == true)
-                    .appText(.supporting).sidebarInk(.tokens).tag(SidebarItem.tokens)
-                TimeRow().activityIcon("clock")
-                    .appText(.supporting).sidebarInk(.time).tag(SidebarItem.time)
+                // One row for the Cost report's three tabs (#6884): its tag is the tab on show, so the row
+                // stays chosen on each, and Spend with another page open.
+                let cost = (model.costTab ?? .spend).item
+                CostRow().activityIcon("dollarsign.circle",
+                                       warns: model.costState?.daySpendIsCloseToFull == true || model.costState?.dayTokensAreCloseToFull == true)
+                    .appText(.supporting).sidebarInk(cost).tag(cost)
                 VelocityRow().activityIcon("arrow.triangle.merge")
                     .appText(.supporting).sidebarInk(.velocity).tag(SidebarItem.velocity)
                 CycleTimeRow().activityIcon("hourglass")
@@ -1325,9 +1338,8 @@ private struct RuntimeMissingLine: View {
 /// that hides itself until the first pound is spent is a row nobody can use to find
 /// out that nothing has been — and while the cost was going unbanked, it was the only
 /// way in and it was never there.
-private struct SpendingRow: View {
+private struct CostRow: View {
     @Environment(AppModel.self) private var model
-    @Binding var selection: SidebarItem?
 
     var body: some View {
         // The title alone (#587): the day's figure and what is left are the tooltip's,
@@ -1340,8 +1352,20 @@ private struct SpendingRow: View {
         .accessibilityValue(figures ?? "")
     }
 
-    /// Today's cost, and what is left of a daily limit where there is one.
+    /// Today's cost and tokens, and what is left of each daily limit where there is one.
     private var figures: String? {
+        let parts = [spend, tokens].compactMap(\.self)
+        return parts.isEmpty ? nil : parts.joined(separator: ". ")
+    }
+
+    private var tokens: String? {
+        guard let state = model.costState else { return nil }
+        let today = "\(state.tokensToday.formatted()) tokens today"
+        guard let left = state.dayTokenHeadroom else { return today }
+        return "\(today), \(left.formatted()) left"
+    }
+
+    private var spend: String? {
         guard let today else { return nil }
         if let state = model.costState, let left = state.dayHeadroom, let daily = state.limits.daily {
             return "\(today) today, \(left.money(in: daily.currency)) left"
@@ -1350,7 +1374,7 @@ private struct SpendingRow: View {
     }
 
     private var help: String {
-        figures.map { "\($0). What every agent has cost. Opens Cost." } ?? "What all of the work has cost"
+        figures.map { "\($0). What every agent has cost, its tokens and its time. Opens Cost." } ?? "What all of the work has cost, its tokens and its time"
     }
 
     /// This Mac's day and every server's, as one figure: what the work cost is the
@@ -1378,7 +1402,7 @@ private struct WakefulnessRow: View {
     var body: some View {
         if let state = model.wakeState, state.hasSomethingToSay {
             // Stacked rather than headline-left/detail-right, which is the shape
-            // `SpendingRow` uses below. That shape wrapped: this column is about
+            // `CostRow` uses below. That shape wrapped: this column is about
             // 226pt wide and "Keeping this Mac awake" plus a trailing count is a few
             // points over, so it broke mid-phrase and read as a mistake. Two lines on
             // purpose, left-aligned, survives a narrower sidebar too.

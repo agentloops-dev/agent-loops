@@ -5,8 +5,8 @@ import SwiftUI
 /// (#5258), which are Core (#4032, #4033); this app alone (Voice; Live Activities, which only a phone or an iPad has
 /// (#1657); and Sidebar, kept on the Mac's host and the same on every client: #1033, #2079), and
 /// Help. Control plane, machine, user and agent configuration settings are Mac + web (#2796,
-/// #2798): the Remote does not have them, but for Agents ▸ Policy (#2957) and the daily
-/// summary's control (#3351), which are Core.
+/// #2798): the Remote does not have them, but for Agents ▸ Policy (#2957), the daily
+/// summary's control (#3351), which are Core, and a machine's Image Hosts (#7140).
 struct RemoteSettings: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(RemoteModel.self) private var model
@@ -67,6 +67,21 @@ struct RemoteSettings: View {
                     }
                 }
                 .paperListRow()
+                // A machine's image hosts (#7140), as the Mac's Settings ▸ Machines ▸ Image Hosts: a person
+                // who can allow a host on a page here can remove it here.
+                if !model.imageHostMachines.isEmpty {
+                    Section("Machines") {
+                        NavigationLink {
+                            RemoteImageHostsPage()
+                                .staleBanner()
+                                .navigationTitle(ImageHostsWords.title)
+                                .navigationBarTitleDisplayMode(.inline)
+                        } label: {
+                            Label(ImageHostsWords.title, icon: ImageHostsWords.symbol)
+                        }
+                    }
+                    .paperListRow()
+                }
                 // The daily checks are Core (#3355, #5853): their one control, as the Mac's and the
                 // web's Agent Configuration ▸ Workflows.
                 Section("Agent Configuration") {
@@ -134,6 +149,23 @@ extension RemoteModel {
             try? await Task.sleep(for: .milliseconds(400))
             self[keyPath: select] = id
             sidebarItem = page
+        }
+    }
+}
+
+/// Settings ▸ Image Hosts on the Remote (#7140): the shared pane, with a menu of the machines that keep the list.
+struct RemoteImageHostsPage: View {
+    @Environment(RemoteModel.self) private var model
+
+    var body: some View {
+        let machines = model.imageHostMachines
+        ImageHostsPane(model: model, machines: machines) { machine, choose in
+            Picker("Machine", selection: Binding(get: { machine.id }, set: { choose($0) })) {
+                ForEach(machines, id: \.id) { Text(verbatim: $0.name).tag($0.id) }
+            }
+            .labelsHidden()
+            .pickerStyle(.menu)
+            .disabled(machines.count < 2)
         }
     }
 }

@@ -60,12 +60,13 @@ var clientSigned = methodSet([]string{wire.CallAgentsStart.Name, wire.CallAgents
 
 // machineSigned is what another of the person's machines may ask (D7): the steps of
 // start_session (#2887, #2927), of send and bring_back (#2929, #2947), and of move_session
-// (#3717), and the bot's key (#3950). Not terminals, nor any other file.
+// (#3717), the bot's key (#3950), and a set-up script (#7155). Not terminals, nor any other file.
 var machineSigned = methodSet([]string{
 	wire.CallAgentsStart.Name, "agents/fromStarter", "agents/endedElsewhere", wire.CallAgentsMoveIn.Name,
 	"folders/receiveState", "folders/receiveUpload", "folders/receive", wire.CallFoldersReceiveSeed.Name,
 	"folders/sendFacts", "folders/sendPack", "folders/sendRead",
 	wire.CallConnectionsBotTake.Name, wire.CallConnectionsBotDrop.Name,
+	wire.CallSetupDeliver.Name,
 })
 
 // registerLockHello serves lock/hello, so the host says host.lock/3. A checked connection
@@ -226,7 +227,8 @@ func (d *Daemon) readChecked(c *Client, line string) (message, bool) {
 		return m, d.refuse(c, m, "it has not read your lock yet; try again in a moment")
 	}
 	if s, ok := machinelock.SignatureOf(m.Lock); ok {
-		return m, d.takeSigned(c, state, m, s)
+		taken := d.takeSigned(c, state, &m, s)
+		return m, taken
 	}
 	if controlAsks[m.Method] {
 		return m, true
@@ -329,24 +331,48 @@ func (d *Daemon) machineSigner() (*ecdsa.PrivateKey, error) {
 }
 
 // takeSigned checks a signed request: by a client for what may be kept, or by another
-// machine of the lock for start_session's steps; each once.
-func (d *Daemon) takeSigned(c *Client, state *machinelock.State, m message, s wire.LockSignature) bool {
+// machine of the lock for start_session's steps; each once. It notes the signer on m, so the
+// handler knows which member of the lock asked (requestSignerOf).
+func (d *Daemon) takeSigned(c *Client, state *machinelock.State, m *message, s wire.LockSignature) bool {
 	host, _, _, ok := d.lockIdentity()
 	if !ok {
-		return d.refuse(c, m, "this machine has not joined a control plane")
+		return d.refuse(c, *m, "this machine has not joined a control plane")
 	}
 	now := nowFunc()
 	member, err := machinelock.CheckRequest(state, host, m.Method, m.Params, s, now)
 	if err != nil {
-		return d.refuse(c, m, err.Error())
+		return d.refuse(c, *m, err.Error())
 	}
 	if member.Client() && !clientSigned[m.Method] || !member.Client() && !machineSigned[m.Method] {
-		return d.refuse(c, m, "that key may not sign "+m.Method)
+		return d.refuse(c, *m, "that key may not sign "+m.Method)
 	}
 	if err := d.seeSigned(machinelock.SignedID(s), s.At, now); err != nil {
-		return d.refuse(c, m, err.Error())
+		return d.refuse(c, *m, err.Error())
 	}
+	m.signer = &requestSigner{member: member, to: deref(s.To)}
 	return true
+}
+
+// requestSigner is the member of the lock that signed a request, and the machine it signed it
+// for ("" when it named none).
+type requestSigner struct {
+	member machinelock.Member
+	to     string
+}
+
+type signerKey struct{}
+
+func withSigner(ctx context.Context, s *requestSigner) context.Context {
+	if s == nil {
+		return ctx
+	}
+	return context.WithValue(ctx, signerKey{}, *s)
+}
+
+// requestSignerOf is the member of the lock that signed the request a handler answers.
+func requestSignerOf(ctx context.Context) (requestSigner, bool) {
+	s, ok := ctx.Value(signerKey{}).(requestSigner)
+	return s, ok
 }
 
 // signedSeen is a signed request taken (by machinelock.SignedID), or, at lockCutoff, the cutoff.

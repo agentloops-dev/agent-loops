@@ -15,6 +15,7 @@ import { orgNames } from "../signIn";
 import { withoutRequest } from "../channelLinks";
 import { withoutSignIn } from "../signIn";
 import type { Store } from "../store";
+import { takeMoves } from "../controlMove";
 
 export const controlPlaneMethods = {
   /**
@@ -110,7 +111,7 @@ export const controlPlaneMethods = {
     return this.once("*", async () => {
       const [hosts] = await Promise.all([this.link.call("machines/list", {}), this.loadPlane(), this.loadKept(), this.loadJoinRequests(),
         this.loadPeople().then(() => Promise.all([this.loadLinkRequests(), this.loadGovernanceRequests(), this.loadBudgetRequests(),
-          this.loadRemoveRequests()])),
+          this.loadRemoveRequests(), this.loadControlMoves()])),
         this.loadSignInRequests()]);
       this.takeHosts(machineRows(hosts));
       this.hostsListed = true;
@@ -179,6 +180,12 @@ export const controlPlaneMethods = {
     } catch (error) {
       this.say(describe(error));
     }
+  },
+  /** A move of the control plane under way or just ended (#6614), for an admin: the strip and a machine's page say it. */
+  async loadControlMoves(this: Store): Promise<void> {
+    if (!this.planeHas(Capability.controlMove1) || this.person.value?.role !== "admin") return;
+    const listed = await this.link.call("control/moves/list", {}).catch(() => null);
+    if (listed) takeMoves(listed.moves);
   },
   /**
    * The one people list (#2055), and the groups the first time: every view reads these. A control plane before

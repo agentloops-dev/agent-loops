@@ -58,6 +58,7 @@ func WriteAtomically(file string, data []byte, mode os.FileMode) error {
 	b := make([]byte, 16)
 	rand.Read(b)
 	tmp := filepath.Join(dir, "."+filepath.Base(file)+"."+hex.EncodeToString(b)+".tmp")
+	// store-bounds: not a store: the atomic write that every store's interface does.
 	f, err := os.OpenFile(tmp, os.O_CREATE|os.O_EXCL|os.O_WRONLY, mode)
 	if err != nil {
 		return err

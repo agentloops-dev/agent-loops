@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
 	"github.com/agentloops-dev/agent-loops/Go/internal/codespacessh"
 	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/hostinstall"
 	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/providers"
@@ -33,6 +34,9 @@ type carriedProviders struct {
 	home  string
 	// The codespaces this machine keeps awake while their machines work (#4637).
 	awake awake
+	// rootBoot is the lines that run the person's root.sh on a machine this one makes (#7154),
+	// and what was sent; none when there is no root.sh. An error stops the make.
+	rootBoot func() (string, *providers.RootBootSent, error)
 }
 
 // carriedConnection is a provider's server, as the record it was made from says.
@@ -53,7 +57,7 @@ func (d *Daemon) carried() *carriedProviders {
 		}
 		store := providers.NewSecrets(filepath.Join(home, ".agents-secrets"))
 		d.carriedHeld = &carriedProviders{held: map[string]*carriedConnection{}, home: home,
-			store: store, oauth: provideroauth.NewCarrier(store)}
+			store: store, oauth: provideroauth.NewCarrier(store), rootBoot: d.rootBootForMake}
 	})
 	return d.carriedHeld
 }
@@ -272,8 +276,18 @@ func (c *carriedProviders) call(request wire.ProviderCarry) wire.ProviderCarried
 				return carriedError("The options are not JSON: " + err.Error())
 			}
 		}
-		made, runs, said, err := connection.CreateSaying(name, options, request.FirstBoot)
-		return carriedResult(providers.CarriedCreate{Made: made, Runs: runs, Said: said}, err)
+		// The lines that run root.sh are this machine's to fill in (#7154): nothing in the
+		// control plane's request sets them.
+		rootBoot, sent := "", (*providers.RootBootSent)(nil)
+		if c.rootBoot != nil {
+			var err error
+			if rootBoot, sent, err = c.rootBoot(); err != nil {
+				return carriedError(err.Error())
+			}
+		}
+		made, err := connection.CreateRooted(name, options, request.FirstBoot, rootBoot)
+		made.Root = sent
+		return carriedResult(made, err)
 	case "delete":
 		err := connection.Delete(workspace)
 		if err == nil {
@@ -344,6 +358,9 @@ func (c *carriedProviders) end(provider string) {
 // keep is providers/keepSecrets. Never logged.
 func (c *carriedProviders) keep(request wire.ProviderSecretsKeep) wire.ProviderCarried {
 	if err := c.store.Set(string(request.Provider), c.oauth.Pasted(request.Secrets)); err != nil {
+		if limit := (store.LimitError{}); errors.As(err, &limit) {
+			return carriedError("This machine could not keep the provider's secrets: " + limit.Words + ".")
+		}
 		return carriedError("This machine could not keep the provider's secrets.")
 	}
 	c.end(string(request.Provider))

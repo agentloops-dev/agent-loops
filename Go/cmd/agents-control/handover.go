@@ -3,10 +3,8 @@ package main
 import (
 	"context"
 	"crypto/rand"
-	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/url"
 	"os"
@@ -15,136 +13,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/agentloops-dev/agent-loops/Go/internal/controllink"
 	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane"
 	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/records"
 	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/store"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
-
-// handoverLink is Handover.Link: a handover session with one copy, dialled and proved as
-// x:handover-<id> with the copies' key, which only the control plane's key gives.
-type handoverLink struct {
-	lines *controllink.Lines
-	next  int
-}
-
-func dialHandover(ctx context.Context, base, pin string, key []byte) (*handoverLink, error) {
-	public, err := controllink.PublicKey(key)
-	if err != nil {
-		return nil, err
-	}
-	nonce := make([]byte, 4)
-	rand.Read(nonce)
-	lines, _, err := controllink.Join(ctx, base, pin, controllink.Credentials{
-		Identity: "x:handover-" + hex.EncodeToString(nonce), Key: controllink.CopyKey(key), Kind: "copy", ControlKey: public})
-	if err != nil {
-		return nil, err
-	}
-	return &handoverLink{lines: lines, next: 1}, nil
-}
-
-// rpcFailure is a copy's refusal, in its own words.
-type rpcFailure struct {
-	Code    int    `json:"code"`
-	Message string `json:"message"`
-}
-
-func (f *rpcFailure) Error() string { return f.Message }
-
-func (l *handoverLink) call(method string, params any) (json.RawMessage, error) {
-	id := l.next
-	l.next++
-	if params == nil {
-		params = map[string]any{}
-	}
-	line, err := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": id, "method": method, "params": params})
-	if err != nil {
-		return nil, err
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-	defer cancel()
-	if err := l.lines.Write(ctx, string(line)); err != nil {
-		return nil, err
-	}
-	for {
-		text, err := l.lines.Read(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("the copy stopped answering: %w", err)
-		}
-		var m struct {
-			ID     *int            `json:"id"`
-			Result json.RawMessage `json:"result"`
-			Error  *rpcFailure     `json:"error"`
-		}
-		if json.Unmarshal([]byte(text), &m) != nil || m.ID == nil || *m.ID != id {
-			continue
-		}
-		if m.Error != nil {
-			return nil, m.Error
-		}
-		return m.Result, nil
-	}
-}
-
-// peerStore is PeerStore: a copy's store over its handover session, read from a frozen
-// copy and written into a receiving one, so CopyStore runs between two machines.
-type peerStore struct{ link *handoverLink }
-
-func (p peerStore) Get(_ context.Context, key string) (*store.Object, error) {
-	reply, err := p.link.call("store/get", map[string]string{"key": key})
-	if err != nil {
-		return nil, err
-	}
-	var o struct{ Data, ETag string }
-	if json.Unmarshal(reply, &o) != nil || o.Data == "" && o.ETag == "" {
-		return nil, nil
-	}
-	data, err := base64.StdEncoding.DecodeString(o.Data)
-	if err != nil {
-		return nil, err
-	}
-	return &store.Object{Data: data, ETag: o.ETag}, nil
-}
-
-func (p peerStore) Put(_ context.Context, key string, data []byte, when store.Condition) (string, error) {
-	if !when.IsAbsent() {
-		return "", errors.New("a handover only creates records")
-	}
-	reply, err := p.link.call("store/put", map[string]string{"key": key, "data": base64.StdEncoding.EncodeToString(data)})
-	var refused *rpcFailure
-	if errors.As(err, &refused) && refused.Code == wire.FailureChangedElsewhere {
-		return "", &store.ConflictError{Key: key}
-	}
-	if err != nil {
-		return "", err
-	}
-	var tag string
-	if err := json.Unmarshal(reply, &tag); err != nil {
-		return "", fmt.Errorf("store/put: the tag: %w", err)
-	}
-	return tag, nil
-}
-
-func (p peerStore) Delete(context.Context, string) error {
-	return errors.New("a handover never deletes")
-}
-
-func (p peerStore) List(_ context.Context, prefix string) ([]store.Key, error) {
-	reply, err := p.link.call("store/list", map[string]string{"prefix": prefix})
-	if err != nil {
-		return nil, err
-	}
-	var entries []struct{ Key, ETag string }
-	if err := json.Unmarshal(reply, &entries); err != nil {
-		return nil, err
-	}
-	keys := make([]store.Key, 0, len(entries))
-	for _, e := range entries {
-		keys = append(keys, store.Key{Key: e.Key, ETag: e.ETag, Size: -1})
-	}
-	return keys, nil
-}
 
 // ownCopy is `self`: with --home, the address and pin `serve --home` gives itself, so a
 // copy started empty to receive is reachable too (T127); otherwise what its settings say.
@@ -197,16 +70,16 @@ func handover() {
 	h := &handoverLinks{}
 	switch step {
 	case "status", "freeze", "unfreeze", "withdraw", "take", "stop":
-		showHandoverStatus(h.link("--at", "--pin").call("handover/"+step, nil))
+		showHandoverStatus(h.link("--at", "--pin").Call("handover/"+step, nil))
 	case "announce":
-		showHandoverStatus(h.link("--at", "--pin").call("handover/announce", map[string]any{"endpoint": handoverEndpoints()[0], "force": has("--force")}))
+		showHandoverStatus(h.link("--at", "--pin").Call("handover/announce", map[string]any{"endpoint": handoverEndpoints()[0], "force": has("--force")}))
 	case "forward":
 		// 30 days at most, the copy's own rule; --days for fewer.
 		params := map[string]any{"endpoints": handoverEndpoints()}
 		if days, err := strconv.ParseFloat(value("--days"), 64); err == nil {
 			params["until"] = wire.DateOf(time.Now().Add(time.Duration(days * 24 * float64(time.Hour))))
 		}
-		showHandoverStatus(h.link("--at", "--pin").call("handover/forward", params))
+		showHandoverStatus(h.link("--at", "--pin").Call("handover/forward", params))
 	case "shares":
 		h.shares()
 	case "copy":
@@ -222,7 +95,7 @@ type handoverLinks struct {
 	key []byte
 }
 
-func (h *handoverLinks) link(flag, pinFlag string) *handoverLink {
+func (h *handoverLinks) link(flag, pinFlag string) *controlplane.HandoverLink {
 	text, pin := value(flag), value(pinFlag)
 	if text == "" {
 		fail("say %s https://… (or self) for the copy", flag)
@@ -233,7 +106,7 @@ func (h *handoverLinks) link(flag, pinFlag string) *handoverLink {
 	if h.key == nil {
 		h.key = privateKey(openStore(""))
 	}
-	l, err := dialHandover(context.Background(), text, pin, h.key)
+	l, err := controlplane.DialHandover(context.Background(), text, pin, h.key)
 	if err != nil {
 		fail("couldn't reach %s as this control plane: %v", text, err)
 	}
@@ -247,10 +120,10 @@ func (h *handoverLinks) shares() {
 	nonce := make([]byte, 16)
 	rand.Read(nonce)
 	mark := hex.EncodeToString(nonce)
-	if _, err := at.call("handover/mark", map[string]any{"nonce": mark, "leave": true}); err != nil {
+	if _, err := at.Call("handover/mark", map[string]any{"nonce": mark, "leave": true}); err != nil {
 		fail("%v", err)
 	}
-	reply, err := with.call("handover/mark", map[string]any{"nonce": mark})
+	reply, err := with.Call("handover/mark", map[string]any{"nonce": mark})
 	var found struct{ Found bool }
 	if err != nil || json.Unmarshal(reply, &found) != nil || !found.Found {
 		fail("not the same store: %s doesn't see what %s wrote", value("--with"), value("--at"))
@@ -273,7 +146,7 @@ func (h *handoverLinks) end(flag, pinFlag string) store.Store {
 		fail("say %s", flag)
 	}
 	if text == "self" || strings.HasPrefix(text, "https://") || strings.HasPrefix(text, "http://") {
-		return peerStore{h.link(flag, pinFlag)}
+		return controlplane.PeerStore{Link: h.link(flag, pinFlag)}
 	}
 	return openStore(text)
 }

@@ -16,10 +16,17 @@ struct MachineSetupSection<SignIn: View>: View {
     let onRetry: () -> Void
     /// Delete, once the person said yes.
     let onDelete: () -> Void
+    /// Copy Root Command… and Show Log on a failed Root set-up (#7159), behind the flag: the Mac
+    /// window's; the Remote has neither (Mac + web).
+    var onRootCommand: (() -> Void)?
+    var onRootLog: (() -> Void)?
     /// Under step 7, Sign in to runtimes.
     @ViewBuilder let signIn: () -> SignIn
 
     @State private var deleting = false
+    /// Machine scripts, a flag in work (#7154, `FeatureFlag`): a failed Root set-up shows root.log's
+    /// last lines and what to do.
+    @AppStorage(FeatureFlag.machineScripts.key, store: WindowDefaults.store) private var scriptsOn = false
 
     var body: some View {
         if let folded = MachineSetupWords.foldedLine(setup) {
@@ -33,10 +40,18 @@ struct MachineSetupSection<SignIn: View>: View {
                     if step.id == "signIn" { signIn() }
                 }
                 if let failed = MachineSetupWords.failedStep(setup) {
-                    Text(failed.error ?? "\(MachineSetupWords.name(failed)) failed.")
-                        .foregroundStyle(StateTint.failure.style(or: .primary))
+                    if scriptsOn, failed.id == "root" {
+                        rootFailed(failed)
+                    } else {
+                        Text(failed.error ?? "\(MachineSetupWords.name(failed)) failed.")
+                            .foregroundStyle(StateTint.failure.style(or: .primary))
+                    }
                     HStack {
                         Button("Try Again", action: onRetry)
+                        if scriptsOn, failed.id == "root" {
+                            if let onRootCommand { Button("Copy Root Command…", action: onRootCommand) }
+                            if let onRootLog { Button("Show Log", action: onRootLog) }
+                        }
                         Button("Delete Machine…", role: .destructive) { deleting = true }
                     }
                     #if os(iOS)
@@ -53,12 +68,32 @@ struct MachineSetupSection<SignIn: View>: View {
         }
     }
 
+    /// A failed Root set-up (#7154, gate 2's *page root failed*): root.log's last lines, and that a
+    /// fixed root.sh needs a new machine.
+    @ViewBuilder
+    private func rootFailed(_ step: DaemonAPI.MachineSetupStep) -> some View {
+        Text("root.sh failed.").foregroundStyle(StateTint.failure.style(or: .primary))
+        if let lines = step.detail, !lines.isEmpty {
+            Text(lines)
+                .appText(.fine)
+                .monospaced()
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(8)
+                .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 6))
+        }
+        Text(MachineSetupWords.rootFailedAdvice(row.name))
+            .appText(.fine)
+            .foregroundStyle(.secondary)
+    }
+
     private func stepRow(_ step: DaemonAPI.MachineSetupStep, now: Date) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
-            Image(icon: Self.symbol(step.state))
-                .foregroundStyle(Self.tint(step.state).style(or: .secondary))
+        let warned = MachineSetupWords.isWarned(step)
+        return HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Image(icon: warned ? Self.warningSymbol : Self.symbol(step.state))
+                .foregroundStyle((warned ? StateTint.warning : Self.tint(step.state)).style(or: .secondary))
                 .frame(width: 18)
-                .accessibilityLabel(Self.stateWords(step.state))
+                .accessibilityLabel(warned ? "Done, with a warning" : Self.stateWords(step.state))
             VStack(alignment: .leading, spacing: 2) {
                 Text(MachineSetupWords.name(step))
                 Text(MachineSetupWords.line(step, now: now))
@@ -73,6 +108,9 @@ struct MachineSetupSection<SignIn: View>: View {
         }
         .accessibilityElement(children: .combine)
     }
+
+    /// A step done with a warning (#7154).
+    static var warningSymbol: String { "exclamationmark.triangle.fill" }
 
     static func symbol(_ state: DaemonAPI.MachineSetupStep.State) -> String {
         switch state {

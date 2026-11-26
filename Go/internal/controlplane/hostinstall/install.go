@@ -35,6 +35,8 @@ type Tunnels interface {
 	// LetGo drops the tunnels held for this destination: the install replaces the host
 	// they carried, and their forward would take the port the new one needs.
 	LetGo(ctx context.Context, destination, name string)
+	// Room refuses a tunnel that Add would have no room for.
+	Room(record TunnelRecord) error
 	// Add is HostTunnels.add: hold a tunnel for a server just installed, at once, so
 	// its first dial finds it.
 	Add(ctx context.Context, record TunnelRecord) error
@@ -306,6 +308,7 @@ func holdKey(folder string, given *string) (string, error) {
 	if !strings.HasSuffix(key, "\n") {
 		key += "\n"
 	}
+	// store-bounds: not a store: a key in the install's temporary folder, removed when the install ends
 	if os.WriteFile(keyFile, []byte(key), 0o600) != nil {
 		return "", &Failure{Code: InternalError, Message: "The key could not be held for the install."}
 	}
@@ -447,6 +450,9 @@ func (i *Installer) joinCode(ctx context.Context, request Request, at connection
 	}
 	tunnel := &TunnelRecord{ID: newID(), Destination: destination, Name: at.name, Port: port, Code: id,
 		KnownHosts: trusted, Made: records.Now()}
+	if err := i.Tunnels.Room(*tunnel); err != nil {
+		return "", nil, &Failure{Code: NotAllowed, Message: "The tunnel was not added: " + err.Error() + "."}
+	}
 	// A tunnel held before for this server goes now, before the steps below: its
 	// master would dial again beside them, and its forward holds the port (#1769).
 	i.Tunnels.LetGo(ctx, destination, at.name)
@@ -621,6 +627,7 @@ func (i *Installer) pinned(ctx context.Context, destination, knownHosts string, 
 		if renew {
 			pinned = ""
 		}
+		// store-bounds: not a store: a known_hosts file in a temporary folder, removed when the start ends
 		if err := os.WriteFile(file, []byte(pinned), 0o600); err != nil {
 			done()
 			return ssh, "", func() {}, err

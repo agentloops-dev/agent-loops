@@ -6,6 +6,8 @@ public extension DaemonAPI {
     /// One live control plane copy's most recent capacity look (#6590).
     struct ControlCapacityCopy: Codable, Sendable, Hashable {
         public var copy: String
+        /// The id of the machine record that runs it (#6609, #6591); nil from an older copy and a hosted one.
+        public var machine: String?
         public var level: CapacityLevel
         public var reason: String
         public var loadPerCore: Double

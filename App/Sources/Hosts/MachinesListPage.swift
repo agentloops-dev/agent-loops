@@ -50,6 +50,10 @@ struct MachinesListPage: View {
             guard !Task.isCancelled else { return }
             await read(choice)
         }
+        // The control plane's level, read again as the page opens (#6591).
+        .task(id: model.showsControlPlaneMachine) {
+            if model.showsControlPlaneMachine, let control = model.controlRequests { await model.controlCapacity.read(control) }
+        }
         // A selected machine that is no longer in the list is let go.
         .onChange(of: rows.map(\.id)) { _, ids in picked.formIntersection(ids) }
         .confirmationDialog(stopTitle, isPresented: Binding(get: { stopping != nil }, set: { if !$0 { stopping = nil } }),
@@ -77,6 +81,9 @@ struct MachinesListPage: View {
         HStack(alignment: .firstTextBaseline) {
             Text("Machines").appText(.reading)
             Spacer(minLength: 16)
+            if model.showsControlPlaneMachine, model.controlCapacity.refreshing {
+                ProgressView().controlSize(.small).accessibilityLabel("Refreshing capacity")
+            }
             if let readAt { LastUpdateText(read: readAt) }
         }
     }
@@ -146,11 +153,15 @@ struct MachinesListPage: View {
     }
 
     private var table: some View {
-        Table(rows, selection: $picked) {
+        Table(shown, selection: $picked) {
             TableColumn("Machine") { row in
                 VStack(alignment: .leading, spacing: 2) {
                     Text(name(row)).fontWeight(.semibold).lineLimit(1)
-                    Text(MachineListChoice.stateWords(row)).appText(.fine).foregroundStyle(.secondary).lineLimit(1)
+                    if model.runsControlPlane(row.id) {
+                        controlLines(row)
+                    } else {
+                        Text(MachineListChoice.stateWords(row)).appText(.fine).foregroundStyle(.secondary).lineLimit(1)
+                    }
                 }
             }
             TableColumn("OS") { row in Text(row.platform).lineLimit(1) }
@@ -232,12 +243,42 @@ struct MachinesListPage: View {
 
     private var selected: [DaemonAPI.ControlMachine] { rows.filter { picked.contains($0.id) } }
 
+    /// The rows as drawn: the control plane's machines first, for an admin with its flag (#6591).
+    private var shown: [DaemonAPI.ControlMachine] {
+        model.showsControlPlaneMachine ? ControlPlaneMachine.first(rows) : rows
+    }
+
+    /// Under a machine that runs the control plane (#6591): where it is, then its level in the
+    /// level's tint, as a host's capacity (#4748).
+    @ViewBuilder
+    private func controlLines(_ row: DaemonAPI.ControlMachine) -> some View {
+        let look = model.controlPlaneLook(row.id)
+        Text(ControlPlaneMachine.controlOnly(row) ? ControlPlanePage.meta(row, among: model.controlPlaneHosts ?? rows) : "Runs the control plane \u{00B7} \(MachineListChoice.stateWords(row))")
+            .appText(.fine).foregroundStyle(.secondary).lineLimit(1)
+        HStack(spacing: 5) {
+            Circle().fill((look?.level == .ok ? StateTint.vouched : MachinePage.tint(look?.level)).style(or: .secondary))
+                .frame(width: 7, height: 7)
+                .accessibilityHidden(true)
+            Text(look == nil ? model.controlCapacity.noReadingWords.line : ControlPlaneMachine.rowLine(look))
+                .foregroundStyle(look.map { MachinePage.tint($0.level) }?.style(or: .secondary) ?? AnyShapeStyle(.secondary))
+        }
+        .appText(.fine)
+        .monospacedDigit()
+        .lineLimit(1)
+    }
+
     private var stopTitle: String {
         let count = stopping?.hosts.count ?? 0
         return count == 1 ? "Stop 1 machine?" : "Stop \(count) machines?"
     }
 
-    private func name(_ row: DaemonAPI.ControlMachine) -> String { row.id == .mac ? "This Mac" : row.name }
+    private func name(_ row: DaemonAPI.ControlMachine) -> String {
+        // A control-only machine that runs no copy is not the control plane yet (#7393).
+        if model.runsControlPlane(row.id), ControlPlaneMachine.controlOnly(row) {
+            return ControlPlaneMachine.title(row, among: model.controlPlaneHosts ?? rows)
+        }
+        return row.id == .mac ? "This Mac" : row.name
+    }
 
     // MARK: Reading
 

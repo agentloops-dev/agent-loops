@@ -42,6 +42,8 @@ const (
 	scriptLogMost  = 1 << 20
 	scriptLogsMost = 100
 	scriptLogAge   = 7 * 24 * time.Hour
+	// userLogAge is the age of the person's setup.sh's log (#7155), user-setup.log.
+	userLogAge = 90 * 24 * time.Hour
 )
 
 // cut is s in at most n bytes.
@@ -91,6 +93,12 @@ func Sweep(root string, now time.Time) {
 		}
 	}
 	slices.SortFunc(logs, func(a, b aged) int { return b.at.Compare(a.at) })
+	user := filepath.Join(root, "logs", UserScriptLog)
+	if info, err := os.Lstat(user); err == nil && info.Mode().IsRegular() && now.Sub(info.ModTime()) >= userLogAge {
+		if err := os.Remove(user); err != nil {
+			log.Printf("retention: %s: %v", UserScriptLog, err)
+		}
+	}
 	for i, l := range logs {
 		if i >= scriptLogsMost || now.Sub(l.at) >= scriptLogAge {
 			if err := os.Remove(l.path); err != nil {
@@ -128,6 +136,26 @@ func NewReporter(root string) (*Reporter, error) {
 // moreReports goes on saying steps after those said already, for a run inside the host.
 func moreReports(ctx context.Context, root string) *Reporter {
 	return &Reporter{path: filepath.Join(root, ReportsFile), last: map[wire.MachineSetupStepID]string{}, ctx: ctx}
+}
+
+// MoreReports goes on saying steps after those said already, for a step the host runs itself
+// (your set-up, #7155): the host sends each to the control plane as it sends the installer's.
+func MoreReports(ctx context.Context, root string) *Reporter { return moreReports(ctx, root) }
+
+// SayScript is Say for a step that runs a script (#7155), with the script's hash.
+func (r *Reporter) SayScript(step wire.MachineSetupStepID, state wire.MachineSetupState, detail, problem, hash string) {
+	report := wire.MachineSetupReport{Step: step, State: state}
+	detail, problem = cut(detail, detailMost), cut(problem, problemMost)
+	if detail != "" {
+		report.Detail = &detail
+	}
+	if problem != "" {
+		report.Error = &problem
+	}
+	if hash != "" {
+		report.Hash = &hash
+	}
+	r.say(report)
 }
 
 // Say records one step's state. The same words said twice in a row are said once.

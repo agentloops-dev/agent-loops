@@ -40,6 +40,7 @@ export const projectPanes = [
   { id: "tools", title: "Tools" },
   { id: "workAtOnce", title: "Work at Once" },
   { id: "sessions", title: "Sessions" },
+  { id: "autopilot", title: "Autopilot" },
   { id: "policy", title: "Policy" },
   { id: "agentConfiguration", title: "Agent Configuration" },
 ] as const;

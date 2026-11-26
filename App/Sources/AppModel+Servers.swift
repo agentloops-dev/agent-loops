@@ -112,6 +112,13 @@ extension AppModel {
                     await self?.loadKept(control)
                     await self?.people.connected(control)
                     await self?.signIn.connected(control)
+                    // The control plane's own level, for an admin's Machines (#6591).
+                    // Its copies say which machine runs it, for Make This the Control Plane… too (#7393).
+                    if self?.showsControlPlaneMachine == true || self?.showsControlPlaneMove == true {
+                        await self?.controlCapacity.read(control)
+                    }
+                    // A move of the control plane under way, or just ended (#6614).
+                    if self?.showsControlPlaneMove == true { await self?.controlMove.read(control) }
                     // A change of this Mac's zone is the person's, while connected (#4818).
                     let zoneWatch = Task { [weak self] in
                         for await _ in NotificationCenter.default.notifications(named: .NSSystemTimeZoneDidChange) {
@@ -130,6 +137,8 @@ extension AppModel {
                         }
                         if await self?.people.heard(note.method, note.params, on: control) == true { continue }
                         if self?.signIn.heard(note.method, note.params) == true { continue }
+                        if self?.controlCapacity.heard(note.method, note.params) == true { continue }
+                        if self?.controlMove.heard(note.method, note.params) == true { continue }
                         if await self?.lock.heard(note.method, note.params, on: control) == true {
                             // A machine just added to the lock may now be sealed to (#3491, D8).
                             if note.method == DaemonAPI.Notification.controlLockChanged { await Self.sealWaiting(on: control, lock: self?.lock) }
@@ -525,12 +534,6 @@ extension AppModel {
                           DaemonAPI.MachineOptions(host: host, startWhenUsed: startWhenUsed,
                                                    stopWhenIdleMinutes: stopWhenIdleMinutes,
                                                    startForSchedules: startForSchedules))
-    }
-
-    /// Stop Lending on a machine's page (#1122, #3975): it stops using a Mac's git access for one server.
-    func stopLendingGit(_ host: MachineRef, from: MachineRef, server: String) async {
-        await controlCall(DaemonAPI.Method.hostsLendGit,
-                          DaemonAPI.LendGit(host: host, from: from, server: server, allowed: false))
     }
 
     /// Approve or Deny on a machine's card (#994): a refusal is the window's alert.

@@ -205,7 +205,7 @@ public struct NeedRequest: Codable, Sendable, Hashable, Identifiable {
     }
 
     /// A terminal's `agents-secret NAME` (#4179): a secret's use with no session.
-    public var isTerminal: Bool { askedBy == nil && secretUse?.isTerminal == true }
+    public var isTerminal: Bool { askedBy == nil && (secretUse?.isTerminal == true || secretUse?.isPairing == true) }
 
     /// A use of a secret with Ask before use (#4015): its detail, when it is one.
     public var secretUse: SecretUse? {
@@ -241,6 +241,11 @@ public struct NeedRequest: Codable, Sendable, Hashable, Identifiable {
         /// For connector (#4538): the server's entry digest when the agent asked. Approve
         /// approves only that entry.
         public var digest: String?
+        /// For pairing (#6875): the client id the terminal pairs with, which Approve names in
+        /// the lock's addClient.
+        public var client: String?
+        /// For pairing (#6875): the terminal's machine lock key (P-256, X9.63).
+        public var key: Data?
 
         /// The row's title (#4017): the secret first, as its banner says it. A workflow or a
         /// connector (#4538) names the change the agent asks the person to make.
@@ -249,6 +254,7 @@ public struct NeedRequest: Codable, Sendable, Hashable, Identifiable {
             case "workflow": "Wants to turn on \(name)"
             case "connector": "Wants to approve \(name)"
             case "account": "Wants to read \(name)"
+            case "pairing": "Wants to pair \(name)"
             default: "Wants to use \(name)"
             }
         }
@@ -261,6 +267,17 @@ public struct NeedRequest: Codable, Sendable, Hashable, Identifiable {
         /// A terminal's (#4179): agentsd cannot tell its caller from an agent outside its session.
         public var isTerminal: Bool { use == "terminal" }
 
+        /// loops with no pairing (#6875): only Agent Loops on that Mac approves it, as it makes
+        /// the code there.
+        public var isPairing: Bool { use == "pairing" }
+
+        /// The answers a device away from that Mac can give (the Remote, #6875): a pairing only
+        /// Deny, as only that Mac makes its code.
+        public var awayActions: [Action] { isPairing ? [.deny] : actions }
+
+        /// What a device away from the Mac says for a pairing's Approve.
+        public static let pairOnTheMac = "Approve it in Agent Loops on the Mac it asks from: that Mac makes its pairing code."
+
         /// Where the value goes, as the row's grey line says it. A terminal's says the known gap.
         public var `where`: String {
             switch use {
@@ -272,6 +289,7 @@ public struct NeedRequest: Codable, Sendable, Hashable, Identifiable {
             case "screen": app.map { "Screen: \($0) on \(place)" } ?? "Screen on \(place)"
             case "workflow": "Workflow in \(place)"
             case "connector": "Connector in \(place)"
+            case "pairing": "Terminal: \(place) · \(Self.terminalCaveat)"
             default: "Fill on \(place)"
             }
         }
@@ -283,6 +301,7 @@ public struct NeedRequest: Codable, Sendable, Hashable, Identifiable {
         /// terminal's are once, for 1 hour and deny (#4179).
         public var actions: [Action] {
             if isTerminal { return [.once, .hour, .deny] }
+            if isPairing { return [.once, .deny] }
             // A workflow's or a connector's (#4538): the change is made once, by Approve.
             if use == "workflow" || use == "connector" { return [.once, .deny] }
             return sessionOnly == true ? [.once, .session, .deny] : [.once, .session, .always, .deny]
@@ -347,6 +366,8 @@ public extension DaemonAPI {
                 /// The answer signed with this device's lock key, for a request that says
                 /// needsSignature (#4058).
                 public var approval: LockDelivery?
+                /// For pairing (#6875): the client code this Mac made for the terminal.
+                public var pairingCode: String?
             }
 
             public var secretUse: SecretUse?
@@ -355,9 +376,9 @@ public extension DaemonAPI {
         public var id: UUID
         public var answer: Answer
 
-        public init(id: UUID, secretUse action: NeedRequest.Action, approval: LockDelivery? = nil) {
+        public init(id: UUID, secretUse action: NeedRequest.Action, approval: LockDelivery? = nil, pairingCode: String? = nil) {
             self.id = id
-            answer = Answer(secretUse: .init(action: action, approval: approval))
+            answer = Answer(secretUse: .init(action: action, approval: approval, pairingCode: pairingCode))
         }
     }
 

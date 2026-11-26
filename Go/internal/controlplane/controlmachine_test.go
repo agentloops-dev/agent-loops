@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/controllink"
 	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/records"
@@ -65,12 +66,11 @@ func TestTheControlPlaneIsAMachine(t *testing.T) {
 			t.Errorf("%s: %v", method, err)
 		}
 	}
-	// It has no host to update, no runtime or git to lend or be lent, and runs no work a
+	// It has no host to update, no runtime to lend or be lent, and runs no work a
 	// label picks it for (#7310).
 	for method, params := range map[string]any{
 		"machines/update":     wire.MachineUpdate{Host: wire.MachineRef(id), Destination: "box"},
 		"machines/lendSignIn": wire.LendSignIn{Host: wire.MachineRef(id), From: wire.MachineRef(id), Runtime: "claude", Allowed: true},
-		"machines/lendGit":    wire.LendGit{Host: wire.MachineRef(id), From: wire.MachineRef(id), Server: "github.com", Allowed: true},
 		"machines/setLabels":  wire.MachineLabelsRequest{Machines: []wire.MachineRef{wire.MachineRef(id)}, Add: []string{"gpu"}},
 	} {
 		if _, err := window.Call(context.Background(), "", method, params); err == nil ||
@@ -78,7 +78,7 @@ func TestTheControlPlaneIsAMachine(t *testing.T) {
 			t.Errorf("%s: %v", method, err)
 		}
 	}
-	if h := p.s.records.Host(id); h == nil || len(h.Labels) > 0 || len(h.SignInFrom) > 0 || len(h.GitFrom) > 0 {
+	if h := p.s.records.Host(id); h == nil || len(h.Labels) > 0 || len(h.SignInFrom) > 0 {
 		t.Fatalf("a refused call changed the record: %+v", h)
 	}
 	// Another start finds it and writes no second one.
@@ -124,5 +124,71 @@ func TestAHostTakesOverALinuxControlMachine(t *testing.T) {
 	}
 	if got := p.s.controlMachineID(); got != "mac" {
 		t.Fatalf("the copy names %q", got)
+	}
+}
+
+// A redeploy in a new container named its machine by the container's host name, so each one
+// made a control-only record, and the old ones stayed (#7399). One copy over the store drops
+// them when it starts, and keeps a host's record and its own.
+func TestARedeployLeavesOneControlMachine(t *testing.T) {
+	t.Parallel()
+	st := store.NewMemory()
+	r := records.New(st)
+	for id, mid := range map[string]string{"control": "5de6f4085654", "vhotxo84": "89d1446519a9"} {
+		must(t, r.AddHost(context.Background(), records.MachineRecord{ID: id, Name: "control.example.com",
+			Platform: "Linux", MachineID: &mid, Roles: []string{records.RoleControl}}))
+	}
+	box := "BOX-1"
+	must(t, r.AddHost(context.Background(), records.MachineRecord{ID: "box", Name: "Box", Platform: "Linux",
+		MachineID: &box, PublicKey: []byte{1}}))
+	p := startPlane(t, st, controllink.NewPrivateKey())
+	var control []records.MachineRecord
+	for _, h := range p.s.records.Machines() {
+		if h.ControlOnly() {
+			control = append(control, h)
+		}
+	}
+	id := controlMachineHostID()
+	if len(control) != 1 || control[0].ID != id || *control[0].MachineID != "MACHINE-1" || p.s.controlMachineID() != id {
+		t.Fatalf("%+v, the copy names %q", control, p.s.controlMachineID())
+	}
+	if p.s.records.Host("box") == nil {
+		t.Fatal("a host's record was dropped")
+	}
+	// The next start, on the same machine, finds it and drops nothing.
+	must(t, p.s.ensureControlMachine(context.Background()))
+	if h := p.s.records.Host(id); h == nil || len(p.s.records.Machines()) != 2 {
+		t.Fatalf("%+v", p.s.records.Machines())
+	}
+}
+
+// With several copies over one store, a control-only record that no live copy has named for
+// copyGone goes away (#7399): its copies stopped. One a live copy names, and this copy's own,
+// stay.
+func TestAControlMachineNoCopyNamesGoesAway(t *testing.T) {
+	t.Parallel()
+	p := startCopy(t, store.NewMemory(), controllink.NewPrivateKey())
+	ctx := context.Background()
+	for _, id := range []string{"old", "peer"} {
+		mid := id + "-MACHINE"
+		must(t, p.s.records.AddHost(ctx, records.MachineRecord{ID: id, Name: id, Platform: "Linux",
+			MachineID: &mid, Roles: []string{records.RoleControl}}))
+	}
+	mine := p.s.controlMachineID()
+	live := map[string]bool{mine: true, "peer": true}
+	p.s.mesh.dropUnnamed(ctx, live)
+	if p.s.records.Host("old") == nil {
+		t.Fatal("dropped as soon as it was seen: a copy that has just started has written no heartbeat yet")
+	}
+	p.s.mesh.mu.Lock()
+	// Only old's: this copy's own ticks see no live copy name peer either.
+	p.s.mesh.unnamed["old"] = time.Now().Add(-2 * copyGone)
+	p.s.mesh.mu.Unlock()
+	p.s.mesh.dropUnnamed(ctx, live)
+	if p.s.records.Host("old") != nil {
+		t.Fatal("a record no copy names stayed")
+	}
+	if p.s.records.Host("peer") == nil || p.s.records.Host(mine) == nil {
+		t.Fatalf("%+v", p.s.records.Machines())
 	}
 }

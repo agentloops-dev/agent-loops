@@ -177,6 +177,10 @@ func (m *memStore) Set(provider string, secrets map[string]string) error {
 	return nil
 }
 
+func (m *memStore) Renew(provider string, secrets map[string]string) error {
+	return m.Set(provider, secrets)
+}
+
 func (m *memStore) Reload() {
 	m.mu.Lock()
 	defer m.mu.Unlock()

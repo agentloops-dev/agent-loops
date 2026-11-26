@@ -23,6 +23,7 @@ import (
 // pairs the client, and the copy holding the waiting connection tells it.
 
 const (
+	// store-bounds: kind=document; count=1000; size=8KiB a record; age=2h; applied=on read and hourly, the oldest ended ones over the count go, names are cut
 	signInRequestsPrefix = "v1/signins/"
 	// At most this many requests wait for one person, and for everyone.
 	signInRequestsPerPerson = 5
@@ -102,6 +103,10 @@ func (a *signInApprovals) all(ctx context.Context) ([]signInRequest, error) {
 		out = append(out, *r)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Created.Before(out[j].Created.Time) })
+	out = evictEnded(out, func(r signInRequest) bool { return !a.open(r) }, func(r signInRequest) {
+		// A key left is deleted by the next read.
+		_ = a.s.cfg.Store.Delete(ctx, signInRequestKey(r.ID))
+	})
 	return out, nil
 }
 
@@ -109,6 +114,12 @@ func (a *signInApprovals) write(ctx context.Context, r signInRequest, condition 
 	data, err := records.Encode(r)
 	if err != nil {
 		return err
+	}
+	if condition == store.Absent {
+		// Only a new request: an answer is never refused for the size.
+		if err := fitsRecord("The request", data, requestCreateBytes); err != nil {
+			return err
+		}
 	}
 	if _, err := a.s.cfg.Store.Put(ctx, signInRequestKey(r.ID), data, condition); err != nil {
 		if store.IsConflict(err) {
@@ -189,8 +200,8 @@ func (a *signInApprovals) wait(ctx context.Context, conn *Conn, ask signInAsk) (
 		return nil, fail(notPermitted, "Too many sign-ins are waiting for approval. Try again in a few minutes.")
 	}
 	now := records.At(a.now())
-	r := signInRequest{ID: newJoinID(), Code: a.code(ask.public), Client: ask.client, PublicKey: ask.public, Name: ask.name, Kind: ask.kind,
-		Person: ask.person, Provider: ask.provider, Login: ask.login, Created: now, Expires: records.At(now.Add(joinLifetime))}
+	r := signInRequest{ID: newJoinID(), Code: a.code(ask.public), Client: ask.client, PublicKey: ask.public, Name: cut(ask.name, requestNameMost), Kind: ask.kind,
+		Person: ask.person, Provider: ask.provider, Login: cut(ask.login, requestNameMost), Created: now, Expires: records.At(now.Add(joinLifetime))}
 	err = a.write(ctx, r, store.Absent)
 	a.mu.Unlock()
 	if err != nil {

@@ -23,6 +23,7 @@ import (
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
 	"github.com/agentloops-dev/agent-loops/Go/internal/buildinfo"
 	"github.com/agentloops-dev/agent-loops/Go/internal/controllink"
+	"github.com/agentloops-dev/agent-loops/Go/internal/controlsetup"
 	"github.com/agentloops-dev/agent-loops/Go/internal/machine"
 	"github.com/agentloops-dev/agent-loops/Go/internal/rolllog"
 	"github.com/agentloops-dev/agent-loops/Go/internal/safe"
@@ -313,6 +314,9 @@ func detach(loc store.Locations) {
 			args = append(args, a)
 		}
 	}
+	// The supervisor's standard output and error until it opens daemon.log rolled, which puts
+	// that file in their place (openSuperviseLog), so what lands here goes round the roll too (#7348).
+	// store-bounds: kind=log; size=8MiB; age=7d; applied=by the supervisor, at its start, on write and every 30 s (#6735, #7348)
 	logf, _ := os.OpenFile(loc.Log(), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 	self, _ := os.Executable()
 	cmd := exec.Command(self, append([]string{"supervise"}, args...)...)
@@ -347,6 +351,7 @@ func running(file string, patience time.Duration) bool {
 // takeLock is DaemonLock: an exclusive flock on daemon.lock, holding this pid, so two
 // hosts never share a root. The install script stops a host by the pid in it.
 func takeLock(file string) (*os.File, error) {
+	// store-bounds: not a store: a lock file that holds the pid of this host.
 	f, err := os.OpenFile(file, os.O_CREATE|os.O_RDWR, 0o600)
 	if err != nil {
 		return nil, err
@@ -415,6 +420,10 @@ func machineHello(cl commandLine, d *agentsd.Daemon) controllink.MachineHello {
 	if name != "" {
 		hello.Name = &name
 	}
+	// Where its control role serves, when its install gave it one (#7313).
+	if home, err := os.UserHomeDir(); err == nil {
+		hello.Control = controlsetup.Address(home)
+	}
 	return hello
 }
 
@@ -466,7 +475,7 @@ func enrolWithCode(ctx context.Context, root, code, codeFile string, pin *agents
 		if err := pin.Admits(c.ControlKey, c.URL); err != nil {
 			return nil, err
 		}
-		return controllink.Enroll(ctx, root, c, private, hello)
+		return controllink.EnrollAs(ctx, root, c, private, hello, controllink.RolesOf(root))
 	})
 	if member == nil {
 		return nil
@@ -482,7 +491,12 @@ func keepUplink(ctx context.Context, cl commandLine, d *agentsd.Daemon, member *
 	loc := d.Store.Loc
 	up := &controllink.Uplink{Root: loc.Root, Member: member, Private: private, Hello: hello, Accept: d.Accept,
 		Lend: d.LendingPort, Rotated: func(key []byte) { d.ControlKeyRotated(key); d.MoveLocal(key) }}
-	d.Tunneler = up
+	controlOnly := controllink.ControlOnly(loc.Root)
+	if controlOnly {
+		// The control role alone (#7314): the link is for the store copy and the handover.
+		up.Accept, up.Lend = agentsd.RefuseAgentWork, nil
+	}
+	d.SetTunneler(up)
 	// The needs it shows nowhere go to the control plane, offered again on each return (#1367).
 	up.OnChange = func(connected bool, problem string) {
 		writeJoinStatus(loc.Root, connected, problem)
@@ -501,6 +515,9 @@ func keepUplink(ctx context.Context, cl commandLine, d *agentsd.Daemon, member *
 	}
 	up.Told = d.Told
 	up.Asked = d.Asked
+	if controlOnly {
+		up.Asked = d.AskedControlOnly
+	}
 	// A window on this Mac reaches this host directly (#1118).
 	d.StartLocal(ctx, member, private)
 	// And a browser on it, through the page this host serves (#1951).
@@ -528,6 +545,7 @@ func keepUplink(ctx context.Context, cl commandLine, d *agentsd.Daemon, member *
 func askToJoin(ctx context.Context, root string, ask controllink.JoinAsk, private []byte, hello controllink.MachineHello) *controllink.Membership {
 	for {
 		member, err := controllink.AskToJoin(ctx, root, ask, private, hello, func(code string) {
+			// store-bounds: not a store: a handoff: the join code for the install script, which removes it.
 			if err := os.WriteFile(filepath.Join(root, "control-join-shown"), []byte(code+"\n"), 0o600); err != nil {
 				log.Printf("control-join-shown: %v", err)
 			}

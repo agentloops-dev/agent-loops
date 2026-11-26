@@ -332,6 +332,19 @@ func (p *Providers) projectFolders(params json.RawMessage, caller Caller) (any, 
 	return out, nil
 }
 
+// previewStart is machines/previewStart (#5876): sessions/previewStart for an agent, the
+// pick Auto makes for the project and runtime, with the reason or why none fits.
+func (p *Providers) previewStart(params json.RawMessage, caller Caller) (any, error) {
+	var request wire.AutoMachineRequest
+	if err := requireParams(params, &request, "AutoMachineRequest", "project", "runtimeID"); err != nil {
+		return nil, err
+	}
+	if p.hooks.PreviewStart == nil {
+		return nil, fail(CodeNotPermitted, "This control plane cannot pick a machine.")
+	}
+	return p.hooks.PreviewStart(request, caller)
+}
+
 // projectSessions is machines/projectSessions (#3277): projects/sessions for an agent on
 // host, which must have a folder of the project.
 func (p *Providers) projectSessions(host string, params json.RawMessage, caller Caller) (any, error) {
@@ -375,7 +388,15 @@ func (p *Providers) botKey(from, fromName string, params json.RawMessage, caller
 	if deliver == nil || deliver.Method != method {
 		return nil, invalid("The bot's key goes only as its machine signed it.")
 	}
-	host, name := request.Host, request.Host
+	return p.relaySigned(from, request.Host, deliver, method, caller, func(name string) string {
+		return fmt.Sprintf("workspace: %s gives the bot's key to %s, sealed", fromName, name)
+	})
+}
+
+// relaySigned sends host the step that the machine from signed for it (deliver, as method),
+// when host is online, and gives back its answer. said is the log's line, by host's name.
+func (p *Providers) relaySigned(from, host string, deliver *wire.LockDelivery, method string, caller Caller, said func(string) string) (any, error) {
+	name := host
 	if h := p.records.Host(host); h != nil {
 		name = h.Name
 	}
@@ -385,7 +406,7 @@ func (p *Providers) botKey(from, fromName string, params json.RawMessage, caller
 	if !p.router.Online(host) {
 		return nil, fail(CodeHostOffline, "%s is offline.", name)
 	}
-	p.log(fmt.Sprintf("workspace: %s gives the bot's key to %s, sealed", fromName, name))
+	p.log(said(name))
 	reply := p.deliverPeer(deliver, method, nil, caller, host, time.Minute)
 	if reply == nil {
 		return nil, fail(CodeHostOffline, "%s did not answer.", name)
@@ -394,4 +415,32 @@ func (p *Providers) botKey(from, fromName string, params json.RawMessage, caller
 		return nil, reply.Error
 	}
 	return map[string]any{}, nil
+}
+
+// setupDeliver is machines/setupDeliver (#7155): one of the person's machines, the sender, gives
+// another of theirs a set-up script. It goes only as the sender signed it for that machine: the
+// control plane keeps none of it and has no words of its own to send in its place.
+func (p *Providers) setupDeliver(from, fromName string, params json.RawMessage, caller Caller, deliver *wire.LockDelivery) (any, error) {
+	var request wire.MachineSetupDeliver
+	if err := requireParams(params, &request, "MachineSetupDeliver", "host"); err != nil {
+		return nil, err
+	}
+	if deliver == nil || deliver.Method != wire.CallSetupDeliver.Name {
+		return nil, invalid("A set-up script goes only as its machine signed it.")
+	}
+	return p.relaySigned(from, request.Host, deliver, deliver.Method, caller, func(name string) string {
+		return fmt.Sprintf("workspace: %s sends setup.sh to %s", fromName, name)
+	})
+}
+
+// CarrierOf is the machine that carries provider (#3398), or "": the sender of the person's
+// set-up scripts to the machines it makes (#7155).
+func (p *Providers) CarrierOf(provider string) string {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	held, ok := p.providers[provider]
+	if !ok {
+		return ""
+	}
+	return deref(held.record.Machine)
 }

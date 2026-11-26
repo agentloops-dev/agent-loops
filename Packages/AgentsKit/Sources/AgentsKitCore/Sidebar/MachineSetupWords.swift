@@ -1,13 +1,14 @@
 import Foundation
 
 /// A machine's set-up in words (#5357, epic #5353): the header chip, the sidebar's grey line and
-/// each step's line, from the control plane's record of the eight steps.
+/// each step's line, from the control plane's record of the steps: the eight, and Root set-up
+/// and Your set-up when the machine runs the person's scripts (#7154).
 public enum MachineSetupWords {
     /// The steps' names, as the page lists them, by the wire's id.
     public static let names: [String: String] = [
         "create": "Create machine", "join": "Join machine", "install": "Install Agents",
-        "compare": "Compare digits", "runtimes": "Install runtimes", "projects": "Send projects",
-        "signIn": "Sign in to runtimes", "smoke": "Smoke session",
+        "compare": "Compare digits", "root": "Root set-up", "runtimes": "Install runtimes", "user": "Your set-up",
+        "projects": "Send projects", "signIn": "Sign in to runtimes", "smoke": "Smoke session",
     ]
 
     public static func name(_ step: DaemonAPI.MachineSetupStep) -> String { names[step.id] ?? step.id }
@@ -20,6 +21,34 @@ public enum MachineSetupWords {
     /// Whether the run is over and well: every step done. A machine is ready then, and `New Session` turns on.
     public static func isReady(_ setup: DaemonAPI.MachineSetup) -> Bool {
         setup.readyAt != nil || (!setup.steps.isEmpty && setup.steps.allSatisfy { $0.state == .done })
+    }
+
+    /// Whether a step is done with a warning (#7154): a provider that can't run root set-up.
+    public static func isWarned(_ step: DaemonAPI.MachineSetupStep) -> Bool {
+        step.state == .done && step.warning == true
+    }
+
+    /// What a failed Root set-up says to do (#7154, gate 2's *page root failed*): root.sh runs
+    /// once, on the first boot, so a fixed one needs a new machine.
+    public static func rootFailedAdvice(_ machine: String) -> String {
+        "Fix root.sh, then make a new machine: \(machine) can’t run it again by itself. "
+            + "Or copy a command that you run as root there, then press Try Again. You can start sessions here."
+    }
+
+    /// The root command sheet (#7159, gate 2's *own server*): why the person runs it, for a machine
+    /// that no provider made, or one whose root.sh failed.
+    public static func rootCommandLead(_ machine: String, failed: Bool) -> String {
+        failed
+            ? "Run this as root, or with sudo, on \(machine):"
+            : "No provider makes \(machine), so Agent Loops can’t be root there. Run this as root, or with sudo, on \(machine):"
+    }
+
+    /// Under the command (#7159).
+    public static let rootCommandAfter = "It runs the root.sh that you approved, once. Then press Check."
+
+    /// The spec's "left as they are" (#7151, section 8): sudo on the machine is root for its agents.
+    public static func rootSudoWarning(_ machine: String) -> String {
+        "Where your user on \(machine) has sudo, agents there can become root too."
     }
 
     /// The step that stopped the run, if one failed.
@@ -51,13 +80,14 @@ public enum MachineSetupWords {
     /// The chip in the page's header: *Setting up · 7 of 8*, *Ready · 3 min 42 s*, or *Set-up failed · 6 of 8*.
     public static func chip(_ setup: DaemonAPI.MachineSetup, now: Date = Date()) -> String {
         let total = setup.steps.count
-        if isReady(setup) {
-            let end = setup.readyAt ?? setup.steps.compactMap(\.endedAt).max() ?? now
-            return "Ready · \(duration(end.timeIntervalSince(setup.startedAt)))"
-        }
+        // A failed step first: Run Again of your set-up can fail on a machine that was ready (#7155).
         if let failed = failedStep(setup) {
             let at = (setup.steps.firstIndex { $0.id == failed.id } ?? 0) + 1
             return "Set-up failed · step \(at) of \(total)"
+        }
+        if isReady(setup) {
+            let end = setup.readyAt ?? setup.steps.compactMap(\.endedAt).max() ?? now
+            return "Ready · \(duration(end.timeIntervalSince(setup.startedAt)))"
         }
         return "Setting up · \(position(setup)) of \(total)"
     }
@@ -105,7 +135,8 @@ public enum MachineSetupWords {
     /// pool before the claim (#5366, board 4).
     public static func time(_ step: DaemonAPI.MachineSetupStep, now: Date = Date()) -> String? {
         if step.fromPool == true, step.state == .done { return "pool" }
-        guard let start = step.startedAt else { return nil }
+        // A step done with a warning ran nothing (#7154): no time.
+        guard !isWarned(step), let start = step.startedAt else { return nil }
         return duration((step.endedAt ?? now).timeIntervalSince(start))
     }
 

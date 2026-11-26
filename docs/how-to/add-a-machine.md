@@ -63,7 +63,7 @@ when you click **Install** under **Runtimes**. The server needs glibc 2.28 or la
 
 1. **Install Agents:** puts this host in `~/.agents-server`, starts it (a systemd user service where there is systemd, else in the background) and waits until it has joined.
 2. **Compare digits:** the host joined with a code the control plane made for it.
-3. **Install runtimes** (Claude and Codex, or each `--runtime <id>`) and **send projects**, at the same time. For each `--project <folder>` on the machine, a script `.agents/setup.sh` in the project runs with `bash -e`, as the machine's user, in the folder, with `AGENTS_SETUP=1`, `AGENTS_PROJECT`, `AGENTS_MACHINE` and `AGENTS_FROM_POOL` (`1` with `--from-pool`) and no credentials, for up to 10 minutes. Its exit code is the result, and its last lines are shown when it fails. Write it so that it is safe to run again.
+3. **Install runtimes** (Claude and Codex, or each `--runtime <id>`) and **send projects**, at the same time. For each `--project <folder>` on the machine, a script `.agents/setup.sh` in the project runs with `bash -e`, as the machine's user, in the folder, with `AGENTS_SETUP=1`, `AGENTS_PROJECT`, `AGENTS_MACHINE` and `AGENTS_FROM_POOL` (`1` with `--from-pool`) and no credentials, for up to 10 minutes. Its exit code is the result, and its last lines are shown when it fails. Write it so that it is safe to run again. Put its own checks (`command -v node`, a version) at its end, so that a check that fails makes the run fail. A failure is for that project only: the machine is still ready for others. One script runs at a time on a machine. It runs again later when the project is sent to the machine, and when a send changes the script ([Send a folder to a server](send-a-folder-to-a-machine.md#the-projects-set-up-script)).
 4. **Smoke session** (step 8): once the first runtime is signed in, it starts one short session there with the runtime's cheapest model, in the first project (with none, in a scratch project inside the host's own folder, which it removes at the end, so the machine user's home does not become a folder), and checks that it answers and ends its turn. The step says the time to the first word. It fails after 2 minutes with the runtime's error. The session is archived either way. `--no-smoke` leaves it out.
 
 Run it again and it does only what is missing: a host that runs and has joined is left alone. That is also how **Try Again** works. It runs no cloud-init and no systemd one-shot units, so it works in a Docker container too.
@@ -128,6 +128,16 @@ changes. When you remove the server, the tunnel closes.
 What the control plane passes to ssh, and how each common `~/.ssh/config` option fares, is in
 [ssh options](../reference/ssh-options.md).
 
+### Send it your setup.sh
+
+Your own set-up, the tools and sign-ins you want on each machine, can go in `~/.agents/machine-setup/setup.sh` on this Mac. It needs your machine lock, and it is behind the early feature **Machine scripts** in Settings.
+
+1. On the machine's page, under **Your scripts**, press **Send Set-up…**.
+2. Read the script, then press **Approve and Send**. This Mac's lock key approves that text for that machine only.
+3. The machine runs it as its user, in its home folder, with `bash -e`, `AGENTS_SETUP=1`, `AGENTS_MACHINE` and `AGENTS_FROM_POOL`, for up to 10 minutes. It shows as the step **Your set-up**.
+
+A machine that a provider made, or that you claimed from a warm pool, gets it by itself when you approved it for new machines. **Run Again** runs the copy the machine has again, so write it to be safe to run again. When you change the file, the row says *changed on This Mac*: send it again. While a machine is offline, the send waits for it. Scripts are not secret: keep tokens in Secrets, not in a script.
+
 ### Choose its folders
 
 Nothing on the server becomes a folder by itself (#656). Once it joins, Add a Machine lists each
@@ -179,25 +189,10 @@ server needs no browser: the web page opens the sign-in page in yours.
 The row then says **Signed in on this machine**. A server that uses this Mac's sign-in
 does not offer **Sign In…**.
 
-### Let the server use this Mac's git access
+### Git access on the server
 
-A private repository needs git access. If the server has no git credential helper of its
-own, its git asks this Mac for one, through the control plane, over https only.
-
-1. The first time the server's git needs access to a git server (for example
-   `github.com`), every window, phone and web page asks **Let devbox use this Mac's git
-   access for github.com?** Click **Allow**.
-
-   The clone, pull or push goes on. This Mac answers from its own git (the Keychain,
-   `gh auth git-credential` and the like). The credential is used for that one git command
-   and is not kept on the server or logged. A push uses the same approval.
-2. To take it back, open the server's page from **Machines** in the sidebar, and under
-   **Git access** choose **Stop Lending Git Access for github.com**. On a phone or the web page, it is
-   **Settings ▸ Git access**.
-
-Git fails at once, and says why, when this Mac is not connected or has no git access to that
-git server. A server with ssh agent forwarding, or a credential helper of its own, uses its
-own access and asks nothing.
+A private repository needs git access on the server itself: a credential helper of its own,
+or ssh agent forwarding. The server does not use this Mac's git access.
 
 ### Add another Mac
 
@@ -229,8 +224,8 @@ filled in. Once the server joins, it is linked to its workspace, so it can be st
 stopped from Agent Loops. See [Start workspaces from Agent Loops](start-machines-from-agents.md).
 
 **New Machine…** on a provider's card has **Clone these folders**: git URLs, one a line.
-Once the new workspace joins, it clones each one, with this Mac's git access when you allow
-it, and they appear under its heading.
+Once the new workspace joins, it clones each one, and they appear under its heading. A
+private repository needs git access on the workspace itself.
 
 ## When the server is offline
 

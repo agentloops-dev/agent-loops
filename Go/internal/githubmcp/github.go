@@ -204,6 +204,8 @@ const (
 	IssueLabelled  IssueKind = "labelled"
 	IssueCommented IssueKind = "commented"
 	IssueClosed    IssueKind = "closed"
+	// IssueParented is an issue becoming a sub-issue of another (#5945).
+	IssueParented IssueKind = "parented"
 )
 
 // IssueActivity is one thing that happened to an issue (never a pull request).
@@ -216,6 +218,8 @@ type IssueActivity struct {
 	Label, By, Reason string
 	// CommentAuthor, CommentURL and CommentBody (clipped) for a comment.
 	CommentAuthor, CommentURL, CommentBody string
+	// Parent is the issue's parent, for IssueParented (#5945); 0 when not known.
+	Parent int
 	// Trusted says whether whoever did it is one of the repo's own (#728).
 	Trusted bool
 }
@@ -232,6 +236,8 @@ func (a IssueActivity) data() map[string]any {
 		d["commentedAt"] = a.At
 	case IssueClosed:
 		d["reason"], d["by"], d["closedAt"] = a.Reason, a.By, a.At
+	case IssueParented:
+		d["parent"], d["by"], d["parentedAt"] = a.Parent, a.By, a.At
 	}
 	return d
 }
@@ -330,6 +336,8 @@ type GitHub interface {
 	OpenPRs(ctx context.Context, repo string) ([]OpenPR, error)
 	// IssueActivity is what happened to the repo's issues at or after since, of one kind.
 	IssueActivity(ctx context.Context, repo string, kind IssueKind, since string) (items []IssueActivity, truncated bool, err error)
+	// IssueParent is the number of the issue's parent, or 0 when it has none (#5945).
+	IssueParent(ctx context.Context, repo string, issue int) (int, error)
 	// PRLabelActivity is a label added to or removed from a pull request at or after since.
 	PRLabelActivity(ctx context.Context, repo string, kind PRLabelKind, since string) (items []PRLabelActivity, truncated bool, err error)
 	// PRComments are comments left on pull requests' conversations (not CodeRabbitComments' review

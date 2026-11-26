@@ -31,6 +31,18 @@ type CarriedCreate struct {
 	Runs bool         `json:"runs"`
 	// Said is what the make did, one line a step (#6073); an older carrier says none.
 	Said []string `json:"said,omitempty"`
+	// Root is root set-up (#7154), as the carrier filled it in: none for no root.sh, or an
+	// older carrier.
+	Root *RootBootSent `json:"root,omitempty"`
+	// RootRuns is whether the provider runs the root.sh the carrier sent (rootBootRuns).
+	RootRuns bool `json:"rootRuns,omitempty"`
+}
+
+// RootBootSent is the root.sh a carrier sent with a make (#7154): its hash, or why it sent
+// none although the file is there (Problem, such as no lock).
+type RootBootSent struct {
+	Hash    string `json:"hash,omitempty"`
+	Problem string `json:"problem,omitempty"`
 }
 
 // SSHResult is providers/ssh's result.
@@ -139,9 +151,21 @@ func (c *Carried) Create(name string, options any, firstBoot *string) (*MachineI
 
 // CreateSaying is Create, with what the make did as the carrying machine said it (#6073).
 func (c *Carried) CreateSaying(name string, options any, firstBoot *string) (*MachineInfo, bool, []string, error) {
+	out, err := c.CreateCarried(name, options, firstBoot)
+	return out.Made, out.Runs, out.Said, err
+}
+
+// CreateCarried is CreateSaying with the whole answer: also the root.sh the carrying machine
+// sent, and whether the provider runs it (#7154).
+func (c *Carried) CreateCarried(name string, options any, firstBoot *string) (CarriedCreate, error) {
 	var out CarriedCreate
 	err := c.call("create", wire.ProviderCarry{Name: &name, Options: rawOf(options), FirstBoot: firstBoot}, &out)
-	return out.Made, out.Runs, out.Said, err
+	return out, err
+}
+
+// Rooted is a Provider whose make says what root set-up it sent (#7154): a carried one.
+type Rooted interface {
+	CreateCarried(name string, options any, firstBoot *string) (CarriedCreate, error)
 }
 
 func (c *Carried) Delete(id string) error {

@@ -10,7 +10,7 @@ read and not run. A store below its total is no proof that a record was handled.
 | Small file (`store.JSONFile`) | machine | test: taken; refused with the limit in the words, the file unchanged | test: one over refuses all, nothing written | test: an old large entry does not stop others; `UpdateKeepingAll` keeps it (#7181) | test | The kind holds. Callers fail: #7186 |
 | Other small files | machine | test: the state files of #7246, catalogue records, settings, `host-user.json`, lock; read: pins, approvals, folders, devices, policy copies, wake | read | read: `moveSetting` copies as it is, the next write checks | read | Holds (#7188, #7189, #7203, #7246 fixed) |
 | Secret (`store.SecretFile`) | machine | test: refused, no name or value in the words, the earlier value intact | test | test (kind's own): a file over its limit opens and can shrink | test | Holds |
-| Secret | control plane | read: checked before the seal; test: a token's use and revoke | read | read | read, each retry | Holds (#7203 fixed) |
+| Secret | control plane | read: checked before the seal; test: a token's use and revoke, release keys, refresh tokens, the provider secrets | read | test: an old large one opens | read, each retry | Holds (#7203, #7249 fixed) |
 | Log (`FolderLog`) | machine | test: refused; a transcript's entry becomes a notice that says so | test | test: an old large line is read | test: the retry is one record; held lines use the same write | #7183 (restore, import, move), #7187 |
 | Log (`OpenLog`, `DayLog`) | control plane | test: refused, nothing written | one record a call | read | test | Holds; an audit entry is cut with `…` (its own test) |
 | Log (`rolllog`) | machine, control plane | read: a write is split, not lost | read | none | none | Holds (#7247, #7252 fixed) |
@@ -31,7 +31,7 @@ limit. The stores that only log it have bugs above.
 
 ## Raw writers
 
-`storecopy`, `homebackup`'s restore, `store/put` in `handover` and `putBackRecords` in
+`storecopy`, `homebackup`'s restore, `store/put` and `store/putMany` in `handover` and `putBackRecords` in
 `hosted/backup` are below every kind. They write bytes as they are, by design (#7251): a restore
 or a handover never refuses the only copy of a record. Test: a record over its limit goes
 through the copy, the backup, the restore and `store/put`; the backups' key is made small at its
@@ -56,9 +56,10 @@ What each line of `scripts/store-bounds-baseline.txt` is. A **store** is owned b
 | Not a store: the person's file or their project | `HostModel`, `AgentsExportTransfer`; `acp/session`; `agentsd/`: `agentconfigeditor`, `files`, `newapp`, `publicrepo`, `policyfolder`, `folders`, `dotagents`, `readymade`, `readymadeskills`, `worktrees`, `skillcatalog/personas`; `codespacessh` |
 | Not a store: one fixed key or mark | `HostJoinFile`, `MachineLock`, `ControlMembership`, `keys.ts` (its caches are declared), `signIn.ts`; `cmd/agents-control/main`, `cmd/agentsd/enrol`, `cmd/agentsd/main`; `agentsd/`: `restarts`, `setupforward`, `setupprojects`, `usersuspend`, `runtimesignin`; `store/roots`, `store/store` (root id), `controllink/` (all), `kms/rotate` (the key file), `workspacecommands/digitalocean` |
 | Not a store: the helper or the backend itself | `store/files`, `execfile`, `store/folder`, `storeopen`, `records/records` (an old prefix, read only) |
-| Declared at another line | `cmd/agentsd/main` and `supervise` (the daemon log), `hosttunnels/tunnels` and `sweep` (`v1/codes`, itself #7201), `links` (the links) |
+| Declared at another line | `cmd/agentsd/main` and `supervise` (the daemon log) |
 | Store, bounded in code, not declared | `citimings/store`, `store/revisions`, `secretops` (`secret-ops.json`) (those of the control plane are declared, #7251) |
 | **Store with no largest record: machine, #7200** | `agentsd/`: `dailychecks` (until #7023) |
-| **Store with its own bug** | `whatsappmcp/store` #7191, `providers/secrets` #7201 |
+| **Store with its own bug** | `whatsappmcp/store` #7191 |
 | Store, with its largest record (#7248) | `bots` (`v1/runs`), `builds`, `copies`, `deploys`, `lineagegraph`, `mesh` (`v1/leases`, the heartbeats of `v1/copies`), `projects` (`v1/projectFolders`), `records/groups`, `records/projects`, `reports` (`v1/usage`), `sweep` (`v1/mesh/events`) |
-| **Store with no largest record: control plane, #7201** | `codes`, `hosttunnels/tunnels`, `links` (requests), `lockjoins`, `locks`, `orgrefresh`, `people_scim`, `policy_ask`, `secretrelease`, `signin_approvals`, `signin_org`, `hosted/billing` |
+| Store, with its largest record (#7249) | `codes`, `hosttunnels/tunnels`, `links` (requests), `lockjoins`, `locks`, `orgrefresh`, `people_scim` (`v1/scim` names, `v1/requests`), `policy_ask`, `secretrelease`, `signin_approvals`, `signin_org`, `providers/secrets` |
+| **Store with no largest record: control plane, #7201** | `hosted/billing` |

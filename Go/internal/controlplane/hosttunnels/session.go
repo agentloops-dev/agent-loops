@@ -35,6 +35,7 @@ func session(ctx context.Context, record Record, base sshCommand, folder string,
 		ssh.options = join(ssh.options, personsKnownHosts(ctx, ssh), []string{"-o", "StrictHostKeyChecking=yes"})
 	} else {
 		knownHosts := filepath.Join(folder, record.ID+".known_hosts")
+		// store-bounds: not a store: a copy of the tunnel's record for ssh, in the process's temporary folder
 		if err := writeAtomically(knownHosts, []byte(Pinned(record.KnownHosts))); err != nil {
 			return "its known hosts file could not be written: " + err.Error()
 		}
@@ -299,6 +300,7 @@ func said(line string) (string, bool) {
 
 // writeAtomically is Data.write(to:options: .atomic).
 func writeAtomically(path string, data []byte) error {
+	// store-bounds: not a store: the temporary file of an atomic write
 	temporary, err := os.CreateTemp(filepath.Dir(path), ".known_hosts-*")
 	if err != nil {
 		return err

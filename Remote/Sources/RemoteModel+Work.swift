@@ -78,6 +78,25 @@ extension RemoteModel {
         return controlHosts.first { $0.id == id }?.has(Capability.forgeWrite1) ?? false
     }
 
+    /// Whether a machine keeps a list of the image hosts the person allowed (#7140, as the Mac's #7139).
+    func readsImageHosts(on host: MachineRef) -> Bool {
+        let id = host == .mac ? controlHome : host
+        return controlHosts.first { $0.id == id }?.has(Capability.imageHosts1) ?? false
+    }
+
+    /// Settings ▸ Image Hosts' machines (#7140): the ones that keep such a list, also one that is
+    /// offline, the home host first, as `.mac`, then by name.
+    var imageHostMachines: [ImageHostsMachine] {
+        controlHosts
+            .filter { $0.has(Capability.imageHosts1) }
+            .map { row in
+                let id: MachineRef = row.id == controlHome ? .mac : row.id
+                return ImageHostsMachine(id: id, name: row.name,
+                                         online: row.state != "offline" && hostClient(id) != nil && !isStale(on: id))
+            }
+            .sorted { ($0.id == .mac ? 0 : 1, $0.name) < ($1.id == .mac ? 0 : 1, $1.name) }
+    }
+
     func forgeList(_ kind: WorkList.Kind, _ request: DaemonAPI.ForgeListRequest,
                    on host: MachineRef) async throws -> DaemonAPI.ForgeList {
         try await workClient(host).call(kind == .pr ? DaemonAPI.Method.forgePulls : DaemonAPI.Method.forgeIssues,

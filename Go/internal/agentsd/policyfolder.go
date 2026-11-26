@@ -219,6 +219,7 @@ func (d *Daemon) setFolderPolicy(r wire.SetFolderPolicyRequest) (wire.PolicyRule
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return wire.PolicyRules{}, &Error{Code: CodeInternal, Message: folderPolicyFile + " could not be written: " + err.Error()}
 	}
+	// store-bounds: not a store: the folder's .agents/policy.json in the person's project, at most guardedMostBytes.
 	if err := store.WriteAtomically(path, b, 0o644); err != nil {
 		return wire.PolicyRules{}, &Error{Code: CodeInternal, Message: folderPolicyFile + " could not be written: " + err.Error()}
 	}

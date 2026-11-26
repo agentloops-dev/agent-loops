@@ -35,6 +35,7 @@ control/status
     "control.connect-another/1",
     "control.eligible/1",
     "control.local/1",
+    "control.move/1",
     "control.plane-move/1",
     "control.rotate/1",
     "control/1",
@@ -48,13 +49,13 @@ control/status
     "folders.send-seed/1",
     "folders.signed-upload/1",
     "folders.to-machine/1",
-    "git/1",
     "governance/1",
     "groups/1",
     "handover/1",
     "host.lock/1",
     "host.lock/2",
     "host.lock/4",
+    "host.machine-setup/2",
     "host.org-routes/2",
     "host.policy-layers/1",
     "host.policy/1",
@@ -77,6 +78,7 @@ control/status
     "machine.agent-secrets/1",
     "machine/1",
     "machines.all/1",
+    "machines.setup-deliver/1",
     "machines/1",
     "machines/2",
     "maturity/1",
@@ -284,9 +286,6 @@ control/setFolderDetection
 machines/lendSignIn
 {}
 
-machines/lendGit
-{}
-
 control/status
 {
   "name": "Test plane",
@@ -319,6 +318,7 @@ control/status
     "control.connect-another/1",
     "control.eligible/1",
     "control.local/1",
+    "control.move/1",
     "control.plane-move/1",
     "control.rotate/1",
     "control/1",
@@ -332,13 +332,13 @@ control/status
     "folders.send-seed/1",
     "folders.signed-upload/1",
     "folders.to-machine/1",
-    "git/1",
     "governance/1",
     "groups/1",
     "handover/1",
     "host.lock/1",
     "host.lock/2",
     "host.lock/4",
+    "host.machine-setup/2",
     "host.org-routes/2",
     "host.policy-layers/1",
     "host.policy/1",
@@ -361,6 +361,7 @@ control/status
     "machine.agent-secrets/1",
     "machine/1",
     "machines.all/1",
+    "machines.setup-deliver/1",
     "machines/1",
     "machines/2",
     "maturity/1",
@@ -434,9 +435,6 @@ machines/list
     "machineID": "MACHINE-2",
     "signInFrom": {
       "claude": "mac"
-    },
-    "gitFrom": {
-      "github.com": "mac"
     },
     "implementation": "go",
     "owner": "<uuid>",
@@ -549,8 +547,4 @@ host reads
 
 # notifications
 
-control/hostChanged
-{
-  "host": "<host a>",
-  "state": "online"
-}
+

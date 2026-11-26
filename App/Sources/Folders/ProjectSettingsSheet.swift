@@ -15,6 +15,8 @@ enum ProjectSettingsPane: String, Hashable, CaseIterable, Identifiable {
     case workAtOnce
     /// Which sessions are archived by themselves (#120, #2886).
     case sessions
+    /// Whether Autopilot starts work by itself, and what it did last (#5904).
+    case autopilot
     /// The folder's own layer of the policy (#2957, FR-022): `.agents/policy.json`.
     case policy
     case overview, instructions, skills, personas, workflows, mcp, plugins, other
@@ -37,7 +39,7 @@ enum ProjectSettingsPane: String, Hashable, CaseIterable, Identifiable {
     /// The Agent Configuration page it is, if it is one.
     var page: AgentConfigurationPage? {
         switch self {
-        case .general, .tools, .workAtOnce, .sessions, .policy: nil
+        case .general, .tools, .workAtOnce, .sessions, .autopilot, .policy: nil
         case .overview: .overview
         case .instructions: .instructions
         case .skills: .skills
@@ -55,6 +57,7 @@ enum ProjectSettingsPane: String, Hashable, CaseIterable, Identifiable {
         case .tools: "Tools"
         case .workAtOnce: HelperLimitWords.workAtOnce
         case .sessions: HelperLimitWords.sessions
+        case .autopilot: AutopilotWords.title
         case .policy: PolicyLayersWords.title
         default: page?.title ?? ""
         }
@@ -66,13 +69,14 @@ enum ProjectSettingsPane: String, Hashable, CaseIterable, Identifiable {
         case .tools: "hammer"
         case .workAtOnce: "square.stack.3d.up"
         case .sessions: "archivebox"
+        case .autopilot: "paperplane"
         case .policy: PolicyLayersWords.symbol
         default: "gearshape"
         }
     }
 
     /// The panes before Agent Configuration, in the rail's order.
-    static let rail: [ProjectSettingsPane] = [.general, .tools, .workAtOnce, .sessions, .policy]
+    static let rail: [ProjectSettingsPane] = [.general, .tools, .workAtOnce, .sessions, .autopilot, .policy]
 }
 
 /// A project's settings, as a sheet over the window (066, look/ frame C; #3280): a rail down
@@ -266,6 +270,7 @@ struct ProjectSettingsSheet: View {
                     switch chosen {
                     case .workAtOnce: ProjectWorkAtOncePane(summary: summary)
                     case .sessions: ProjectSessionsPane(summary: summary)
+                    case .autopilot: ProjectAutopilotPane(summary: summary, openLimits: { pane = .workAtOnce }).webPlaceLinks()
                     default: ProjectGeneralPane(summary: summary, project: project, owner: owner,
                                                 reload: { await loadProject() })
                     }
@@ -549,6 +554,113 @@ private struct ProjectGeneralPane: View {
         .labelsHidden()
         .fixedSize()
         .disabled(model.hosts.isOffline(summary.host))
+    }
+}
+
+/// Project Settings ▸ Autopilot (#5904, epic #5897): Off, Only high priority or On, with what it
+/// did last. Turning it on asks once. Work ▸ Next is on the web page, so See what waits opens it
+/// there, and only when this Mac can open the web page (#4937).
+private struct ProjectAutopilotPane: View {
+    @Environment(AppModel.self) private var model
+    @Environment(\.openWebPlace) private var openWebPlace
+    let summary: DaemonAPI.FolderSummary
+    let openLimits: () -> Void
+
+    @State private var status: DaemonAPI.AutopilotStatus?
+    @State private var readAt: Date?
+    @State private var problem: String?
+    @State private var asking: DaemonAPI.AutopilotMode?
+
+    private var offline: Bool { model.hosts.isOffline(summary.host) }
+    private var supported: Bool { model.host(summary.host, has: Capability.autopilot1) }
+    private var mode: DaemonAPI.AutopilotMode { status?.mode ?? .off }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            SettingsPaneTitle(title: AutopilotWords.title, note: writtenIn(summary, model: model))
+            if !supported {
+                settingsNote(AutopilotWords.tooOld)
+            } else {
+                Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 14, verticalSpacing: 12) {
+                    settingsRow(AutopilotWords.title) {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Picker("", selection: Binding(get: { mode }, set: { choose($0) })) {
+                                ForEach(DaemonAPI.AutopilotMode.allCases, id: \.self) { each in
+                                    Text(AutopilotWords.title(of: each)).tag(each)
+                                }
+                            }
+                            .pickerStyle(.radioGroup)
+                            .labelsHidden()
+                            .disabled(offline || status == nil)
+                            HStack(spacing: 6) {
+                                Text(AutopilotWords.limitsLine(HelperLimitWords.helpersNow(summary.helperLimits)))
+                                Text("·")
+                                Button(AutopilotWords.changeLimits, action: openLimits).buttonStyle(.link)
+                            }
+                            .foregroundStyle(.secondary)
+                            if let problem {
+                                Text(problem).foregroundStyle(StateTint.attention.style(or: .secondary))
+                            } else if let status {
+                                HStack(spacing: 6) {
+                                    Text(mode == .off ? AutopilotWords.offLine : AutopilotWords.lastRunLine(status))
+                                    if mode != .off, let openWebPlace {
+                                        Text("·")
+                                        Button(AutopilotWords.seeWhatWaits + " ▸") { seeWhatWaits(openWebPlace) }
+                                            .buttonStyle(.link)
+                                    }
+                                }
+                                .foregroundStyle(.secondary)
+                            }
+                            if let readAt { LastUpdateText(read: readAt) }
+                        }
+                    }
+                }
+                .appText(.supporting)
+            }
+        }
+        .task(id: summary.key) { await read() }
+        .confirmationDialog(AutopilotWords.askTitle,
+                            isPresented: Binding(get: { asking != nil }, set: { if !$0 { asking = nil } }),
+                            presenting: asking) { next in
+            Button(AutopilotWords.turnOn) { Task { await set(next) } }
+            Button("Cancel", role: .cancel) {}
+        } message: { _ in
+            Text(AutopilotWords.askDetail)
+        }
+    }
+
+    private func choose(_ next: DaemonAPI.AutopilotMode) {
+        guard next != mode else { return }
+        if AutopilotWords.needsConfirm(from: mode, to: next) { asking = next } else { Task { await set(next) } }
+    }
+
+    private func read() async {
+        guard supported else { return }
+        do {
+            status = try await model.autopilotStatus(in: summary.key)
+            readAt = Date()
+            problem = nil
+        } catch {
+            problem = model.describe(error)
+        }
+    }
+
+    private func set(_ next: DaemonAPI.AutopilotMode) async {
+        do {
+            status = try await model.setAutopilot(next, in: summary.key)
+            readAt = Date()
+            problem = nil
+        } catch {
+            problem = model.describe(error)
+        }
+    }
+
+    private func seeWhatWaits(_ open: OpenWebPlace) {
+        Task {
+            let place = "/work/next?folder=" + (summary.folder.folder.path
+                .addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? "")
+            if let why = await open.run(place) { problem = why }
+        }
     }
 }
 

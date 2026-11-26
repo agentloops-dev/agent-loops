@@ -4,8 +4,9 @@ import assert from "node:assert/strict";
 import { load } from "./load.mjs";
 
 const { settingsSections, sectionsIn } = await load("src/views/settings/sections.ts");
-const store = (role, connect = false, thisMac = false, move = false) => ({ person: { value: role ? { role } : null }, canConnectAnother: { value: connect },
-  canControlThisMac: { value: thisMac }, canMovePlane: { value: move } });
+const store = (role, connect = false, thisMac = false, move = false, imageHosts = false) => ({ person: { value: role ? { role } : null }, canConnectAnother: { value: connect },
+  canControlThisMac: { value: thisMac }, canMovePlane: { value: move }, hosts: { value: [{ id: "m1", name: "Desk Mac" }] },
+  has: (_host, capability) => imageHosts && capability === "image-hosts/1" });
 
 test("each group's sections are in their subject's order", () => {
   const names = (scope, role) => sectionsIn(scope, store(role)).map((s) => s.name);
@@ -14,10 +15,14 @@ test("each group's sections are in their subject's order", () => {
   assert.deepEqual(names("thisApp"), ["sidebar", "notifications", "earlyFeatures"]);
   // What agents may do (#2957): the archive switch and the notice limits are rules of the policy now.
   assert.deepEqual(names("agents"), ["agentsPolicy"]);
-  assert.deepEqual(names("machines"), ["recoveryKey", "gitAccess", "backups", "desktopControl", "sleep", "serverBackups", "processes", "agentRuntimes", "browser"]);
+  assert.deepEqual(names("machines"), ["recoveryKey", "backups", "desktopControl", "sleep", "serverBackups", "processes", "agentRuntimes", "browser"]);
   assert.deepEqual(names("agentConfiguration"), ["skills", "personas", "workflows"]);
   assert.deepEqual(names("controlPlane", "admin"), ["signIns", "forgeLogins", "people", "clients", "bots", "groups", "channels", "signInProviders", "policy", "providers", "version"]);
   assert.deepEqual(names("controlPlane", "member"), ["signIns", "forgeLogins", "people", "clients", "groups", "channels", "policy", "providers", "version"]);
+});
+
+test("Image Hosts is after Browser, only where a machine keeps the list (#7140)", () => {
+  assert.deepEqual(sectionsIn("machines", store("admin", false, false, false, true)).map((s) => s.name).slice(-2), ["browser", "imageHosts"]);
 });
 
 test("Connect to Another… is in Control plane, before Version, only where the page may ask for it (#4257)", () => {

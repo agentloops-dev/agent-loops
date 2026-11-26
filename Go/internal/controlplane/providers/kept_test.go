@@ -267,32 +267,81 @@ func TestWhatWasNotSentGoesAWeekOn(t *testing.T) {
 	}
 }
 
-func TestAWaitingRequestExpiresAfterNinetyDaysAndRefreshesItsPersonsList(t *testing.T) {
+// A request that waits too long expires: its sender sees why it was not sent, with Try Again,
+// for a week, and then it goes (#7406). All of it within the store's 90 days.
+func TestAWaitingRequestExpiresShownNotSentThenGoesAtNinetyDays(t *testing.T) {
 	h := newHarness(t)
 	h.link(h.add(), devbox, "agents-devbox")
 	kept := h.keeper()
 	mustKeep(t, kept.Keep(devbox, MethodAgentsPrompt, promptParams("wait"), h.caller, nil))
-	kept.mu.Lock()
-	entry := &kept.kept[devbox][0]
-	entry.record.At = records.Stamp{Time: time.Now().Add(-KeptWaitingFor - time.Hour)}
-	data, err := records.Encode(entry.record)
-	if err != nil {
-		kept.mu.Unlock()
-		t.Fatal(err)
+	keptAgo(t, h, kept, keptExpiresAfter+time.Hour)
+	if n := kept.Expire(time.Now()); n != 0 || len(kept.All()) != 1 {
+		t.Fatalf("dropped %d; kept %v", n, kept.All())
 	}
-	if _, err := h.store.Put(context.Background(), entry.key, data, store.Always); err != nil {
-		kept.mu.Unlock()
-		t.Fatal(err)
-	}
-	kept.mu.Unlock()
-	if n := kept.Expire(time.Now()); n != 1 || len(kept.All()) != 0 {
-		t.Fatalf("expired %d; kept %v", n, kept.All())
+	if got := deref(kept.All()[0].Failed); got != keptExpired || !strings.Contains(got, "expired") || !strings.Contains(got, "83 days") {
+		t.Fatalf("why it was not sent: %q", got)
 	}
 	if !h.router.heard(NoticeKeptChanged) {
 		t.Fatal("the person's kept-request list was not refreshed")
 	}
+	// The record says so too: a restart shows the same.
+	if again := h.keeper(); deref(again.All()[0].Failed) != keptExpired {
+		t.Fatalf("not stored: %v", again.All())
+	}
+	if n := kept.Expire(time.Now().Add(KeptFailedFor - 2*time.Hour)); n != 0 || len(kept.All()) != 1 {
+		t.Fatalf("dropped %d before its week", n)
+	}
+	if n := kept.Expire(time.Now().Add(KeptFailedFor)); n != 1 || len(kept.All()) != 0 {
+		t.Fatalf("dropped %d; kept %v", n, kept.All())
+	}
 	if keys, _ := h.store.List(context.Background(), KeptPrefix+devbox+"/"); len(keys) != 0 {
 		t.Fatalf("expired payload remains stored: %v", keys)
+	}
+}
+
+// Try Again on one that expired keeps it as a new one: it waits again, and the next sweep
+// does not expire it at once, nor delete it by the time in its key.
+func TestTryAgainOnAnExpiredRequestKeepsItWaiting(t *testing.T) {
+	h := newHarness(t)
+	h.link(h.add(), devbox, "agents-devbox")
+	kept := h.keeper()
+	mustKeep(t, kept.Keep(devbox, MethodAgentsPrompt, promptParams("wait"), h.caller, nil))
+	keptAgo(t, h, kept, keptExpiresAfter+time.Hour)
+	kept.Expire(time.Now())
+	one := kept.All()[0]
+	h.must(MethodHostsRetryKept, KeptRequestID{Host: one.Host, ID: one.ID})
+	if n := kept.Expire(time.Now().Add(KeptFailedFor + time.Hour)); n != 0 || len(kept.All()) != 1 || deref(kept.All()[0].Failed) == keptExpired {
+		t.Fatalf("dropped %d; kept %v", n, kept.All())
+	}
+	if keys, _ := h.store.List(context.Background(), KeptPrefix+devbox+"/"); len(keys) != 1 {
+		t.Fatalf("stored: %v", keys)
+	}
+}
+
+// An action on one that is not kept any more says it may have expired, and what to do.
+func TestAnActionOnARequestThatIsGoneSaysItMayHaveExpired(t *testing.T) {
+	h := newHarness(t)
+	h.link(h.add(), devbox, "agents-devbox")
+	h.keeper()
+	_, err := h.call(MethodHostsRetryKept, KeptRequestID{Host: devbox, ID: "0B7C6F2E-6A57-4D0B-9F4A-3C3E1E2B8D11"})
+	if err == nil || !strings.Contains(err.Error(), "expired") || !strings.Contains(err.Error(), "send it again") {
+		t.Fatalf("%v", err)
+	}
+}
+
+// keptAgo makes the one request kept for devbox as if it was kept ago.
+func keptAgo(t *testing.T, h *harness, kept *Kept, ago time.Duration) {
+	t.Helper()
+	kept.mu.Lock()
+	defer kept.mu.Unlock()
+	entry := &kept.kept[devbox][0]
+	entry.record.At = records.Stamp{Time: time.Now().Add(-ago)}
+	data, err := records.Encode(entry.record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.store.Put(context.Background(), entry.key, data, store.Always); err != nil {
+		t.Fatal(err)
 	}
 }
 

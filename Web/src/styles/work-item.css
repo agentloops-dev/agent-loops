@@ -406,3 +406,23 @@ dialog.sheet:has(.work-log) { width: min(860px, calc(100vw - 32px)); }
 .work-deploy-gate { display: flex; gap: 6px; margin-top: 4px; }
 .work-deploy-problem { color: var(--forge-closed); }
 .work-deploy-none { margin: 0; }
+
+/* A blocked image on a Work page (#7140, as BlockedImage.swift): a card on its own line, a chip in words, a popover. */
+.blocked-image { display: flex; gap: 8px; align-items: flex-start; margin: 0 0 12px; padding: 11px 13px;
+  border: 1px solid var(--paper-rule); border-radius: 10px; background: var(--paper-well); max-width: 100%; }
+.blocked-image-icon { flex: none; margin-top: 3px; color: var(--paper-tertiary); }
+.blocked-image-body { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.blocked-image-name { font-weight: 600; }
+.blocked-image-line { display: block; overflow-wrap: anywhere; }
+.blocked-image-body .quiet, .blocked-popover .quiet { font-size: var(--type-supporting); }
+.blocked-image-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 6px; }
+.blocked-image-actions button { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.blocked-chip-anchor { position: relative; display: inline-block; }
+.blocked-chip { display: inline-flex; gap: 6px; align-items: center; padding: 0 7px; font-size: var(--type-supporting);
+  border: 1px solid var(--paper-edge); border-radius: 7px; background: var(--paper-raised); vertical-align: baseline; }
+.popover.blocked-popover { display: flex; flex-direction: column; gap: 3px; width: min(370px, calc(100vw - 32px));
+  padding: 12px 14px; border-radius: 16px; white-space: normal; font-weight: normal; }
+.shown-once { display: flex; flex-wrap: wrap; gap: 0 6px; align-items: baseline; margin: 4px 0 12px; font-size: var(--type-supporting); }
+.shown-once button.link { border: none; background: none; padding: 0; color: var(--accent); cursor: pointer; max-width: 100%;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.shown-once .failure { flex-basis: 100%; }

@@ -934,6 +934,14 @@ final class AppModel {
     /// folder page, pin, workflow and chat closed, as the window opens and as it is when the
     /// selection clears. From its row under Work or View ▸ Dashboard.
     func showDashboard() {
+        closePages()
+        showNothing()
+    }
+
+    /// Every page about all the work closed (Cost, Time, Work, Messages, …), so the detail
+    /// column draws the folder, chat, pin or workflow under them: `ContentView.detail` draws
+    /// a page first.
+    func closePages() {
         showsSpending = false
         showsEvents = false
         showsRuntimes = false
@@ -948,7 +956,6 @@ final class AppModel {
         showsDocs = false
         showsMessages = false
         showsAchievements = false
-        showNothing()
     }
 
     /// A folder's workflows or its archive, from its row in the sidebar (#495).
@@ -987,20 +994,7 @@ final class AppModel {
         // Going to a folder is going away from Spending, wherever the ask came from
         // — a new folder being added, a menu item, its New session row. And from
         // Resources, for the same reason.
-        showsSpending = false
-        showsEvents = false
-        showsRuntimes = false
-        statusSecretsPage = nil
-        showsTime = false
-        showsVelocity = false
-        showsCycletime = false
-        showsTokens = false
-        machinePage = nil
-        showsMachines = false
-        showsWork = false
-        showsDocs = false
-        showsMessages = false
-        showsAchievements = false
+        closePages()
         select(key)
         // A new session in it (#366): the folder's own page is where a session starts,
         // as New Session has it. The folder's row in the sidebar only folds (#375).
@@ -1075,6 +1069,8 @@ final class AppModel {
     var composing = false {
         didSet {
             guard composing, !oldValue else { return }
+            // New Session (⌘N) over a page shows the new session, not the page (#6979).
+            closePages()
             selection = nil
             openWorkflow = nil
             openPin = nil
@@ -1445,6 +1441,10 @@ final class AppModel {
     let endedConnections = EndedConnections()
     /// People (#994): the machines waiting for this person's approval, fed from the watch.
     let people = PeopleState()
+    /// The control plane's capacity, for an admin's Machines (#6591).
+    let controlCapacity = ControlCapacityState()
+    /// Make This the Control Plane… and the moves' steps, for an admin's Machines (#6614).
+    let controlMove = ControlMoveState()
     /// The GitHub sign-ins waiting for this person's Approve (#995).
     let signIn = SignInState()
     /// This window's place in the person's machine lock, and the clients asking to join it (#3490).
@@ -1549,8 +1549,6 @@ final class AppModel {
     let machineSignIn = MachineSignInDriver()
     /// The Export… or Import Agents… on its way, drawn as a busy sheet with Cancel (#2437).
     var exportImport: ExportImportProgress?
-    /// Git asks answered here, until the control plane's list drops them (#1122).
-    var gitAsksAnswered: Set<String> = []
     /// What a server with no connection answers through: nothing, at once.
     private static let unreachable = DaemonClient(link: UnreachableLink())
 
@@ -2659,6 +2657,49 @@ final class AppModel {
     /// The feature flags the person has on (#6572), as the mirror keeps them.
     let flags = FeatureFlagStates(defaults: WindowDefaults.store)
 
+    /// Send Set-up's sends that wait for a machine to be online (#7155).
+    let setupSends = SetupSendState()
+
+    /// The control plane as a machine in Machines, with its level, its page and a strip (#6591):
+    /// behind its flag, and for an admin only.
+    var showsControlPlaneMachine: Bool {
+        flags.isOn(.controlPlaneMachine) && people.you?.isAdmin == true
+    }
+
+    /// Make This the Control Plane… on a machine's page, and the strip of a move (#6614): behind its
+    /// flag, and for an admin only.
+    var showsControlPlaneMove: Bool {
+        flags.isOn(.controlPlaneMove) && people.you?.isAdmin == true
+    }
+
+    /// The machine record a page is of, as the control plane lists it: this Mac's too (#6614).
+    func controlRecord(_ host: MachineRef) -> DaemonAPI.ControlMachine? {
+        let id = host == .mac ? ThisMacHost.resolve(controlPlaneHosts) : host
+        return controlPlaneHosts?.first { $0.id == id }
+    }
+
+    /// The machines with the control role, for matching a copy that names none (#6591).
+    var controlPlaneMachineCount: Int {
+        (controlPlaneHosts ?? []).filter { ControlPlaneMachine.controlRole($0) }.count
+    }
+
+    /// The machine record runs a copy of the control plane now: a copy names it (#7393), not its
+    /// role. Before the first read of the copies, the role.
+    func runsControlCopy(_ record: DaemonAPI.ControlMachine?) -> Bool {
+        ControlPlaneMachine.runsControl(record, copies: controlCapacity.readLooks, controlMachines: controlPlaneMachineCount)
+    }
+
+    /// The machine runs the control plane and the person sees it as one (#6591). This Mac too,
+    /// which `hosts.controlRows` leaves out.
+    func runsControlPlane(_ host: MachineRef) -> Bool {
+        showsControlPlaneMachine && runsControlCopy(controlPlaneHosts?.first { $0.id == host })
+    }
+
+    /// The latest look of the control plane on that machine; nil when it runs none, or before the first.
+    func controlPlaneLook(_ host: MachineRef) -> DaemonAPI.ControlCapacityCopy? {
+        controlCapacity.look(for: host, controlMachines: controlPlaneMachineCount)
+    }
+
     /// The person's display choices (#1033): this Mac's host keeps them, and the window's
     /// defaults mirror them so every view reads them where it always did.
     /// A change shows at once; one the host did not take goes back, and says so (#4814).
@@ -3293,6 +3334,20 @@ final class AppModel {
             returning: DaemonAPI.NotCommittedResponse.self)
     }
 
+    /// What Autopilot did in a folder and why each item waits (#5904, #5898), read by its own machine.
+    func autopilotStatus(in key: FolderKey) async throws -> DaemonAPI.AutopilotStatus {
+        try await client(for: key.host).call(
+            DaemonAPI.Method.autopilotStatus, DaemonAPI.AutopilotRequest(folder: key.folder),
+            returning: DaemonAPI.AutopilotStatus.self)
+    }
+
+    /// What Autopilot starts in a folder (#5904); the status after the change.
+    func setAutopilot(_ mode: DaemonAPI.AutopilotMode, in key: FolderKey) async throws -> DaemonAPI.AutopilotStatus {
+        try await client(for: key.host).call(
+            DaemonAPI.Method.autopilotSet, DaemonAPI.AutopilotSetRequest(folder: key.folder, mode: mode),
+            returning: DaemonAPI.AutopilotStatus.self)
+    }
+
     /// The project's working hours (#4821); nil takes them out, back to 09:00-17:00 Mon-Fri.
     func setWorkingHours(_ hours: WorkflowHours?, for key: FolderKey) async {
         do {
@@ -3875,8 +3930,6 @@ final class AppModel {
             KeptThisMacHost.keep(from: listed, controlKey: controlKey, in: WindowDefaults.store)
             keptHost = KeptThisMacHost.read(controlKey: controlKey, from: WindowDefaults.store)
         }
-        // An ask no longer waiting may be asked again later, once taken back (#1122).
-        gitAsksAnswered.formIntersection(GitLendAsk.waiting(in: listed))
         controlPlaneListed = true
         controlPlaneName = status.name
         controlPlaneMaturity = status.maturity
@@ -5151,6 +5204,22 @@ final class AppModel {
         await act(.startNow, on: agentID) {
             try await self.client(forAgent: agentID).call(DaemonAPI.Method.agentsStartNow,
                                        DaemonAPI.AgentRequest(agentID: agentID))
+        }
+    }
+
+    /// Asks the session's host to write its summary again (#7322, `agents/summarise`): only
+    /// while the summary is shown (Alex on #7318), and the host writes only when a turn ended
+    /// since it last read. It answers at once; `agents/changed` brings the new text. Nothing
+    /// on a host without `session-summary/1`.
+    func summarise(_ agentID: UUID) async {
+        guard agent(agentID, has: Capability.sessionSummary1) else { return }
+        do {
+            _ = try await client(forAgent: agentID).call(DaemonAPI.Method.agentsSummarise,
+                                                         DaemonAPI.AgentRequest(agentID: agentID),
+                                                         returning: SessionSummary.self)
+        } catch {
+            // The page keeps the summary it has, with its time (gate 2, #7320).
+            Self.chatLog.info("agent \(agentID, privacy: .public): no summary asked: \(error.localizedDescription, privacy: .public)")
         }
     }
 

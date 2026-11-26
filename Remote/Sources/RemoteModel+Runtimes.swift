@@ -228,6 +228,11 @@ extension RemoteModel {
     @discardableResult
     func answerSecretUse(_ request: NeedRequest, _ action: NeedRequest.Action) async -> Bool {
         let host = request.askedBy.flatMap { work.agent($0)?.host } ?? .mac
+        // loops with no pairing (#6875): only the Mac it asks from makes its code.
+        if let use = request.secretUse, use.isPairing, action != .deny {
+            problem = NeedRequest.SecretUse.pairOnTheMac
+            return false
+        }
         var approval: DaemonAPI.LockDelivery?
         // A Linux machine opens the value only for an answer this device signed (#4149).
         if let use = request.secretUse, use.signs(action) {

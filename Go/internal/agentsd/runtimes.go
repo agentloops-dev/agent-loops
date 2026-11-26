@@ -372,6 +372,7 @@ func (d *Daemon) launchOn(r *runtimeDef, dir string, account *wire.AccountProfil
 		if err := os.MkdirAll(filepath.Dir(file), 0o700); err != nil {
 			return acp.Launch{}, err
 		}
+		// store-bounds: not a store: a launch file: the runtime's tool policy, written again at each launch.
 		if err := os.WriteFile(file, []byte(f.contents), 0o600); err != nil {
 			return acp.Launch{}, err
 		}
@@ -463,7 +464,7 @@ outer:
 func (d *Daemon) needsSignIn(runtimeID string) error {
 	// A Mac's own agents use the Mac's own sign-in (in the Keychain for Claude): nothing is
 	// lent to them, and nothing is wanted (DaemonCore+Credentials, onServer false; #1138).
-	if d.Tunneler == nil || macToolsHome != "" || d.relayFor(runtimeID) != nil {
+	if d.tunnels() == nil || macToolsHome != "" || d.relayFor(runtimeID) != nil {
 		return nil
 	}
 	switch runtimeID {
@@ -568,12 +569,6 @@ var toolPolicyFiles = map[string][]policyFile{
 // falls back to its stock profile and every tool comes back.
 var grokRemoved = []string{"scheduler_create", "scheduler_delete", "scheduler_list", "workflow", "monitor", "send_feedback"}
 
-// claudeNoAttribution is Claude Code's --settings for each session (#6371): no commit
-// attribution of its own (attribution.commit, and includeCoAuthoredBy before it), so its
-// commits get no Co-authored-by that the commitTrailers rule turns off, and no second copy
-// of the one git/trailers writes. Flag settings sit over the person's and the project's.
-const claudeNoAttribution = `{"attribution":{"commit":""},"includeCoAuthoredBy":false}`
-
 // sessionMeta is the _meta on session/new, session/load and session/fork: Claude's tools
 // and Grok's tools the app takes away, Grok's as a profile (ToolPolicyCatalog.swift), and
 // Grok's rules with the app's tools written out (grokRules).
@@ -582,8 +577,7 @@ func sessionMeta(runtimeID string) map[string]any {
 	case "claude":
 		return map[string]any{"claudeCode": map[string]any{"options": map[string]any{"disallowedTools": []string{
 			"Workflow", "CronCreate", "CronList", "CronDelete", "ScheduleWakeup", "Monitor", "RemoteTrigger", "PushNotification",
-			"EnterWorktree", "ExitWorktree"},
-			"extraArgs": map[string]any{"settings": claudeNoAttribution}}}}
+			"EnterWorktree", "ExitWorktree"}}}}
 	case "grok":
 		return map[string]any{"agentProfile": map[string]any{"disallowedTools": grokRemoved, "name": "agents-app",
 			"description": "An agent hosted by the Agent Loops app."}, "rules": grokRules()}

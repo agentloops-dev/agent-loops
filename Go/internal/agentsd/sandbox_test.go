@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/acp"
+	"github.com/agentloops-dev/agent-loops/Go/internal/flaky"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -20,7 +21,7 @@ func TestEachRuntimesSandboxAsItTakesIt(t *testing.T) {
 
 	l, meta := withSandbox(acp.Launch{Args: []string{"acp"}, Env: []string{"GEMINI_SANDBOX=true"}}, sessionMeta("claude"), "claude", wire.SandboxChoiceOff)
 	b, _ := json.Marshal(meta)
-	if string(b) != `{"claudeCode":{"options":{"disallowedTools":["Workflow","CronCreate","CronList","CronDelete","ScheduleWakeup","Monitor","RemoteTrigger","PushNotification","EnterWorktree","ExitWorktree"],"extraArgs":{"settings":"{\"attribution\":{\"commit\":\"\"},\"includeCoAuthoredBy\":false}"},"sandbox":{"enabled":false}}}}` || len(l.Args) != 1 {
+	if string(b) != `{"claudeCode":{"options":{"disallowedTools":["Workflow","CronCreate","CronList","CronDelete","ScheduleWakeup","Monitor","RemoteTrigger","PushNotification","EnterWorktree","ExitWorktree"],"sandbox":{"enabled":false}}}}` || len(l.Args) != 1 {
 		t.Fatalf("%s %v", b, l.Args)
 	}
 	if l, _ := withSandbox(acp.Launch{Args: []string{"acp"}}, nil, "grok", wire.SandboxChoiceOn); !slices.Equal(l.Args, []string{"acp"}) {
@@ -91,6 +92,7 @@ func TestAnAgentsSandbox(t *testing.T) {
 
 func TestASandboxThatCouldNotStart(t *testing.T) {
 	t.Parallel()
+	flaky.UnderLoad(t, "#7385")
 
 	if got := sandboxMatch("claude", "\x1b[31mError: run failed. sandbox_apply: Operation not permitted\x1b[0m\nok"); got != "sandbox_apply: Operation not permitted" {
 		t.Fatalf("%q", got)

@@ -64,6 +64,10 @@ func (s *Service) makeProviders() *providers.Providers {
 				return s.methods.projectSessions(context.Background(), request, caller.Person,
 					Caller{Session: caller.Session, Client: caller.Client, Kind: caller.Kind, Person: caller.Person})
 			},
+			PreviewStart: func(request wire.AutoMachineRequest, caller providers.Caller) (wire.AutoMachinePick, error) {
+				return s.methods.previewStart(context.Background(), request,
+					Caller{Session: caller.Session, Client: caller.Client, Kind: caller.Kind, Person: caller.Person})
+			},
 			HostCommand: func(person string) (string, string, error) {
 				// The code lives as long as the control plane waits for the machine to join
 				// (#4610): a machine that boots slowly still joins with it. The host id it joins
@@ -82,6 +86,10 @@ func (s *Service) makeProviders() *providers.Providers {
 			MadeFor:   s.madeFor,
 			Setup:     func(host string) *wire.MachineSetup { return s.machineSetup(context.Background(), host) },
 			BackUp:    s.backUpBeforeDelete,
+			Capacity: func(host string) (wire.CapacityLevel, *float64, time.Time, bool) {
+				n, ok := s.capacityOf(host)
+				return n.level, n.load5, n.at, ok
+			},
 		},
 	})
 	kept := providers.NewKeptFor(p, s.log)

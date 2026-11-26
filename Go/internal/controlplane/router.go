@@ -41,6 +41,16 @@ type botOwners interface {
 	BotMachineFor(person, host string) bool
 }
 
+// controlMachines says why a machine takes no agent work: it runs the control plane and no
+// agents (#7314), "" when it runs agents. Its link is for the store copy and the handover
+// only, so no client's channel opens to it and no client's request reaches it.
+type controlMachines interface {
+	NoAgentsRefusal(host string) string
+}
+
+// controlOnlyHost is the owner HoldToOwners reads for a control-only machine: no person's.
+const controlOnlyHost = "\x00control"
+
 // Handler is ControlHandling: what the control plane answers itself, handed to the
 // router so the router stays ignorant of pairing, stores and ssh.
 type Handler interface {
@@ -188,6 +198,9 @@ type hostSession struct {
 	local bool
 	// A peer's stream "peer/channel" to the channel it was given here.
 	proxied map[string]int
+	// Where the host's control role serves, as its last machine/hello on this uplink said
+	// (#7313); nil when it has none.
+	control *wire.MachineControlAddress
 }
 
 type hostAsk struct {
@@ -626,6 +639,9 @@ func (r *Router) OpenFromPeer(peer, host string, c int, open wire.ChannelOpen) {
 	h := r.hosts[host]
 	// The peer checks its client's person too; a stream for another's machine opens nothing.
 	mine := r.owners == nil || r.owners.OwnerOf(host) == r.owners.PersonOf(open.Client)
+	if ctl, ok := r.owners.(controlMachines); ok && ctl.NoAgentsRefusal(host) != "" {
+		mine = false
+	}
 	if h == nil || !h.local || !mine {
 		r.tellPeerLocked(peer, peerFrame(host, closeFrame(c)))
 		return
@@ -1188,11 +1204,6 @@ func (r *Router) channelZero(msg, host string, gen int64, calls *hostCalls) {
 		return
 	}
 	call := hostCall{id: m.ID, method: m.Method, params: m.Params}
-	if m.Method == "git/credential" {
-		// A git command waits on a person's answer (#1122): it holds no lane.
-		go r.answerHost(host, gen, call)
-		return
-	}
 	if calls.take(call) {
 		calls.noteTaken()
 	} else {
@@ -1334,6 +1345,11 @@ func (r *Router) AttachClient(client *records.ClientRecord, conn *Conn, capabili
 	}
 	r.noteLinkLocked(client.ID)
 	r.mu.Unlock()
+	return id
+}
+
+// ReadClient answers an attached session's lines until its socket ends, then detaches it.
+func (r *Router) ReadClient(id string, conn *Conn) {
 	go func() {
 		for {
 			line, err := conn.Read(context.Background())
@@ -1346,7 +1362,6 @@ func (r *Router) AttachClient(client *records.ClientRecord, conn *Conn, capabili
 		r.detachLocked(id, 0)
 		r.mu.Unlock()
 	}()
-	return id
 }
 
 // ForgottenCloseCode is what a forgotten client's sockets end with (071 browser-auth.md).
@@ -1643,6 +1658,12 @@ func (r *Router) refusedForHostLocked(s *clientSession, sessionID, host string, 
 		r.noteLocked(s.caller, host, m, "refused")
 		return true
 	}
+	// A machine that runs the control plane and no agents takes no agent work (#7314).
+	if ctl, ok := r.owners.(controlMachines); ok && r.known[host] && ctl.NoAgentsRefusal(host) != "" {
+		r.writeLocked(sessionID, s.wrap(host, replyError(m.ID, fail(notPermitted, "%s", ctl.NoAgentsRefusal(host)))))
+		r.noteLocked(s.caller, host, m, "refused")
+		return true
+	}
 	// Another user's machine is not found, as one that is not there (FR-018).
 	if !r.known[host] || !r.mayReachLocked(s.caller, host) {
 		r.writeLocked(sessionID, s.wrap(host, replyError(m.ID, fail(noSuchHost, "No machine is called %s.", host))))
@@ -1753,8 +1774,15 @@ func (r *Router) MayReach(from Caller, host string) bool {
 }
 
 func (r *Router) mayReachLocked(from Caller, host string) bool {
-	return r.owners == nil || r.owners.OwnerOf(host) == from.Person
+	if r.owners == nil {
+		return true
+	}
+	if ctl, ok := r.owners.(controlMachines); ok && ctl.NoAgentsRefusal(host) != "" {
+		return false
+	}
+	return r.owners.OwnerOf(host) == from.Person
 }
+
 
 // ServesItself says whether a host may answer a person's page itself (#1970): one this
 // router knows, and the person's own (FR-018).
@@ -1780,6 +1808,18 @@ func (r *Router) NoteCarried(session, host string) {
 	s.carriedBy = host
 }
 
+// reachOwner is the person whose sessions hold a channel to host: its owner, none when
+// there is no ownership, and no person's for a control-only machine (#7314).
+func reachOwner(owners Ownership, host string) string {
+	if ctl, ok := owners.(controlMachines); ok && ctl.NoAgentsRefusal(host) != "" {
+		return controlOnlyHost
+	}
+	if owners == nil {
+		return ""
+	}
+	return owners.OwnerOf(host)
+}
+
 // HoldToOwners opens a channel to each machine a session's person owns now, and closes
 // the one to each it no longer owns: after a join is approved, or a machine changes hands.
 // Each machine's owner is read once, outside the lock, as each read takes the records'
@@ -1796,10 +1836,7 @@ func (r *Router) HoldToOwners() {
 	ownerOf := make(map[string]string, len(hosts))
 	byOwner := map[string][]string{}
 	for _, host := range hosts {
-		owner := ""
-		if owners != nil {
-			owner = owners.OwnerOf(host)
-		}
+		owner := reachOwner(owners, host)
 		ownerOf[host] = owner
 		byOwner[owner] = append(byOwner[owner], host)
 	}

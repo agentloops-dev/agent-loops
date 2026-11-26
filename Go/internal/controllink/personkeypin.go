@@ -40,7 +40,7 @@ func pinnedPersonKeyPath(root string) string { return filepath.Join(root, Pinned
 
 // LoadPinnedPersonKey is this machine's pin, or nil when it has none yet.
 func LoadPinnedPersonKey(root string) (*PinnedPersonKey, error) {
-	b, err := os.ReadFile(pinnedPersonKeyPath(root))
+	b, err := readAtMost(pinnedPersonKeyPath(root), PinnedPersonKeyFileName, PinnedPersonKeyMostBytes)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil, nil
 	}
@@ -59,8 +59,12 @@ func (p *PinnedPersonKey) save(root string) error {
 	if err != nil {
 		return err
 	}
+	if err := fits("The pinned person key", b, PinnedPersonKeyMostBytes); err != nil {
+		return err
+	}
 	path := pinnedPersonKeyPath(root)
 	tmp := path + ".tmp"
+	// store-bounds: kind=key-value; count=1; size=4KiB; age=until-deleted; applied=on write (refused), only a rotation that checks against it moves it
 	if err := os.WriteFile(tmp, b, 0o600); err != nil {
 		return err
 	}

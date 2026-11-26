@@ -17,7 +17,7 @@ iPhone, and on a narrow web page, it is the first screen, and what you open goes
 | **Work** | **Docs**, **Messages**, then a row for each list: **Issues**, **Pull Requests** and the rest. On the web page, Work is a section of the bar, with the same pages. |
 | **Status** | What is going on, and no settings: **Runtimes** (each runtime once, with your accounts and a line per machine), **Events**, **Secrets** and **Accounts** (what happened to them last). To change your connectors, secrets and outside accounts, use **Settings ▸ You**. |
 | **Machines** | A page for each machine: its disks, CPU and memory, **Runtimes** installed, **Resources** and **Worktrees**. |
-| **Reports** | Pages about past work: **Achievements** (the Multiplier and the badges), **Cost**, **Tokens**, **Time**, **Velocity**, and **Milestones** until you have done every first step. On the iPhone and the iPad, Reports has **Achievements** and **Velocity** only. |
+| **Reports** | Pages about past work: **Achievements** (the Multiplier and the badges), **Cost** (with the tabs **Spend**, **Tokens** and **Time**), **Velocity** and **Cycle time**. On the iPhone and the iPad, Reports has **Achievements** and **Velocity** only. |
 | Smart groups | **Pinned**, **Needs You**, **For Review**, **Working** and **Unread**, each across every folder and host. See [Smart groups](#smart-groups). |
 | One group per project | Each project's sessions on every machine, and its folder's workflows. A project with one folder is that folder's group. See [A folder's group](#a-folders-group) and [A project with folders on several machines](#a-project-with-folders-on-several-machines). |
 | **Archived folders** | Folders you put away. The heading stays folded until you open it. Each has **Unarchive**. |
@@ -79,12 +79,16 @@ you without opening each folder.
 
 ### Turn a smart group on or off
 
-Turn each group on or off under **Smart groups** in **Settings ▸ This app ▸ Sidebar** on the Mac,
+Turn **Pinned**, **Working** and **Unread** on or off under **Smart groups** in **Settings ▸ This app ▸ Sidebar** on the Mac,
 in **Settings…** at the foot of the sidebar on iPhone and iPad (under **This app**), and under
 **Sidebar** in **Settings ▸ This browser** on the web page. The choice is kept on your Mac, so every
 client shows the same groups. A group that is off is not shown. Its sessions go to the next
-group they fit, if there is one. With **Needs You** off, approvals are not listed
-in the sidebar.
+group they fit, if there is one.
+
+**Needs You** and **For Review** are always on (#6835). They are your to-do list, so they
+have no switch: with **Needs You** off, an approval would not be in the sidebar at all, and
+an agent could wait for ever. A choice kept from before that turned one of them off is
+passed over, and the next change drops it.
 
 The choice is kept on your Mac, with your other display choices, so every client shows
 the same groups.

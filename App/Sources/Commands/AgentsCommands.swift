@@ -125,6 +125,12 @@ struct AgentsCommands: Commands {
         // The standard Show/Hide Sidebar (⌃⌘S) for the folders column.
         SidebarCommands()
 
+        // Agent Loops ▸ Install loops Command… (#6875): Settings ▸ Machines ▸ This Mac, whose
+        // Command line section installs it, as VS Code and Docker put theirs in the app menu.
+        CommandGroup(after: .appSettings) {
+            Button(LoopsCommand.menuItem) { model.settingsPaneAsked = .machines; openSettings() }
+        }
+
         CommandGroup(replacing: .newItem) {
             Button("New Session") { newSession() }
                 .keyboardShortcut(MenuKeys.newSession)
@@ -235,8 +241,6 @@ struct AgentsCommands: Commands {
                 .keyboardShortcut(pageZoom == nil ? KeyboardShortcut("0") : nil)
             Button("Cost") { model.showsSpending = true }
                 .keyboardShortcut(MenuKeys.cost)
-            Button("Tokens") { model.showsTokens = true }
-            Button("Time") { model.showsTime = true }
             Button("Velocity") { model.showsVelocity = true }
             Button("Cycle time") { model.showsCycletime = true }
             // Agents as a web page on this Mac, found from here (#109).
@@ -635,7 +639,7 @@ struct AgentsCommands: Commands {
             add("Work: \(kind.title)") { model.sidebarItem = .work(kind) }
         }
         add("Achievements") { model.showAchievements() }
-        add("Cost", MenuKeys.cost) { model.showsSpending = true }
+        add("Cost", MenuKeys.cost, keywords: ["spend", "tokens", "time"]) { model.showsSpending = true }
         add("Docs", when: model.flags.isOn(.docs)) { model.showDocs(model.docsHistory.current ?? DocsPlace()) }
         add("Settings…", KeyboardShortcut(","), keywords: ["preferences"]) { openSettings() }
         return actions

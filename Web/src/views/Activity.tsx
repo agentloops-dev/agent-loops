@@ -250,7 +250,7 @@ function runtimeRowLine(status: RuntimeStatus, allowance: { unusable?: string; s
 
 const onlineHosts = (store: Store): ControlMachine[] => store.hosts.value.filter((h) => hostAnswers(h.state));
 
-const pageTitles: Record<ActivityPage, string> = { events: "Events", runtimes: "Runtimes", mcp: "Connectors", spending: "Cost", tokens: "Tokens", time: "Time", velocity: "Velocity", cycletime: "Cycle time" };
+const pageTitles: Record<ActivityPage, string> = { events: "Events", runtimes: "Runtimes", mcp: "Connectors", spending: "Spend", tokens: "Tokens", time: "Time", velocity: "Velocity", cycletime: "Cycle time" };
 
 /** How much is left, with no times, as allowanceReading's first part: "62% left". Null when the reading has no amount. */
 function allowanceAmount(state: AllowanceState, now: Date): string | null {
@@ -462,7 +462,7 @@ export function ActivityPageView({ store, page, inReport = false }: { store: Sto
             <div class="tabs events-panes" role="tablist" aria-label="Show">
               {(["cost", "reports"] as const).map((p) => (
                 <button key={p} role="tab" aria-selected={costPane.value === p} class={costPane.value === p ? "on" : ""}
-                  onClick={() => { costPane.value = p; }}>{p === "cost" ? "Cost" : "Reports"}</button>
+                  onClick={() => { costPane.value = p; }}>{p === "cost" ? "Spend" : "Reports"}</button>
               ))}
             </div>
           )}

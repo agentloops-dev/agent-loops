@@ -48,14 +48,25 @@ public enum SidebarSmartRow: String, CaseIterable, Hashable, Sendable {
     /// it; a device that keeps a choice, `""` (every group on) too, keeps it.
     public static let offAtFirst = "working,unread"
 
-    /// The groups on, from what the defaults keep under `offDefaultsKey`.
+    /// The groups that are always on (#6835): Needs You and For Review are the person's
+    /// to-do list, so Settings ▸ Sidebar has no switch for them. A kept value that names
+    /// one is not an error: `on(off:)` passes the name over, and `off(on:)` drops it.
+    public static let alwaysOn: Set<SidebarSmartRow> = [.needsYou, .forReview]
+
+    /// Whether Settings ▸ Sidebar draws a switch for it: Pinned, Working and Unread.
+    public var canTurnOff: Bool { !Self.alwaysOn.contains(self) }
+
+    /// The groups on, from what the defaults keep under `offDefaultsKey`: `alwaysOn` too,
+    /// whatever is kept.
     public static func on(off raw: String) -> Set<SidebarSmartRow> {
         all.subtracting(raw.split(separator: ",").compactMap { SidebarSmartRow(rawValue: String($0)) })
+            .union(alwaysOn)
     }
 
-    /// What the defaults keep under `offDefaultsKey` for the groups on, in the sidebar's order.
+    /// What the defaults keep under `offDefaultsKey` for the groups on, in the sidebar's
+    /// order. It never names a group of `alwaysOn`.
     public static func off(on: Set<SidebarSmartRow>) -> String {
-        allCases.filter { !on.contains($0) }.map(\.rawValue).joined(separator: ",")
+        allCases.filter { $0.canTurnOff && !on.contains($0) }.map(\.rawValue).joined(separator: ",")
     }
 
     /// Needs You starts open, so the first thing the window says is who is waiting, and

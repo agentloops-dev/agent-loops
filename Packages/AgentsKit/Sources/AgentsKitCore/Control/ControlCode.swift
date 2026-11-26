@@ -154,9 +154,12 @@ public extension DaemonAPI {
         /// `swift` or `go` (#1134), as in `MachineHello.implementation`, so the row says it from
         /// the first listing, before the host's first hello.
         public var implementation: String?
+        /// What the machine does (#6609, #7314): `agents`, `control` or both. Absent means agents.
+        public var roles: [String]?
         public init(publicKey: Data, name: String, platform: String, version: String, machineID: String,
-                    implementation: String? = nil) {
+                    implementation: String? = nil, roles: [String]? = nil) {
             self.implementation = implementation
+            self.roles = roles
             self.publicKey = publicKey
             self.name = name
             self.platform = platform

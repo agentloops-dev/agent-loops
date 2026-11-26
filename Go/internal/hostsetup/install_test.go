@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -42,6 +43,8 @@ func fakeHost(t *testing.T, l Layout, started *int) Deps {
 	t.Helper()
 	return Deps{
 		Poll: time.Millisecond, JoinWait: time.Second, RuntimeWait: time.Second,
+		// No root.sh: a test of Root set-up writes one here.
+		RootFolder: t.TempDir(),
 		StartHost: func(binary, root, name string) (string, error) {
 			*started++
 			return "in the background", os.WriteFile(filepath.Join(root, "control-host.json"), []byte("{}"), 0o600)
@@ -295,5 +298,57 @@ func TestAPoolMachineStopsAfterItsProjectsAndAClaimGoesOn(t *testing.T) {
 	_ = Continue(ctx, o, deps, l.Root, wire.MachineSetupStepIDProjects)
 	if len(reports(t, l)) != said {
 		t.Fatal("a host that stopped said a step")
+	}
+}
+
+// #7314: a control-only machine marks its host before it joins, so it enrols with the
+// control role alone, and asks its host for no runtime, project or session.
+func TestAControlOnlyMachineJoinsAndInstallsNoAgents(t *testing.T) {
+	o, l := options(t)
+	private := controllink.NewPrivateKey()
+	public, _ := controllink.PublicKey(private)
+	_, secret := controllink.MakeCodeSecret(private)
+	o.Join = (&controllink.Code{Host: true, ControlKey: public, Secret: secret, URL: "https://cp.example", Name: "cp"}).Text()
+	o.ControlOnly, o.Smoke = true, true
+	started := 0
+	deps := fakeHost(t, l, &started)
+	deps.Call = func(method string, _ any) (json.RawMessage, error) {
+		t.Fatalf("a control-only machine asked its host %s", method)
+		return nil, nil
+	}
+	if err := Run(context.Background(), o, deps); err != nil {
+		t.Fatal(err)
+	}
+	if !controllink.ControlOnly(l.Root) || started != 1 {
+		t.Fatalf("control only %v, started %d", controllink.ControlOnly(l.Root), started)
+	}
+	rs := reports(t, l)
+	for _, step := range []wire.MachineSetupStepID{wire.MachineSetupStepIDRuntimes, wire.MachineSetupStepIDProjects} {
+		if r := lastOf(rs, step); r == nil || r.State != wire.MachineSetupStateDone || *r.Detail != controlOnlyStep {
+			t.Fatalf("step %s = %+v", step, r)
+		}
+	}
+	if lastOf(rs, wire.MachineSetupStepIDSmoke) != nil {
+		t.Fatal("a control-only machine ran a smoke session")
+	}
+}
+
+// A run of the installer marks the checkout, so a send of the same script runs nothing (#7158).
+func TestRunScriptMarksTheCheckout(t *testing.T) {
+	project := t.TempDir()
+	if out, err := exec.Command("git", "-C", project, "init", "-q").CombinedOutput(); err != nil {
+		t.Fatalf("%v %s", err, out)
+	}
+	must(t, os.MkdirAll(filepath.Join(project, ".agents"), 0o700))
+	must(t, os.WriteFile(filepath.Join(project, SetupScript), []byte("echo hi\n"), 0o600))
+	if had, err := RunScript(context.Background(), project, "m", false, time.Minute, nil, nil); !had || err != nil {
+		t.Fatal(had, err)
+	}
+	if had, err := RunScriptIfChanged(context.Background(), project, "m", false, time.Minute, nil, nil); had || err != nil {
+		t.Fatalf("the same script ran again: %v %v", had, err)
+	}
+	must(t, os.WriteFile(filepath.Join(project, SetupScript), []byte("echo changed\n"), 0o600))
+	if had, err := RunScriptIfChanged(context.Background(), project, "m", false, time.Minute, nil, nil); !had || err != nil {
+		t.Fatalf("a changed script did not run: %v %v", had, err)
 	}
 }

@@ -300,6 +300,13 @@ open for item 2 and for the notes' known issues (`git merge-base --is-ancestor <
    release with `partly_done`. A job cancelled because the pin moved is not a failure
    either (see the pin, above).
 
+5. **The release keys are there:** `Go/scripts/go.sh run ./cmd/release-sign check` (under the
+   "build" lease) says nothing. While it names a test key, end with `partly_done`: the tag's
+   `release` run stops at its first job. The keys are Alex's to make
+   (`docs/how-to/release-agents-host.md`, "The signing keys"). Never make one.
+   The run's `sign` job waits for Alex's approval (the `release-sign` environment). Never
+   approve it.
+
 ## 6. Version and notes
 
 1. Run `release-plan.py --ref <sha>` again, so the plan lists what the pin holds and nothing
@@ -350,7 +357,7 @@ A tag that already exists for this version means another release ran: end with
    A job that no runner took is not a failure: look and run it again once, as in step 5,
    item 4 (#3445). Only a job that ran and failed goes to items 2–4.
 2. **GitHub:** `gh release view v<version> --json assets` has the `.dmg`, the `.zip`,
-   both `agentsd-linux-*.tar.gz` and `SHA256SUMS`. Macs update Agent Loops from the `.zip`
+   both `agentsd-linux-*.tar.gz`, `SHA256SUMS` and `SHA256SUMS.sig`. Macs update Agent Loops from the `.zip`
    and `SHA256SUMS` by these names (#2178): a release without them updates no Mac.
    **The image** (#2140): the `image` job passed, and
    `docker buildx imagetools inspect ghcr.io/agentloops-dev/agents-control:<version>` lists
@@ -409,7 +416,11 @@ A tag that already exists for this version means another release ran: end with
    in that worktree, only when the worktree is at the tag `v<version>` and the tag is on origin.
    `.claude/settings.json` allows that one command, so Claude Code's auto-mode check does not
    refuse it as a production deploy (#3934); never run `up.sh` by hand here. It acts as `~/.agents/secrets/gcp-agents-control.json`
-   and keeps the store and the APNs key. Then check, from this Mac:
+   and keeps the store and the APNs key. The image it pulls is the one this release pushed,
+   `ghcr.io/<the repo's owner>/agents-control:<version>`: `up.sh` reads the owner from the repo
+   (`deploy/gcp/common.sh`, `image_of_repo`, #5472) and puts it in the VM's `deploy/.env` as
+   `AGENTS_IMAGE`, which `deploy/compose.public.yaml` reads; when it cannot tell the owner, it stops
+   before anything is made, and says so. Do not edit the deploy files for an image name. Then check, from this Mac:
    - `curl -fsS https://control.agentloops.dev/healthz` says `ok`;
    - the version it serves, the one Settings ▸ Control plane shows, is `<version>`. `up.sh`
      checks it last and prints `agents-control <version> (go)`; to look again:

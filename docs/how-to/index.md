@@ -29,6 +29,8 @@ something particular done.
 - [Send a folder to a server](send-a-folder-to-a-machine.md): a repository on this Mac,
   with its unpushed branches and uncommitted changes, made a folder on the server, and
   the server's work brought back.
+- [Set up new machines with your scripts](set-up-machines-with-scripts.md): your `root.sh`
+  installs packages as root on each new machine's first boot.
 - [Start machines from Agent Loops](start-machines-from-agents.md): let the control plane
   start and stop the machines your servers run on, and press Start on a stopped one.
 - [Add a machine provider](add-a-machine-provider.md): a preset, or your own commands.
@@ -135,8 +137,8 @@ something particular done.
   OAuth, such as GitHub's, signed in to in your browser so agents start with it.
 - [Keep going when a runtime runs out](keep-going-when-a-runtime-runs-out.md): see which
   runtimes are out, and continue a chat's work in a new chat on another.
-- [See usage, cost and time](see-usage-cost-and-time.md): open the Cost, Tokens and Time
-  pages, read their charts, and see how much of a runtime's allowance is used.
+- [See usage, cost and time](see-usage-cost-and-time.md): open the Cost report's Spend, Tokens and Time
+  tabs, read their charts, and see how much of a runtime's allowance is used.
 - [Limit what agents spend](limit-spending.md): the Spending page, and a limit per agent
   or per day.
 

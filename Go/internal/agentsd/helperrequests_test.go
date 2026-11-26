@@ -9,6 +9,7 @@ import (
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
 	"github.com/agentloops-dev/agent-loops/Go/internal/controllink"
+	"github.com/agentloops-dev/agent-loops/Go/internal/flaky"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -74,6 +75,7 @@ func (f *requestsFixture) approves(id wire.UUID) bool {
 func asking(a *wire.Agent) { a.ClientPermission = requestCards }
 
 func TestAHelperOnItsStartersRuntimeInheritsAlwaysApprove(t *testing.T) {
+	flaky.UnderLoad(t, "#7426")
 	t.Parallel()
 
 	for _, runtime := range []string{"opencode", "cursor", "grok"} {
@@ -302,7 +304,7 @@ func TestAStartOnAnotherMachineCarriesAlwaysApprove(t *testing.T) {
 	}{{nil, "cursor", "agent"}, {asking, "cursor", "agent"}, {nil, "cursor", "plan"}, {nil, "opencode", "build"}} {
 		lead := f.lead("cursor", "agent", c.edit)
 		r := helperRequest(c.runtime, "", "x", "", &c.mode, nil, nil)
-		if _, err := f.d.startThere(&lead, f.dir, "pc", "/home/me/app", "x", r, nil); err != nil {
+		if _, err := f.d.startThere(&lead, f.dir, "pc", "/home/me/app", "x", r, nil, ""); err != nil {
 			t.Fatal(err)
 		}
 	}

@@ -27,7 +27,19 @@ import (
 //	v1/release-keys/<host>.json           the private half, sealed (kms.Sealed)
 //	v1/release-keys/<host>/seen/<id>.json an approval taken, by machinelock.SignedID
 
+// store-bounds: kind=secret; size=1MiB (4KiB a key); age=until-deleted; applied=on write, a new key is refused, a key goes with its machine
 const releaseKeysPrefix = "v1/release-keys/"
+
+// store-bounds: kind=key-value; count=1000 a machine; size=64B a mark; age=1d; applied=on write, a release is refused, on release and hourly, after twice an approval's life
+const (
+	// releaseKeyMostBytes is the largest key as sealed, releaseKeysMostBytes all of them (#6669,
+	// gate 1). Only a new key is refused: one that is kept always opens.
+	releaseKeyMostBytes  = 4 << 10
+	releaseKeysMostBytes = 1 << 20
+	// releaseSeenMost is how many approvals a machine has taken at once. None is evicted: a mark
+	// that went early would let its approval be used again.
+	releaseSeenMost = 1000
+)
 
 var releaseHost = regexp.MustCompile(`^[A-Za-z0-9._-]{1,128}$`)
 
@@ -97,7 +109,13 @@ func (s *Service) releaseKey(ctx context.Context, host string, create bool) (*ec
 		if err != nil {
 			return nil, err
 		}
-		b, _ := json.Marshal(sealed)
+		b, err := json.Marshal(sealed)
+		if err != nil {
+			return nil, err
+		}
+		if err := s.releaseKeyRoom(ctx, b); err != nil {
+			return nil, err
+		}
 		if _, err := s.cfg.Store.Put(ctx, at, b, store.Absent); err != nil {
 			if store.IsConflict(err) {
 				// Another copy made it first: read that one.
@@ -109,6 +127,32 @@ func (s *Service) releaseKey(ctx context.Context, host string, create bool) (*ec
 		return private, nil
 	}
 	return nil, errors.New("the release key changed elsewhere; ask again")
+}
+
+// releaseKeyRoom refuses a new release key that the store has no room for.
+func (s *Service) releaseKeyRoom(ctx context.Context, sealed []byte) error {
+	if err := fitsRecord("The release key", sealed, releaseKeyMostBytes); err != nil {
+		return err
+	}
+	keys, err := s.cfg.Store.List(ctx, releaseKeysPrefix)
+	if err != nil {
+		return err
+	}
+	all := int64(len(sealed))
+	for _, k := range keys {
+		if strings.Contains(k.Key, "/seen/") {
+			continue
+		}
+		size := k.Size
+		if size < 0 { // the listing does not say
+			size = releaseKeyMostBytes
+		}
+		all += size
+	}
+	if all > releaseKeysMostBytes {
+		return fail(notPermitted, "There is no room for one more machine's release key. Remove a machine first.")
+	}
+	return nil
 }
 
 // releaseSecret checks the person's signed approval and gives the key for one value's layer.
@@ -143,6 +187,11 @@ func (s *Service) releaseSecret(ctx context.Context, host string, r wire.SecretR
 	if err != nil {
 		return nil, err
 	}
+	if n, err := s.forgetOldReleases(ctx, host, now); err != nil {
+		return nil, err
+	} else if n >= releaseSeenMost {
+		return nil, refuse("this machine was given too many in the last minutes; try again in 20 minutes")
+	}
 	// Taken once: a second write of the same signature finds it there.
 	seen, _ := json.Marshal(releaseSeen{At: r.Approval.Lock.At})
 	if _, err := s.cfg.Store.Put(ctx, releaseSeenPrefix(host)+machinelock.SignedID(r.Approval.Lock)+".json", seen, store.Absent); err != nil {
@@ -151,7 +200,6 @@ func (s *Service) releaseSecret(ctx context.Context, host string, r wire.SecretR
 		}
 		return nil, err
 	}
-	s.forgetOldReleases(ctx, host, now)
 	key, err := secretrelease.Release(private, r.Name, r.Encapsulated)
 	if err != nil {
 		return nil, fail(invalidParams, "%s", err.Error())
@@ -161,12 +209,13 @@ func (s *Service) releaseSecret(ctx context.Context, host string, r wire.SecretR
 }
 
 // forgetOldReleases bounds what a machine's seen approvals keep: one past its lifetime is
-// refused as stale anyway.
-func (s *Service) forgetOldReleases(ctx context.Context, host string, now time.Time) {
+// refused as stale anyway. It says how many are left.
+func (s *Service) forgetOldReleases(ctx context.Context, host string, now time.Time) (int, error) {
 	keys, err := s.cfg.Store.List(ctx, releaseSeenPrefix(host))
 	if err != nil {
-		return
+		return 0, err
 	}
+	left := len(keys)
 	oldest := now.Add(-2 * secretrelease.ApprovalLifetime).Unix()
 	for _, k := range keys {
 		o, err := s.cfg.Store.Get(ctx, k.Key)
@@ -177,8 +226,10 @@ func (s *Service) forgetOldReleases(ctx context.Context, host string, now time.T
 		if json.Unmarshal(o.Data, &seen) == nil && seen.At < oldest {
 			// A key left is deleted by the next sweep.
 			_ = s.cfg.Store.Delete(ctx, k.Key)
+			left--
 		}
 	}
+	return left, nil
 }
 
 // forgetReleaseHost removes the secret and its replay markers when a machine leaves.

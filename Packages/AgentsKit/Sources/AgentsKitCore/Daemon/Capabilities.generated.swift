@@ -20,6 +20,7 @@ public enum Capability {
     public static let auditSinks1 = "audit.sinks/1"
     public static let autoMachine1 = "auto-machine/1"
     public static let auto1 = "auto/1"
+    public static let autopilot1 = "autopilot/1"
     public static let backupsStore1 = "backups.store/1"
     public static let backups1 = "backups/1"
     public static let bots1 = "bots/1"
@@ -52,7 +53,9 @@ public enum Capability {
     public static let controlConnectAnother1 = "control.connect-another/1"
     public static let controlEligible1 = "control.eligible/1"
     public static let controlLocal1 = "control.local/1"
+    public static let controlMove1 = "control.move/1"
     public static let controlPlaneMove1 = "control.plane-move/1"
+    public static let controlReceive1 = "control.receive/1"
     public static let controlRotate1 = "control.rotate/1"
     public static let control1 = "control/1"
     public static let cost1 = "cost/1"
@@ -100,7 +103,6 @@ public enum Capability {
     public static let forgeReady1 = "forge.ready/1"
     public static let forgeReleases1 = "forge.releases/1"
     public static let forge1 = "forge/1"
-    public static let git1 = "git/1"
     public static let governance1 = "governance/1"
     public static let groups1 = "groups/1"
     public static let handover1 = "handover/1"
@@ -114,18 +116,22 @@ public enum Capability {
     public static let hostLock2 = "host.lock/2"
     public static let hostLock3 = "host.lock/3"
     public static let hostLock4 = "host.lock/4"
+    public static let hostMachineSetup1 = "host.machine-setup/1"
+    public static let hostMachineSetup2 = "host.machine-setup/2"
     public static let hostOrgRoutes1 = "host.org-routes/1"
     public static let hostOrgRoutes2 = "host.org-routes/2"
     public static let hostPolicyLayers1 = "host.policy-layers/1"
     public static let hostPolicy1 = "host.policy/1"
     public static let hostSecretApproval1 = "host.secret-approval/1"
     public static let hostSecretGrants1 = "host.secret-grants/1"
+    public static let hostSecretGrants2 = "host.secret-grants/2"
     public static let hostSecretRelease1 = "host.secret-release/1"
     public static let hostSecretSignIn1 = "host.secret-sign-in/1"
     public static let hostSecretTerminal1 = "host.secret-terminal/1"
     public static let hostSessionSecrets1 = "host.session-secrets/1"
     public static let hostSuspend1 = "host.suspend/1"
     public static let hostTeam1 = "host.team/1"
+    public static let hostTerminalPairing1 = "host.terminal-pairing/1"
     public static let hostUpdate1 = "host.update/1"
     public static let hostUserParts1 = "host.user-parts/1"
     public static let hostUserSettings1 = "host.user-settings/1"
@@ -155,10 +161,12 @@ public enum Capability {
     public static let machineAccounts1 = "machine.accounts/1"
     public static let machineAccounts2 = "machine.accounts/2"
     public static let machineAgentSecrets1 = "machine.agent-secrets/1"
+    public static let machineRootSetup1 = "machine.root-setup/1"
     public static let machineSetup1 = "machine.setup/1"
     public static let machineUsage1 = "machine.usage/1"
     public static let machine1 = "machine/1"
     public static let machinesAll1 = "machines.all/1"
+    public static let machinesSetupDeliver1 = "machines.setup-deliver/1"
     public static let machines1 = "machines/1"
     public static let machines2 = "machines/2"
     public static let mailbox1 = "mailbox/1"
@@ -229,6 +237,7 @@ public enum Capability {
     public static let sandbox1 = "sandbox/1"
     public static let sealing1 = "sealing/1"
     public static let send1 = "send/1"
+    public static let sessionSummary1 = "session-summary/1"
     public static let sessionsElsewhere1 = "sessions.elsewhere/1"
     public static let sessionsMove1 = "sessions.move/1"
     public static let sessionsMoving1 = "sessions.moving/1"
@@ -314,6 +323,7 @@ public enum Capability {
         "agents/startNow": "agents.start-now/1",
         "agents/stop": "agents/1",
         "agents/stopBackground": "agents/1",
+        "agents/summarise": "session-summary/1",
         "agents/touchedPaths": "agents/1",
         "agents/transcript": "agents/1",
         "agents/turns": "agents/1",
@@ -327,6 +337,8 @@ public enum Capability {
         "auto/preview": "auto/1",
         "auto/set": "auto/1",
         "auto/state": "auto/1",
+        "autopilot/set": "autopilot/1",
+        "autopilot/status": "autopilot/1",
         "backups/configure": "backups/1",
         "backups/make": "backups/1",
         "backups/restore": "backups/1",
@@ -352,6 +364,7 @@ public enum Capability {
         "client/catchUp": "client/1",
         "clientPermissions/set": "client-permissions/1",
         "clientPermissions/state": "client-permissions/1",
+        "clients/pairTerminal": "host.terminal-pairing/1",
         "connection/bindDevice": "connection/1",
         "connections/bot": "connections.bot/1",
         "connections/bot/complete": "connections.bot/1",
@@ -370,6 +383,7 @@ public enum Capability {
         "connectors/codespaces": "connectors.setup/1",
         "connectors/setup": "connectors.setup/1",
         "connectors/setup/skip": "connectors.setup/1",
+        "control/receive": "control.receive/1",
         "cost/setLimits": "cost/1",
         "cost/state": "cost/1",
         "credentials/offer": "credentials/1",
@@ -478,7 +492,6 @@ public enum Capability {
         "forge/request-changes": "forge-write/1",
         "forge/rerun": "forge-write/1",
         "forge/sources": "forge-sync/1",
-        "git/fill": "git/1",
         "git/trailers": "host.commit-trailers/1",
         "imageHosts/allow": "image-hosts/1",
         "imageHosts/list": "image-hosts/1",
@@ -615,11 +628,11 @@ public enum Capability {
         "runtimes/signInStart": "runtimes.sign-in/1",
         "sandbox/set": "sandbox/1",
         "sandbox/state": "sandbox/1",
-        "secrets/addGrant": "host.secret-grants/1",
-        "secrets/grants": "host.secret-grants/1",
+        "secrets/addGrant": "host.secret-grants/2",
+        "secrets/grants": "host.secret-grants/2",
         "secrets/localList": "host.local-secrets/1",
         "secrets/localRemove": "host.local-secrets/2",
-        "secrets/removeGrant": "host.secret-grants/1",
+        "secrets/removeGrant": "host.secret-grants/2",
         "secrets/sessionList": "host.session-secrets/1",
         "secrets/sessionRemove": "host.session-secrets/1",
         "secrets/sessionSet": "host.session-secrets/1",
@@ -633,7 +646,15 @@ public enum Capability {
         "sessions/list": "sessions/1",
         "settings/passThrough": "host.policy/1",
         "settings/userPart": "host.user-settings/4",
+        "setup/approve": "host.machine-setup/1",
+        "setup/deliver": "host.machine-setup/2",
         "setup/projects": "machine.setup/1",
+        "setup/rootAgain": "machine.root-setup/1",
+        "setup/rootCommand": "machine.root-setup/1",
+        "setup/rootLog": "machine.root-setup/1",
+        "setup/run": "host.machine-setup/2",
+        "setup/scripts": "host.machine-setup/1",
+        "setup/send": "host.machine-setup/2",
         "shell/attach": "shell/1",
         "shell/close": "shell/1",
         "shell/detach": "shell/1",
@@ -800,6 +821,8 @@ public enum Capability {
         "control/connectAnother": "control.connect-another/1",
         "control/connectReport": "control.connect-another/1",
         "control/eligible": "control.eligible/1",
+        "control/move": "control.move/1",
+        "control/moves/list": "control.move/1",
         "control/ping": "control/1",
         "control/planeMove": "control.plane-move/1",
         "control/planeMoveReport": "control.plane-move/1",
@@ -816,7 +839,6 @@ public enum Capability {
         "events/listAll": "machines.all/1",
         "forge/boardsAll": "machines.all/1",
         "forge/listAll": "machines.all/1",
-        "git/credential": "git/1",
         "governance/approvals": "governance/1",
         "governance/decide": "governance/1",
         "governance/report": "governance/1",
@@ -884,11 +906,11 @@ public enum Capability {
         "machines/joinRequests": "hosts.join/1",
         "machines/keep": "machines/1",
         "machines/lastHeard": "machines/1",
-        "machines/lendGit": "machines/1",
         "machines/lendSignIn": "machines/1",
         "machines/link": "machines/1",
         "machines/list": "machines/2",
         "machines/listKept": "machines/2",
+        "machines/previewStart": "auto-machine/1",
         "machines/projectFolders": "sessions.project/1",
         "machines/projectSessions": "sessions.project/1",
         "machines/remove": "machines/1",
@@ -899,6 +921,7 @@ public enum Capability {
         "machines/sessionEnded": "sessions.elsewhere/1",
         "machines/setLabels": "machines/2",
         "machines/setMachineOptions": "machines/1",
+        "machines/setupDeliver": "machines.setup-deliver/1",
         "machines/sshHosts": "machines/1",
         "machines/start": "machines/1",
         "machines/startEnroll": "machines/1",
@@ -1042,6 +1065,7 @@ public enum Capability {
         "control/lockChanged": "lock/1",
         "control/lockJoinDecided": "lock-join/1",
         "control/lockJoinRequested": "lock-join/1",
+        "control/moveChanged": "control.move/1",
         "control/moved": "control/1",
         "control/notice": "org-identity/1",
         "control/orgRoutesChanged": "org-routes/2",
@@ -1073,6 +1097,7 @@ public enum Capability {
         "machine/user": "bots/1",
         "machine/userSettings": "host.user-settings/2",
         "notices/delivered": "notices/1",
+        "setup/wanted": "host.machine-setup/2",
         "user/suspended": "host.suspend/1",
     ]
 
@@ -1098,6 +1123,7 @@ public enum Capability {
             "host.browser-settings/1",
             "host.secret-approval/1",
             "host.secret-grants/1",
+            "host.secret-grants/2",
             "host.session-secrets/1",
             "host.desktop-control/1",
             "host.drive-approval/1",

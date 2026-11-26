@@ -15,7 +15,8 @@ export const terminalCaveat = "Agent Loops cannot tell a terminal from an agent 
 
 /** A terminal's agents-secret NAME (#4179): a secret's use that no session asked. */
 export function isTerminalRequest(request: PersonRequest): boolean {
-  return request.askedBy === undefined && secretUseOf(request)?.use === "terminal";
+  const use = secretUseOf(request)?.use;
+  return request.askedBy === undefined && (use === "terminal" || use === "pairing");
 }
 
 /** A request's secret use, when it is one. */
@@ -32,6 +33,7 @@ export function secretUsesAskedBy(requests: PersonRequest[], session: string): P
 export function secretUseTitle(use: RequestSecretUse): string {
   if (use.use === "workflow") return `Wants to turn on ${use.name}`;
   if (use.use === "connector") return `Wants to approve ${use.name}`;
+  if (use.use === "pairing") return `Wants to pair ${use.name}`;
   return `Wants to ${use.use === "account" ? "read" : "use"} ${use.name}`;
 }
 
@@ -39,6 +41,7 @@ export function secretUseTitle(use: RequestSecretUse): string {
 export function secretUseWhere(use: RequestSecretUse): string {
   if (use.use === "ci") return `CI secret in ${use.place}`;
   if (use.use === "terminal") return `Terminal: ${use.place} · ${terminalCaveat}`;
+  if (use.use === "pairing") return `Terminal: ${use.place} · ${pairOnTheMac}`;
   if (use.use === "account") return `Account: manage_accounts ${use.call ?? "get"}`;
   if (use.use === "browser") return `Browser on ${use.place}`;
   if (use.use === "screen") return use.app ? `Screen: ${use.app} on ${use.place}` : `Screen on ${use.place}`;
@@ -50,10 +53,15 @@ export function secretUseWhere(use: RequestSecretUse): string {
 /** The answers, in order. A session's own secret has no Always Approve: it is the same as for this session.
  * A terminal's are once, for 1 hour and deny (#4179). A workflow's or a connector's are Approve and Deny (#4538). */
 export function secretUseActions(use: RequestSecretUse): SecretUseAction[] {
+  // loops with no pairing (#6875): only the Mac it asks from makes its code, so the web page can only say no.
+  if (use.use === "pairing") return ["deny"];
   if (use.use === "terminal") return ["once", "hour", "deny"];
   if (use.use === "workflow" || use.use === "connector") return ["once", "deny"];
   return use.sessionOnly ? ["once", "session", "deny"] : ["once", "session", "always", "deny"];
 }
+
+/** A pairing's grey line on the web page (#6875): where to approve it. As NeedRequest.SecretUse.pairOnTheMac. */
+export const pairOnTheMac = "Approve it in Agent Loops on the Mac it asks from: that Mac makes its pairing code.";
 
 /** The method a signed answer names (#4058). */
 export const approveSecretUse = "secrets/approveUse";

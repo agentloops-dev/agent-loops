@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/controllink"
+	"github.com/agentloops-dev/agent-loops/Go/internal/execfile"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -39,6 +40,9 @@ type Options struct {
 	Executable string
 	// Smoke runs step 8 after the others pass: one short session on this machine.
 	Smoke bool
+	// ControlOnly is a machine with the control role alone (#7314): the host joins with roles
+	// ["control"] and takes no agent work, so steps 5 to 8 have nothing to do.
+	ControlOnly bool
 }
 
 // Deps are what the installer does outside itself, so a test can stand in for each.
@@ -59,6 +63,10 @@ type Deps struct {
 	// was signed in (step 7 itself waits for the person with no limit, #6853); SmokeWait
 	// bounds the smoke session's answer.
 	SignInWait, SmokeWait time.Duration
+	// RootFolder is where the first boot keeps root.sh and its result (RootFolder when empty);
+	// RootWait bounds the wait for that result (RootWait when zero).
+	RootFolder string
+	RootWait   time.Duration
 	// KeyWait is how long step 7 is running, for a client to write a key it has, before it
 	// says it needs the person.
 	KeyWait time.Duration
@@ -80,6 +88,12 @@ func (d *Deps) defaults() {
 	}
 	if d.SignInWait == 0 {
 		d.SignInWait = 10 * time.Minute
+	}
+	if d.RootFolder == "" {
+		d.RootFolder = RootFolder
+	}
+	if d.RootWait == 0 {
+		d.RootWait = RootWait
 	}
 	if d.KeyWait == 0 {
 		d.KeyWait = 15 * time.Second
@@ -109,7 +123,7 @@ func (l Layout) joined() bool {
 	return err == nil
 }
 
-// Run does steps 3 to 6, then 8 when o.Smoke, and says each. It returns the first step's error of those that
+// Run does steps 3 to 6, with Root set-up after 4 when the first boot runs root.sh, then 8 when o.Smoke, and says each. It returns the first step's error of those that
 // failed, or nil when all four are done. A step that failed does not stop the one beside it
 // (5 and 6 run together), but steps 5 and 6 do not start when 3 or 4 failed.
 func Run(ctx context.Context, o Options, d Deps) error {
@@ -155,7 +169,40 @@ func Run(ctx context.Context, o Options, d Deps) error {
 		rep.Compared("Joined with the code the control plane made for this machine", "")
 	}
 
+	if o.ControlOnly {
+		// No runtimes, projects, sign-in or smoke session: it runs no agents.
+		for _, step := range []wire.MachineSetupStepID{wire.MachineSetupStepIDRuntimes, wire.MachineSetupStepIDProjects} {
+			rep.Say(step, wire.MachineSetupStateDone, controlOnlyStep, "")
+		}
+		say("%s", controlOnlyStep)
+		return nil
+	}
+
+	// Root set-up, when the first boot runs a root.sh (#7154): 5 and 6 wait for it, and do not
+	// start when it failed.
+	if err := rootSetup(ctx, d, l, rep); err != nil {
+		say("%s: %v", wire.MachineSetupStepIDRoot, err)
+		return fmt.Errorf("%s: %w", wire.MachineSetupStepIDRoot, err)
+	}
+
 	// 5 and 6, together.
+	pool, first := runtimesAndProjects(ctx, o, d, l.Logs, rep, say, failed)
+	if first != nil || !o.Smoke || pool {
+		// A pool signs in to nothing: steps 7 and 8 are the claim's (#6896).
+		return first
+	}
+	// 7: Sign in to runtimes: a client's work, which this step waits on.
+	if err := SignIn(ctx, o, d, rep, say); err != nil {
+		return err
+	}
+	// 8: Smoke session.
+	return Smoke(ctx, o, d, rep, say)
+}
+
+// runtimesAndProjects is steps 5 and 6, together: whether the machine is a pool's, and the first
+// error of the two. A step that failed does not stop the other.
+func runtimesAndProjects(ctx context.Context, o Options, d Deps, logs string, rep *Reporter, say func(string, ...any),
+	failed func(wire.MachineSetupStepID, error) error) (bool, error) {
 	var wg sync.WaitGroup
 	var mu sync.Mutex
 	var first error
@@ -178,30 +225,46 @@ func Run(ctx context.Context, o Options, d Deps) error {
 	go func() {
 		defer wg.Done()
 		var err error
-		if pool, err = prepareProjects(ctx, &mine, d, l.Logs, rep, say); err != nil {
+		if pool, err = prepareProjects(ctx, &mine, d, logs, rep, say); err != nil {
 			keep(failed(wire.MachineSetupStepIDProjects, err))
 		}
 	}()
 	wg.Wait()
-	if first != nil || !o.Smoke || pool {
-		// A pool signs in to nothing: steps 7 and 8 are the claim's (#6896).
-		return first
-	}
-	// 7: Sign in to runtimes: a client's work, which this step waits on.
-	if err := SignIn(ctx, o, d, rep, say); err != nil {
-		return err
-	}
-	// 8: Smoke session.
-	return Smoke(ctx, o, d, rep, say)
+	return pool, first
 }
 
-// Continue runs the set-up from step from (projects, sign-in or smoke) to the end, inside the
-// host, on a machine that a person claimed from a warm pool (#6896). root is the host's root.
+// controlOnlyStep is what steps 5 and 6 say on a control-only machine.
+const controlOnlyStep = "None: this machine runs the control plane and no agents"
+
+// Continue runs the set-up from step from (root, projects, sign-in or smoke) to the end, inside the
+// host: on a machine that a person claimed from a warm pool (#6896), or after Try Again on a
+// failed Root set-up (#7159). root is the host's root.
 func Continue(ctx context.Context, o Options, d Deps, root string, from wire.MachineSetupStepID) error {
 	d.defaults()
 	rep := moreReports(ctx, root)
 	say := func(string, ...any) {}
 	switch from {
+	case wire.MachineSetupStepIDRoot:
+		// Try Again on a failed Root set-up (#7159): root.sh's result read again, then 5 and 6
+		// and the rest.
+		if d.Running == nil {
+			// Inside the host: it is running.
+			d.Running = func(string) bool { return true }
+		}
+		if err := rootSetup(ctx, d, Layout{Root: root}, rep); err != nil {
+			return err
+		}
+		failed := func(step wire.MachineSetupStepID, err error) error {
+			rep.Say(step, wire.MachineSetupStateFailed, "", err.Error())
+			return fmt.Errorf("%s: %w", step, err)
+		}
+		if _, err := runtimesAndProjects(ctx, o, d, filepath.Join(root, "logs"), rep, say, failed); err != nil {
+			return err
+		}
+		if !o.Smoke {
+			return nil
+		}
+		return Continue(ctx, o, d, root, wire.MachineSetupStepIDSignIn)
 	case wire.MachineSetupStepIDProjects:
 		if _, err := prepareProjects(ctx, &o, d, filepath.Join(root, "logs"), rep, say); err != nil {
 			rep.Say(wire.MachineSetupStepIDProjects, wire.MachineSetupStateFailed, "", err.Error())
@@ -239,8 +302,15 @@ func installAgents(ctx context.Context, o Options, d Deps, l Layout, rep *Report
 		return "", fmt.Errorf("could not put the host in place: %w", err)
 	}
 	if !l.joined() {
+		if o.ControlOnly {
+			// Before the code: the host enrols with the control role alone (#7314).
+			if err := controllink.MarkControlOnly(l.Root); err != nil {
+				return "", err
+			}
+		}
 		// The host enrols with this code when it starts; a code it was refused is replaced.
 		_ = os.Remove(filepath.Join(l.Root, "control-join-ask"))
+		// store-bounds: not a store: a one-time hand-off of the join code to the host, which reads it when it starts
 		if err := os.WriteFile(filepath.Join(l.Root, "control-join-code"), []byte(strings.TrimSpace(o.Join)), 0o600); err != nil {
 			return "", err
 		}
@@ -283,7 +353,8 @@ func placeBinary(exe string, l Layout) (string, error) {
 		}
 	}
 	tmp := filepath.Join(l.Bin, target+".tmp")
-	if err := os.WriteFile(tmp, data, 0o700); err != nil {
+	// store-bounds: not a store: an install of the host's program
+	if err := execfile.Write(tmp, data, 0o700); err != nil {
 		return "", err
 	}
 	if err := os.Rename(tmp, filepath.Join(l.Bin, target)); err != nil {
@@ -464,7 +535,6 @@ func prepareProjects(ctx context.Context, o *Options, d Deps, logs string, rep *
 		return pool, nil
 	}
 	rep.Say(step, wire.MachineSetupStateRunning, fmt.Sprintf("0 of %d projects", len(o.Projects)), "")
-	_ = os.MkdirAll(logs, 0o700)
 	var problems []string
 	ran := 0
 	for i, project := range o.Projects {
@@ -473,18 +543,11 @@ func prepareProjects(ctx context.Context, o *Options, d Deps, logs string, rep *
 			problems = append(problems, name+": the folder is not on this machine")
 			continue
 		}
-		var output io.Writer
-		// store-bounds: kind=log; count=100 projects; size=1MiB a project; age=7d; applied=on write (the rest is not kept), and hourly sweep
-		logFile, err := os.OpenFile(filepath.Join(logs, "setup-"+name+".log"), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
-		if err == nil {
-			output = &scriptLog{file: logFile, left: scriptLogMost}
-		}
+		output, closeLog := OpenScriptLog(logs, project)
 		had, err := RunScript(ctx, project, o.Name, o.FromPool, d.ScriptTimeout, output, func(line string) {
 			rep.Say(step, wire.MachineSetupStateRunning, fmt.Sprintf("%s (%d of %d): %s", name, i+1, len(o.Projects), line), "")
 		})
-		if output != nil {
-			logFile.Close()
-		}
+		closeLog()
 		switch {
 		case err != nil:
 			problems = append(problems, name+": "+err.Error())

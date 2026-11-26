@@ -31,7 +31,10 @@
     "platform": "platform",
     "version": "version",
     "machineID": "machineID",
-    "implementation": "implementation"
+    "implementation": "implementation",
+    "roles": [
+      "control"
+    ]
   },
   "Admitted": {
     "client": "6F9619FF-8B86-D011-B42D-00C04FC964FF",
@@ -68,6 +71,7 @@
   },
   "ControlCapacityCopy": {
     "copy": "copy",
+    "machine": "control",
     "level": "near",
     "reason": "the control plane is near capacity: its disk is busy",
     "loadPerCore": 2.3,
@@ -86,6 +90,7 @@
   "ControlCapacityBoard": {
     "copies": [{
       "copy": "copy",
+      "machine": "control",
       "level": "near",
       "reason": "the control plane is near capacity: its disk is busy",
       "loadPerCore": 2.3,
@@ -100,6 +105,34 @@
       "storeFiles": 100,
       "storeBytes": 81920,
       "at": 812345678.5
+    }]
+  },
+  "ControlEligibleRequest": { "machine": "droplet", "allowSleep": true },
+  "ControlEligible": {
+    "ok": false,
+    "reasons": [{ "reason": "macSleeps", "text": "It sleeps." }],
+    "address": "ams3-1.example.dev",
+    "memoryBytes": 2147483648,
+    "diskFreeBytes": 42949672960
+  },
+  "ControlEligibleReason": { "reason": "olderVersion", "text": "Update it first." },
+  "ControlMove": {
+    "id": "m1", "from": "copy", "to": "droplet", "toName": "droplet-ams3-1", "phase": "failed",
+    "failedPhase": "copying", "address": "https://ams3-1.example.dev", "forwardingUntil": 812345678.5,
+    "startedAt": 812345678.5, "updatedAt": 812345679.5, "error": "The store did not copy: no space left", "by": "alex"
+  },
+  "ControlMoveRequest": { "machine": "droplet" },
+  "ControlMoveResult": {
+    "move": {
+      "id": "m1", "from": "copy", "to": "droplet", "toName": "droplet-ams3-1", "phase": "forwarding",
+      "address": "https://ams3-1.example.dev", "forwardingUntil": 812345678.5,
+      "startedAt": 812345678.5, "updatedAt": 812345679.5, "by": "alex"
+    }
+  },
+  "ControlMoves": {
+    "moves": [{
+      "id": "m1", "from": "copy", "to": "droplet", "toName": "droplet-ams3-1", "phase": "copying",
+      "startedAt": 812345678.5, "updatedAt": 812345679.5, "by": "alex"
     }]
   },
   "ControlEndpoint": {
@@ -138,18 +171,10 @@
     "tunnelRef": "tunnelRef",
     "fanOut": true
   },
-  "GitCredentialRequest": {
-    "protocol": "protocol",
-    "host": "host"
-  },
-  "GitCredential": {
-    "username": "username",
-    "password": "password"
-  },
   "PolicyRules": {
     "archiveMyChats": false,
     "commitTrailers": {
-      "Made-by": "on",
+      "Managed-by": "on",
       "Cost": "off",
       "Next-trailer": "on"
     }

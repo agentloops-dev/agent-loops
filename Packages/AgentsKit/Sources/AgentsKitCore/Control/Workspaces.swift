@@ -142,6 +142,8 @@ public extension DaemonAPI {
         /// `running`, `starting`, `stopping`, `stopped` or `unknown`.
         public var state: String
         public var ssh: String?
+        /// Its public addresses, IPv4 then IPv6, from the provider's own record (#7466).
+        public var addresses: [String]?
         public var tunnel: Bool?
         /// Its ssh host key is made again at each start (#1701).
         public var hostKeyRenews: Bool?
@@ -166,7 +168,7 @@ public extension DaemonAPI {
         public init(id: String, name: String, state: String, ssh: String? = nil, tunnel: Bool? = nil,
                     hostKeyRenews: Bool? = nil, cost: String? = nil, idleTimeoutMinutes: Int? = nil,
                     host: MachineRef? = nil, joining: Bool? = nil, notJoined: String? = nil,
-                    setup: MachineSetup? = nil) {
+                    setup: MachineSetup? = nil, addresses: [String]? = nil) {
             self.id = id
             self.name = name
             self.state = state
@@ -179,6 +181,7 @@ public extension DaemonAPI {
             self.joining = joining
             self.notJoined = notJoined
             self.setup = setup
+            self.addresses = addresses
         }
 
         /// Whether a host added by hand may be this workspace (#976): its name is the

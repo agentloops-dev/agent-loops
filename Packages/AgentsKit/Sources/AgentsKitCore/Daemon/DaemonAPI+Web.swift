@@ -493,6 +493,9 @@ public extension DaemonAPI {
                 // Cost on Pull Requests… on a folder's menu (#2352), as the window's Folder Settings has it.
                 Row(Method.foldersSetPRCostComment, params: SetPRCostCommentRequest.self, result: FolderSummary.self,
                     kind: .hostRequest),
+                // Autopilot in Project Settings (#5904), as the window's has it.
+                Row(Method.autopilotSet, params: AutopilotSetRequest.self, result: AutopilotStatus.self, kind: .hostRequest),
+                Row(Method.autopilotStatus, params: AutopilotRequest.self, result: AutopilotStatus.self, kind: .hostRequest),
                 // Working hours in Project Settings ▸ General (#4821), as the window's has them.
                 Row(Method.foldersSetWorkingHours, params: SetWorkingHoursRequest.self, result: FolderSummary.self,
                     kind: .hostRequest),
@@ -546,8 +549,6 @@ public extension DaemonAPI {
                 // Web Push to this browser (#1486): the control plane's key, and the page's subscription.
                 Row(Method.clientsWebPushKey, params: Empty.self, result: JSONValue.self, kind: .controlRequest),
                 Row(Method.clientsSetWebPush, params: JSONValue.self, result: Empty.self, kind: .controlRequest),
-                // A host using a Mac's git access (#1122): Approve, Deny and Revoke.
-                Row(Method.hostsLendGit, params: LendGit.self, result: Empty.self, kind: .controlRequest),
                 // A linked host's workspace (#691): Start on the offline strip.
                 Row(Method.hostsStart, params: MachineRequest.self, result: ControlMachine.self, kind: .controlRequest),
                 Row(Method.hostsStop, params: MachineStop.self, result: ControlMachine.self, kind: .controlRequest),
@@ -622,8 +623,12 @@ public extension DaemonAPI {
                 Row(Method.controlConnectAnother, params: ConnectAnother.Request.self, result: Empty.self, kind: .controlRequest),
                 // Move to Another Machine… and Run It Here Again… on the page (#4255).
                 Row(Method.controlPlaneMove, params: PlaneMove.Ask.self, result: Empty.self, kind: .controlRequest),
-                // Whether a machine can take the control role (#6611): #6614 draws it, so no Swift types yet.
-                Row("control/eligible", params: JSONValue.self, result: JSONValue.self, kind: .controlRequest),
+                // Make This the Control Plane… on a machine's page (#6614): its checks (#6611), the move and its
+                // steps (#6612).
+                Row(Method.controlEligible, params: ControlEligibleRequest.self, result: ControlEligible.self,
+                    kind: .controlRequest),
+                Row(Method.controlMove, params: ControlMoveRequest.self, result: ControlMoveResult.self, kind: .controlRequest),
+                Row(Method.controlMovesList, params: Empty.self, result: ControlMoves.self, kind: .controlRequest),
                 // Reports (#1811): usage, cost and time by person, folder and machine.
                 Row(Method.reportsUsage, params: ReportQuery.self, result: UsageReport.self, kind: .controlRequest),
                 Row(Method.reportsExport, params: ReportQuery.self, result: ReportExport.self, kind: .controlRequest),
@@ -900,6 +905,7 @@ public extension DaemonAPI {
                     kind: .controlNotification),
                 Row(Notification.controlCapacityChanged, params: ControlCapacityCopy.self, result: Empty.self,
                     kind: .controlNotification),
+                Row(Notification.controlMoveChanged, params: ControlMove.self, result: Empty.self, kind: .controlNotification),
             ]
         }
     }

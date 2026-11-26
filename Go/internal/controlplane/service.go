@@ -189,8 +189,13 @@ type Service struct {
 	// The id of the machine record this copy runs on (#6609).
 	controlMachine atomic.Pointer[string]
 	controlMu      sync.Mutex
+	// moving is the move of the control plane that runs, if any (#6612).
+	moving moveState
 	// dialMachine is set by tests; nil opens a TCP connection (control/eligible, #6611).
 	dialMachine func(ctx context.Context, address string) error
+	// lookupMachine is set by tests; nil asks DNS for the domain a machine's control role
+	// said (control/eligible, #7313).
+	lookupMachine func(ctx context.Context, host string) ([]netip.Addr, error)
 	records     *records.Records
 	// When the audit last said that the people are at their limit (#7019).
 	peopleFullMu   sync.Mutex
@@ -685,6 +690,10 @@ func (s *Service) takeUp(ctx context.Context) error {
 	// People (#994): the existing person becomes the local owner and the admin.
 	if err := s.records.Migrate(ctx); err != nil {
 		return err
+	}
+	// Git lending is removed (#7286): the lends a machine's record still holds are deleted.
+	if err := s.records.DropGitLends(ctx); err != nil {
+		s.log("the machines' git lends: " + err.Error())
 	}
 	if err := s.ensureControlMachine(ctx); err != nil {
 		s.log("the control plane's own machine record: " + err.Error())
@@ -1694,13 +1703,14 @@ func (s *Service) attachClient(conn *Conn, client *records.ClientRecord, auth *c
 		s.router.NoteCarried(session, via)
 	}
 	// Forgotten while it joined (#1229): the forget's sweep of sessions may have come
-	// before this one was attached, and admitting it would write it back over its
-	// tombstone. It is closed as any forgotten client is.
+	// before this one was attached. It is closed as any forgotten client is. Its calls are
+	// read only after this, so its own clients/forgetSelf is answered before it is closed.
 	if s.records.Client(client.ID) == nil && s.records.WasForgotten(client.ID) {
 		s.router.ForgetClient(client.ID)
 		return
 	}
-	if err := s.methods.Admit(context.Background(), *client); err != nil {
+	s.router.ReadClient(session, conn)
+	if err := s.methods.NoteSeen(context.Background(), client.ID); err != nil {
 		s.log("store: could not note " + client.Name + " connecting: " + err.Error())
 	}
 	s.renewClient(context.Background(), client.ID)
@@ -2163,11 +2173,23 @@ func (s *Service) spendHostCode(ctx context.Context, id string, stored *storedCo
 	if err := s.records.MachineRoom(ctx, a.PublicKey); err != nil {
 		return nil, err
 	}
-	// Before the code is spent too, so another machine can use it (#7305).
-	if err := s.refuseBothRoles(a.MachineID, a.PublicKey); err != nil {
+	roles := records.NormalRoles(a.Roles)
+	controlOnly := roles != nil && !slices.Contains(roles, records.RoleAgents)
+	// Before the code is spent too, so another machine can use it (#7305). A machine with the
+	// control role alone gives none the agents role (#7314), but one that runs this control
+	// plane already is one record (#6609), not a second.
+	if controlOnly {
+		if err := s.refuseControlOnlyJoin(a.MachineID, a.PublicKey); err != nil {
+			return nil, err
+		}
+	} else if err := s.refuseBothRoles(a.MachineID, a.PublicKey); err != nil {
 		return nil, err
 	}
 	want := s.joiningHostID(stored, a)
+	if controlOnly && stored.MadeHost == "" {
+		// Never the home host's id, mac: the control plane's own machine is not this one.
+		want = records.NewHostID()
+	}
 	sp, err := s.codes.Spend(ctx, id, spent{PublicKey: a.PublicKey, Host: &want})
 	if err != nil {
 		return nil, err
@@ -2185,7 +2207,7 @@ func (s *Service) spendHostCode(ctx context.Context, id string, stored *storedCo
 	mid := a.MachineID
 	// The machine is the person's who made the code (FR-017).
 	record := records.MachineRecord{ID: host, Name: a.Name, PublicKey: a.PublicKey, Platform: a.Platform,
-		Version: a.Version, MachineID: &mid, Owner: stored.Owner, Expires: s.newExpiry()}
+		Version: a.Version, MachineID: &mid, Owner: stored.Owner, Expires: s.newExpiry(), Roles: roles}
 	if deref(a.Implementation) != "" {
 		impl, _ := json.Marshal(*a.Implementation)
 		record.Extra = records.Extra{"implementation": impl}

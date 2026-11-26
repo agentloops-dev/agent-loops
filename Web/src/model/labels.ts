@@ -3,7 +3,11 @@
 // Fixtures/web/labels (research R7).
 import type { Agent, LineageSessionIssue, SessionLabel } from "../protocol/generated";
 
+/** Plain labels. Links (`#12`, `ENG-4`, `P#12`) and the finished words (only three) are not
+ *  counted in it (#7241), so a lane that joins several issues still links its PR and shows it merged. */
 export const maximumLabels = 5;
+/** Links to issues and pull requests, a bound of their own. */
+export const maximumLinks = 20;
 export const maximumLabelLength = 24;
 
 /** Swift's whitespacesAndNewlines, near enough for typed text. */
@@ -29,14 +33,49 @@ export function splitTyped(text: string): { finished: string[]; remainder: strin
   return { finished: pieces, remainder };
 }
 
+type Counted = "plain" | "link" | "finished";
+
+function counted(value: string): Counted {
+  const kind = labelKind(value);
+  return kind === "issue" || kind === "pullRequest" ? "link" : kind;
+}
+
+/** Why one more label like `value` does not fit beside `existing`, or null (SessionLabelPolicy.roomRefusal). */
+export function roomRefusal(value: string, existing: readonly string[]): string | null {
+  const kind = counted(value);
+  const same = existing.filter((l) => counted(l) === kind);
+  if (kind === "link" && same.length >= maximumLinks) {
+    return `A session can have at most ${maximumLinks} links to issues and pull requests (#12, P#12). It has ${same.join(", ")}.`;
+  }
+  if (kind === "plain" && same.length >= maximumLabels) {
+    return `A session can have at most five labels, apart from links (#12, P#12) and merged, closed or archived. It has ${same.join(", ")}.`;
+  }
+  return null;
+}
+
+/** Whether the field still takes a label of a bounded kind (SessionLabelPolicy.hasRoom). */
+export function hasRoom(existing: readonly string[]): boolean {
+  return roomRefusal("label", existing) === null || roomRefusal("#1", existing) === null;
+}
+
+/** Why a whole set of labels is refused, if it is (SessionLabelPolicy.refusal(of:), a start's labels). */
+export function setRefusal(labels: readonly string[]): string | null {
+  const kept: string[] = [];
+  for (const value of labels) {
+    const refusal = roomRefusal(value, kept);
+    if (refusal) return refusal;
+    kept.push(value);
+  }
+  return null;
+}
+
 /** The typed values a session can take: cleaned, new, not repeated, and only as many as fit. */
 export function accepted(typed: readonly string[], existing: readonly string[]): string[] {
   const seen = new Set(existing.map(labelKey));
   const result: string[] = [];
   for (const raw of typed) {
-    if (existing.length + result.length >= maximumLabels) continue;
     const value = cleaned(raw);
-    if (value === null || seen.has(labelKey(value))) continue;
+    if (value === null || roomRefusal(value, [...existing, ...result]) !== null || seen.has(labelKey(value))) continue;
     seen.add(labelKey(value));
     result.push(value);
   }

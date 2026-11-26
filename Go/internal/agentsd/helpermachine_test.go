@@ -60,7 +60,7 @@ func TestAnAgentStartsASessionOnAnotherMachine(t *testing.T) {
 	})
 
 	if text, _ := m.tool(3, "list_machines", map[string]any{}); !strings.HasSuffix(text,
-		"The person's machines, where start_session with machine starts a session, in this project's folder there or in folder, once the person says yes:\n  - pc: online\n  - laptop: offline") {
+		"The person's machines, where start_session with machine starts a session, in this project's folder there or in folder, once the person says yes:\n  - pc: online (no figure)\n  - laptop: offline (no figure)") {
 		t.Fatal(text)
 	}
 	if text, isErr := m.tool(4, "start_session", map[string]any{"prompt": "x", "machine": "pc"}); !isErr ||
@@ -233,5 +233,81 @@ func TestASessionAutoPickedSaysSoFirst(t *testing.T) {
 		"labels": []string{}, "autoChose": "Auto chose Mac mini: you last started here."}), &id)
 	if n := notes(d, id); len(n) == 0 || n[0] != "Auto chose Mac mini: you last started here." {
 		t.Fatalf("%q", n)
+	}
+}
+
+// start_session with machine "auto" (#5876): the control plane picks, as the New Session
+// form's Auto does, and the answer says why; when Auto finds none, its own words refuse.
+func TestStartSessionOnAutoStartsWhereTheControlPlanePicks(t *testing.T) {
+	t.Parallel()
+
+	d, c := start(t, t.TempDir())
+	defer d.Shutdown()
+	dir := projectFolder(t, "p-app")
+	a := seeded(t, d, dir, func(a *wire.Agent) { a.State, a.EndedReason, a.RuntimeID = wire.AgentStateRunning, nil, "claude" })
+	var mu sync.Mutex
+	var pick wire.AutoMachinePick
+	var asked []wire.AutoMachineRequest
+	var starts []wire.MachineSessionStart
+	d.SetControlAsk(func(_ context.Context, method string, params any) (json.RawMessage, error) {
+		call, _ := params.(wire.MachineWorkspaceCall)
+		b, _ := json.Marshal(call.Params)
+		mu.Lock()
+		defer mu.Unlock()
+		switch call.Method {
+		case "machines/previewStart":
+			var r wire.AutoMachineRequest
+			mustUnmarshal(t, b, &r)
+			asked = append(asked, r)
+			return json.Marshal(pick)
+		case "machines/projectFolders":
+			return json.Marshal(wire.ProjectFolders{Machines: []wire.ProjectMachineFolders{
+				{Machine: "h-mini", MachineName: "Mac mini", Folders: []string{"/home/me/app"}}}})
+		case "machines/startSession":
+			var s wire.MachineSessionStart
+			mustUnmarshal(t, b, &s)
+			starts = append(starts, s)
+			return json.RawMessage(`"11111111-2222-3333-4444-555555555555"`), nil
+		}
+		return nil, &controllink.AskError{Code: -32010, Message: "Agent Loops can’t ask that of the control plane."}
+	})
+	c.call(t, 2, "folders/setHelperLimits", map[string]any{"folder": "file://" + dir + "/", "limits": map[string]any{"agentsMayStartOnMachines": true}})
+	m := appClient(t, d, a.ID)
+	m.post("initialize", map[string]any{}, 1)
+
+	picked := func(text string, tier wire.CapacityLevel) wire.AutoMachinePick {
+		ref, name := wire.MachineRef("h-mini"), "Mac mini"
+		return wire.AutoMachinePick{Machine: &ref, MachineName: &name, Tier: &tier, Text: &text}
+	}
+	none := func(why wire.AutoMachineNone, text string) wire.AutoMachinePick {
+		return wire.AutoMachinePick{None: &why, Text: &text}
+	}
+	for i, tc := range []struct {
+		pick wire.AutoMachinePick
+		want string
+	}{
+		{picked("Auto chose Mac mini: least busy, load 0.4 per core.", wire.CapacityLevelOk), "Auto chose Mac mini: least busy, load 0.4 per core. Started "},
+		{picked("Auto chose Mac mini: the least busy, though near capacity (load 2.1 per core).", wire.CapacityLevelNear),
+			"Auto chose Mac mini: the least busy, though near capacity (load 2.1 per core). Started "},
+		{none(wire.AutoMachineNoneNoFolder, "No machine has this project. Add a folder on one."), "Nothing was started: No machine has this project. Add a folder on one."},
+		{none(wire.AutoMachineNoneOffline, "Every machine with this project is offline: Mac mini."), "Nothing was started: Every machine with this project is offline: Mac mini."},
+		{none(wire.AutoMachineNoneNoRuntime, "No machine with this project has claude installed and signed in."),
+			"Nothing was started: No machine with this project has claude installed and signed in."},
+	} {
+		mu.Lock()
+		pick = tc.pick
+		mu.Unlock()
+		text, isErr := m.tool(10+i, "start_session", map[string]any{"prompt": "Check it", "machine": "Auto"})
+		if !strings.HasPrefix(text, tc.want) || isErr != (tc.pick.None != nil) {
+			t.Fatalf("%d: %v %q", i, isErr, text)
+		}
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(asked) != 5 || asked[0].Project != "p-app" || asked[0].RuntimeID != "claude" {
+		t.Fatalf("%+v", asked)
+	}
+	if len(starts) != 2 || starts[0].Host != "Mac mini" || starts[0].Start.Cwd != "file:///home/me/app" {
+		t.Fatalf("%+v", starts)
 	}
 }

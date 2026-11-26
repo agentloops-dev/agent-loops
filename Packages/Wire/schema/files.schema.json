@@ -313,6 +313,118 @@
       ],
       "additionalProperties": false
     },
+    "AutopilotMode": {
+      "type": "string",
+      "enum": [
+        "off",
+        "high",
+        "on"
+      ],
+      "description": "What Autopilot starts in a folder (#5898, epic #5897). Off starts nothing; high starts only work whose priority is high; on starts any ready work. Absent is off."
+    },
+    "AutopilotRequest": {
+      "type": "object",
+      "properties": {
+        "folder": {
+          "$ref": "core.schema.json#/definitions/URLString"
+        }
+      },
+      "required": [
+        "folder"
+      ],
+      "additionalProperties": false
+    },
+    "AutopilotRow": {
+      "type": "object",
+      "properties": {
+        "ref": {
+          "type": "string",
+          "description": "The issue or epic, as the forge names it (#123)."
+        },
+        "kind": {
+          "$ref": "#/definitions/AutopilotRowKind"
+        },
+        "state": {
+          "$ref": "#/definitions/AutopilotRowState"
+        },
+        "reason": {
+          "type": "string",
+          "description": "Why it waits or is paused: one of `limit running`, `limit open-prs`, `capacity near`, `capacity full`, `on hold`, `blocked by #n`, `paused: main red`, `paused: over budget`, `mode high`. Empty when it started."
+        },
+        "session": {
+          "$ref": "core.schema.json#/definitions/UUID",
+          "description": "The session Autopilot started for it; absent until it started one."
+        },
+        "since": {
+          "$ref": "core.schema.json#/definitions/WireDate"
+        }
+      },
+      "required": [
+        "ref",
+        "kind",
+        "state",
+        "reason",
+        "since"
+      ],
+      "additionalProperties": false
+    },
+    "AutopilotRowKind": {
+      "type": "string",
+      "enum": [
+        "lead",
+        "lane"
+      ],
+      "description": "A lead is for an epic; a lane is for an issue."
+    },
+    "AutopilotRowState": {
+      "type": "string",
+      "enum": [
+        "started",
+        "waiting",
+        "paused"
+      ]
+    },
+    "AutopilotSetRequest": {
+      "type": "object",
+      "properties": {
+        "folder": {
+          "$ref": "core.schema.json#/definitions/URLString"
+        },
+        "mode": {
+          "$ref": "#/definitions/AutopilotMode"
+        }
+      },
+      "required": [
+        "folder",
+        "mode"
+      ],
+      "additionalProperties": false
+    },
+    "AutopilotStatus": {
+      "type": "object",
+      "properties": {
+        "mode": {
+          "$ref": "#/definitions/AutopilotMode"
+        },
+        "lastRunAt": {
+          "$ref": "core.schema.json#/definitions/WireDate",
+          "description": "When Autopilot last looked at the folder's work; absent when it never has."
+        },
+        "rows": {
+          "type": "array",
+          "maxItems": 100,
+          "items": {
+            "$ref": "#/definitions/AutopilotRow"
+          },
+          "description": "The newest 100 rows, the newest first."
+        }
+      },
+      "required": [
+        "mode",
+        "rows"
+      ],
+      "additionalProperties": false
+    },
     "BrowserAckRequest": {
       "type": "object",
       "description": "browser/ack: the client drew browser/frame number ack, so the host may send the next one (#3528). The host asks Chromium for a new frame only after an ack, so a slow client gets fewer frames, not a backlog.",
@@ -1533,6 +1645,10 @@
         "helperLimits": {
           "$ref": "core.schema.json#/definitions/HelperLimits"
         },
+        "autopilot": {
+          "$ref": "#/definitions/FolderAutopilot",
+          "description": "What Autopilot may start in this folder (#5898). Absent is off."
+        },
         "diskSpace": {
           "$ref": "machines.schema.json#/definitions/DiskThresholds"
         },
@@ -1551,6 +1667,27 @@
       "required": [
         "folder",
         "addedAt"
+      ],
+      "additionalProperties": false
+    },
+    "FolderAutopilot": {
+      "type": "object",
+      "properties": {
+        "mode": {
+          "$ref": "#/definitions/AutopilotMode"
+        },
+        "setBy": {
+          "type": "string",
+          "description": "Who chose the mode: a person's name, or the name of what set it."
+        },
+        "setAt": {
+          "$ref": "core.schema.json#/definitions/WireDate"
+        }
+      },
+      "required": [
+        "mode",
+        "setBy",
+        "setAt"
       ],
       "additionalProperties": false
     },

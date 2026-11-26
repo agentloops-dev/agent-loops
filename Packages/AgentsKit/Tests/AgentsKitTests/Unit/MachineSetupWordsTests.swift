@@ -68,4 +68,38 @@ struct MachineSetupWordsTests {
         let row = try decoder.decode(DaemonAPI.ControlMachine.self, from: Data(json.utf8))
         #expect(row.setup?.steps.first?.state == .needsYou)
     }
+
+    /// #7154: Root set-up and Your set-up have names, a step done with a warning says so, and a
+    /// failed Root set-up's line is its exit, with root.log's last lines in its detail.
+    @Test func rootSetUpHasItsNameAndItsWarning() throws {
+        #expect(MachineSetupWords.name(.init(id: "root", state: .waiting)) == "Root set-up")
+        #expect(MachineSetupWords.name(.init(id: "user", state: .waiting)) == "Your set-up")
+        let warned = DaemonAPI.MachineSetupStep(id: "root", state: .done,
+                                                detail: "DigitalOcean can’t run root set-up. Put it in the image.", warning: true)
+        #expect(MachineSetupWords.isWarned(warned))
+        #expect(MachineSetupWords.line(warned) == "DigitalOcean can’t run root set-up. Put it in the image.")
+        #expect(MachineSetupWords.time(warned) == nil)
+        #expect(!MachineSetupWords.isWarned(.init(id: "root", state: .done, detail: "root.sh · exit 0")))
+        let failed = DaemonAPI.MachineSetupStep(id: "root", state: .failed, detail: "E: Unable to locate package build-esential",
+                                                error: "root.sh ended with exit 100")
+        #expect(MachineSetupWords.line(failed) == "root.sh ended with exit 100")
+        #expect(MachineSetupWords.rootFailedAdvice("dev-3").hasPrefix("Fix root.sh, then make a new machine: dev-3"))
+        let json = #"{"id":"root","state":"done","detail":"x","warning":true,"hash":"ab12"}"#
+        let step = try JSONDecoder().decode(DaemonAPI.MachineSetupStep.self, from: Data(json.utf8))
+        #expect(step.warning == true && step.hash == "ab12")
+    }
+
+    /// #7159: the root command sheet's words, and what its calls answer.
+    @Test func rootByHand() throws {
+        #expect(MachineSetupWords.rootFailedAdvice("dev-3").contains("Or copy a command that you run as root there, then press Try Again."))
+        #expect(MachineSetupWords.rootCommandLead("nas", failed: false).hasPrefix("No provider makes nas, so Agent Loops can’t be root there."))
+        #expect(MachineSetupWords.rootCommandLead("dev-3", failed: true) == "Run this as root, or with sudo, on dev-3:")
+        #expect(MachineSetupWords.rootSudoWarning("nas").contains("agents there can become root"))
+        let log = try JSONDecoder().decode(DaemonAPI.SetupRootLog.self, from: Data(#"{"text":"E: x\n","cut":true}"#.utf8))
+        #expect(log.cut && log.text == "E: x\n")
+        let command = try JSONDecoder().decode(DaemonAPI.SetupRootCommand.self, from: Data(#"{"command":"printf %s YQ== | base64 -d | sudo sh","hash":"ab"}"#.utf8))
+        #expect(command.command.hasSuffix("| sudo sh"))
+        let again = String(decoding: try JSONEncoder().encode(DaemonAPI.SetupRootAgain(rest: true)), as: UTF8.self)
+        #expect(again == #"{"rest":true}"#)
+    }
 }

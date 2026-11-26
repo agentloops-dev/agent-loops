@@ -27,7 +27,9 @@ import (
 // DELETE suspends them and asks an admin to remove them.
 
 const (
-	scimPrefix         = "v1/scim/"
+	// store-bounds: kind=key-value; count=5000 a provider (one a person, whose records come to 1 MiB in all); size=1KiB a record; age=until-deleted; applied=on rename and delete, and hourly for a removed person
+	scimPrefix = "v1/scim/"
+	// store-bounds: kind=document; count=5000 (one a person, whose records come to 1 MiB in all); size=1KiB a record; age=until-deleted; applied=on answer, on read and hourly once the person is removed
 	removeRequestsPath = "v1/requests/remove/"
 	// lastNamesKept is how long a userName from before a rename still matches.
 	lastNamesKept = 90 * 24 * time.Hour
@@ -733,7 +735,17 @@ func (s *Service) noticeAdminsHere(n wire.ControlNotice) {
 	}
 }
 
+// capacityChangedAdmins tells this copy's admins a copy's new level, and the other copies,
+// whose admins it tells too (#7361): an admin connected to any copy sees each copy's level.
 func (s *Service) capacityChangedAdmins(snapshot wire.ControlCapacityCopy) {
+	s.capacityChangedAdminsHere(snapshot)
+	if s.mesh != nil {
+		data, _ := json.Marshal(snapshot)
+		s.announce("capacityChanged", string(data), "")
+	}
+}
+
+func (s *Service) capacityChangedAdminsHere(snapshot wire.ControlCapacityCopy) {
 	told := map[string]bool{}
 	for _, p := range s.records.People() {
 		if p.IsAdmin() && !p.IsRemoved() {

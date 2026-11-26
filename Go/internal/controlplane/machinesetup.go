@@ -3,6 +3,7 @@ package controlplane
 import (
 	"context"
 	"encoding/json"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -12,8 +13,11 @@ import (
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
-// A machine's set-up (#5355, epic #5353, "The steps" of the machine set-up spec): eight steps
-// the control plane keeps for each machine, in order, with each one's start and end. The
+// A machine's set-up (#5355, epic #5353, "The steps" of the machine set-up spec): the steps
+// the control plane keeps for each machine, in order, with each one's start and end. Every
+// set-up has the eight of setupSteps; root set-up and your set-up (#7167) are added when the
+// host first says them, as each runs only when its script was sent. A step is read by its id,
+// and setupWaits says what each one waits for. The
 // installer on the machine (agents-host install --join) says each step as machine/setupStep;
 // the control plane makes step 1 itself and calls BeginSetup. A failed machine is kept, not
 // deleted, and machines/retrySetup runs the failed step and the ones after it.
@@ -40,12 +44,49 @@ const (
 	slowFloor  = 2 * time.Minute
 )
 
-// setupSteps are the eight steps, in order.
+// setupSteps are the eight steps that every set-up has, in order.
 var setupSteps = []wire.MachineSetupStepID{
 	wire.MachineSetupStepIDCreate, wire.MachineSetupStepIDJoin, wire.MachineSetupStepIDInstall,
 	wire.MachineSetupStepIDCompare, wire.MachineSetupStepIDRuntimes, wire.MachineSetupStepIDProjects,
 	wire.MachineSetupStepIDSignIn, wire.MachineSetupStepIDSmoke,
 }
+
+// setupOrder is every step a set-up can have, in the order that a record keeps them: root set-up
+// and your set-up (#7167, gate 1 of #7151, section 1) only when the host says them.
+var setupOrder = []wire.MachineSetupStepID{
+	wire.MachineSetupStepIDCreate, wire.MachineSetupStepIDJoin, wire.MachineSetupStepIDInstall,
+	wire.MachineSetupStepIDCompare, wire.MachineSetupStepIDRoot, wire.MachineSetupStepIDRuntimes,
+	wire.MachineSetupStepIDUser, wire.MachineSetupStepIDProjects, wire.MachineSetupStepIDSignIn,
+	wire.MachineSetupStepIDSmoke,
+}
+
+// setupWaits is what each step waits for: each of these that the set-up has must be done before
+// it begins or ends. Runtimes and projects run together. Your set-up runs on the host when its
+// script comes (#7155), beside the installer's steps after compare, so no step waits for it: the
+// installer cannot know that one is coming. A project's script and setup.sh still run one at a
+// time on the machine. Smoke is last.
+var setupWaits = map[wire.MachineSetupStepID][]wire.MachineSetupStepID{
+	wire.MachineSetupStepIDJoin:     {wire.MachineSetupStepIDCreate},
+	wire.MachineSetupStepIDInstall:  {wire.MachineSetupStepIDJoin},
+	wire.MachineSetupStepIDCompare:  {wire.MachineSetupStepIDInstall},
+	wire.MachineSetupStepIDRoot:     {wire.MachineSetupStepIDCompare},
+	wire.MachineSetupStepIDRuntimes: {wire.MachineSetupStepIDCompare},
+	wire.MachineSetupStepIDUser:     {wire.MachineSetupStepIDRoot, wire.MachineSetupStepIDCompare},
+	wire.MachineSetupStepIDProjects: {wire.MachineSetupStepIDCompare},
+	wire.MachineSetupStepIDSignIn:   {wire.MachineSetupStepIDRuntimes, wire.MachineSetupStepIDProjects},
+	wire.MachineSetupStepIDSmoke: {wire.MachineSetupStepIDRoot, wire.MachineSetupStepIDRuntimes,
+		wire.MachineSetupStepIDProjects, wire.MachineSetupStepIDSignIn},
+}
+
+// claimSteps are the steps that a claim from a warm pool runs again, or for the first time: the
+// pool did the others.
+var claimSteps = map[wire.MachineSetupStepID]bool{
+	wire.MachineSetupStepIDProjects: true, wire.MachineSetupStepIDUser: true,
+	wire.MachineSetupStepIDSignIn: true, wire.MachineSetupStepIDSmoke: true,
+}
+
+// knownStep says that id is a step of this build.
+func knownStep(id wire.MachineSetupStepID) bool { return slices.Contains(setupOrder, id) }
 
 // storedSetupStep is a step as kept: times as times.
 type storedSetupStep struct {
@@ -56,6 +97,10 @@ type storedSetupStep struct {
 	Detail   string                  `json:"detail,omitempty"`
 	Error    string                  `json:"error,omitempty"`
 	FromPool bool                    `json:"fromPool,omitempty"`
+	// Hash is the script that the root or user step ran (#7167); Warning, a step done with a
+	// warning in its words.
+	Hash    string `json:"hash,omitempty"`
+	Warning bool   `json:"warning,omitempty"`
 }
 
 type storedSetup struct {
@@ -72,25 +117,101 @@ type storedSetup struct {
 	Workspace string `json:"workspace,omitempty"`
 	// Projects are the pool's projects of a machine that a person claimed (#6890): its step 6.
 	Projects []string `json:"projects,omitempty"`
+	// ScriptOnly is the set-up of a machine that no installer set up (#7155): a server that
+	// joined by hand, or a Mac, sent setup.sh. It has only the steps its host said.
+	ScriptOnly bool `json:"scriptOnly,omitempty"`
 }
 
 // claimed says that a person claimed the machine from a warm pool: the claim marks the steps
 // that the pool did.
-func (st *storedSetup) claimed() bool { return st.Steps[0].FromPool }
+func (st *storedSetup) claimed() bool {
+	create := st.step(wire.MachineSetupStepIDCreate)
+	return create != nil && create.FromPool
+}
 
-// next is the first of steps 6 to 8 that waits for the host to run it, or nil. A failed step
-// waits for Try Again.
+// next is the first of the claim's steps that waits for the host to run it, or nil. A failed
+// step waits for Try Again.
 func (st *storedSetup) next() *wire.MachineSetupStepID {
 	if st.failed() {
 		return nil
 	}
-	for i := 5; i < len(st.Steps); i++ {
-		if st.Steps[i].State != wire.MachineSetupStateDone {
-			id := st.Steps[i].ID
+	for _, step := range st.Steps {
+		// The host runs your set-up when its script comes (#7155), not as a step of the claim's.
+		if claimSteps[step.ID] && step.ID != wire.MachineSetupStepIDUser && step.State != wire.MachineSetupStateDone {
+			id := step.ID
 			return &id
 		}
 	}
 	return nil
+}
+
+// index is the place of a step in this set-up, or -1 when it has none.
+func (st *storedSetup) index(id wire.MachineSetupStepID) int {
+	return slices.IndexFunc(st.Steps, func(s storedSetupStep) bool { return s.ID == id })
+}
+
+// step is the step id of this set-up, or nil.
+func (st *storedSetup) step(id wire.MachineSetupStepID) *storedSetupStep {
+	if i := st.index(id); i >= 0 {
+		return &st.Steps[i]
+	}
+	return nil
+}
+
+// waitsFor is what step id waits for in this set-up when it has them: setupWaits, but a claimed
+// machine's projects do not wait for its set-up.
+func (st *storedSetup) waitsFor(id wire.MachineSetupStepID) []wire.MachineSetupStepID {
+	return slices.DeleteFunc(slices.Clone(setupWaits[id]), func(w wire.MachineSetupStepID) bool {
+		return id == wire.MachineSetupStepIDProjects && w == wire.MachineSetupStepIDUser && st.claimed()
+	})
+}
+
+// waits is what step id waits for in this set-up: the steps of waitsFor that it has.
+func (st *storedSetup) waits(id wire.MachineSetupStepID) []wire.MachineSetupStepID {
+	return slices.DeleteFunc(st.waitsFor(id), func(w wire.MachineSetupStepID) bool { return st.index(w) < 0 })
+}
+
+// add puts a step that this set-up does not have yet in its place, waiting. It refuses one that
+// a step already begun waits for: it came too late to run first.
+func (st *storedSetup) add(id wire.MachineSetupStepID) error {
+	for _, s := range st.Steps {
+		if s.State != wire.MachineSetupStateWaiting && slices.Contains(st.waitsFor(s.ID), id) {
+			return fail(invalidParams, "Step %s cannot begin after step %s has.", id, s.ID)
+		}
+	}
+	at := slices.Index(setupOrder, id)
+	if id == wire.MachineSetupStepIDUser && st.claimed() {
+		// A claimed machine's projects came before the claim, and its set-up after it.
+		at = slices.Index(setupOrder, wire.MachineSetupStepIDProjects)
+	}
+	i := slices.IndexFunc(st.Steps, func(s storedSetupStep) bool { return slices.Index(setupOrder, s.ID) > at })
+	if i < 0 {
+		i = len(st.Steps)
+	}
+	st.Steps = slices.Insert(st.Steps, i, storedSetupStep{ID: id, State: wire.MachineSetupStateWaiting})
+	st.Ready = nil
+	return nil
+}
+
+// readable says that a kept set-up is one this build reads: each step once and known, and the
+// eight that every set-up has (#7167). A record from before it, of the eight, is one.
+func (st *storedSetup) readable() bool {
+	seen := map[wire.MachineSetupStepID]bool{}
+	for _, s := range st.Steps {
+		if !knownStep(s.ID) || seen[s.ID] {
+			return false
+		}
+		seen[s.ID] = true
+	}
+	if st.ScriptOnly {
+		return len(st.Steps) > 0
+	}
+	for _, id := range setupSteps {
+		if !seen[id] {
+			return false
+		}
+	}
+	return true
 }
 
 func machineSetupKey(host string) string {
@@ -105,27 +226,34 @@ func newStoredSetup(now time.Time) *storedSetup {
 	return out
 }
 
-func stepIndex(id wire.MachineSetupStepID) int {
-	for i, s := range setupSteps {
-		if s == id {
-			return i
-		}
-	}
-	return -1
-}
-
-// canStart says whether step i may begin or end now: every step before it is done, except
-// that steps 5 and 6 (runtimes and projects) run together.
-func (st *storedSetup) canStart(i int) bool {
-	for j := 0; j < i; j++ {
-		if (i == 5 && j == 4) || (i == 4 && j == 5) {
-			continue
-		}
-		if st.Steps[j].State != wire.MachineSetupStateDone {
+// canStart says whether step id may begin or end now: every step it waits for is done.
+func (st *storedSetup) canStart(id wire.MachineSetupStepID) bool {
+	for _, w := range st.waits(id) {
+		if st.step(w).State != wire.MachineSetupStateDone {
 			return false
 		}
 	}
 	return true
+}
+
+// allDone says that every step is done.
+func (st *storedSetup) allDone() bool {
+	return !slices.ContainsFunc(st.Steps, func(s storedSetupStep) bool { return s.State != wire.MachineSetupStateDone })
+}
+
+// failedStep is the first step that failed, or nil.
+func (st *storedSetup) failedStep() *storedSetupStep {
+	for i := range st.Steps {
+		if st.Steps[i].State == wire.MachineSetupStateFailed {
+			return &st.Steps[i]
+		}
+	}
+	return nil
+}
+
+// failedBesides says that a step other than id failed.
+func (st *storedSetup) failedBesides(id wire.MachineSetupStepID) bool {
+	return slices.ContainsFunc(st.Steps, func(s storedSetupStep) bool { return s.ID != id && s.State == wire.MachineSetupStateFailed })
 }
 
 func (st *storedSetup) failed() bool {
@@ -139,10 +267,15 @@ func (st *storedSetup) failed() bool {
 
 // report applies one step's report at now and returns the duration of a step that is done.
 func (st *storedSetup) report(r wire.MachineSetupReport, now time.Time) (time.Duration, bool, error) {
-	i := stepIndex(r.Step)
-	if i < 0 {
+	if !knownStep(r.Step) {
 		return 0, false, fail(invalidParams, "There is no set-up step %q.", r.Step)
 	}
+	if st.index(r.Step) < 0 {
+		if err := st.add(r.Step); err != nil {
+			return 0, false, err
+		}
+	}
+	i := st.index(r.Step)
 	if r.Step == wire.MachineSetupStepIDCompare && r.State == wire.MachineSetupStateDone && st.Expect != "" {
 		r = st.compared(r)
 	}
@@ -154,9 +287,7 @@ func (st *storedSetup) report(r wire.MachineSetupReport, now time.Time) (time.Du
 	if r.Error != nil {
 		problem = *r.Error
 	}
-	if r.FromPool != nil && *r.FromPool {
-		step.FromPool = true
-	}
+	step.mark(r)
 	if step.State == r.State {
 		// Said again, as a progress line. One with no words (the host says steps 1 and 2 are
 		// done when it has joined) keeps the words the step has.
@@ -164,6 +295,9 @@ func (st *storedSetup) report(r wire.MachineSetupReport, now time.Time) (time.Du
 			step.Detail = detail
 			step.Error = problem
 		}
+		return 0, false, nil
+	}
+	if step.runsAgain(r, now, detail, problem) {
 		return 0, false, nil
 	}
 	if step.State == wire.MachineSetupStateDone {
@@ -175,7 +309,11 @@ func (st *storedSetup) report(r wire.MachineSetupReport, now time.Time) (time.Du
 	case wire.MachineSetupStateFailed:
 		// It stops the run: a step that never began has its start at the failure.
 	default:
-		if st.failed() || !st.canStart(i) {
+		// A step that runs beside one that failed still says that it ended (#7167): it is the
+		// steps that had not begun that wait for Try Again.
+		// Your set-up runs beside the installer's steps (#7155): its failure stops none of them.
+		ended := r.State == wire.MachineSetupStateDone && step.State != wire.MachineSetupStateWaiting
+		if st.failedBesides(wire.MachineSetupStepIDUser) && !ended || !st.canStart(r.Step) {
 			return 0, false, fail(invalidParams, "Step %s cannot be %s before the steps ahead of it are done.", r.Step, r.State)
 		}
 	}
@@ -195,11 +333,53 @@ func (st *storedSetup) report(r wire.MachineSetupReport, now time.Time) (time.Du
 	} else {
 		step.Ended = nil
 	}
-	if st.Steps[len(st.Steps)-1].State == wire.MachineSetupStateDone && st.canStart(len(st.Steps)) {
+	if r.State == wire.MachineSetupStateDone {
+		st.endWarned(now)
+	}
+	if st.allDone() {
 		t := now
 		st.Ready = &t
 	}
 	return took, finished, nil
+}
+
+// mark takes what a report says of the step beside its state: from a pool, the script's hash and
+// a warning.
+func (step *storedSetupStep) mark(r wire.MachineSetupReport) {
+	if r.FromPool != nil && *r.FromPool {
+		step.FromPool = true
+	}
+	if r.Hash != nil {
+		step.Hash = *r.Hash
+	}
+	if r.Warning != nil {
+		step.Warning = *r.Warning
+	}
+}
+
+// runsAgain starts your set-up again when its host says it runs after it ended (#7155): Run
+// Again, Send Set-up or Try Again. A set-up that was ready stays ready while it runs.
+func (step *storedSetupStep) runsAgain(r wire.MachineSetupReport, now time.Time, detail, problem string) bool {
+	if r.Step != wire.MachineSetupStepIDUser || r.State != wire.MachineSetupStateRunning ||
+		step.State != wire.MachineSetupStateDone && step.State != wire.MachineSetupStateFailed {
+		return false
+	}
+	t := now
+	step.State, step.Started, step.Ended, step.Detail, step.Error = r.State, &t, nil, detail, problem
+	return true
+}
+
+// endWarned ends each waiting step that the control plane said with a warning, as soon as the
+// steps it waits for are done: a Root set-up that the provider cannot run, or with no lock
+// (#7154). Nothing on the machine says it, because root.sh never runs there.
+func (st *storedSetup) endWarned(now time.Time) {
+	for i := range st.Steps {
+		s := &st.Steps[i]
+		if s.State == wire.MachineSetupStateWaiting && s.Warning && st.canStart(s.ID) && !st.failed() {
+			t := now
+			s.State, s.Started, s.Ended = wire.MachineSetupStateDone, &t, &t
+		}
+	}
 }
 
 // compared is a done compare step as the control plane judges it (#5359): the digits the
@@ -230,7 +410,7 @@ func (s *Service) madeMachineJoined(ctx context.Context, host, digits string) {
 		st.Expect = digits
 		now := time.Now()
 		for _, id := range []wire.MachineSetupStepID{wire.MachineSetupStepIDCreate, wire.MachineSetupStepIDJoin} {
-			step := st.Steps[stepIndex(id)]
+			step := st.step(id)
 			if step.State == wire.MachineSetupStateDone {
 				continue
 			}
@@ -240,8 +420,7 @@ func (s *Service) madeMachineJoined(ctx context.Context, host, digits string) {
 			}
 			// A failed step (the wait for it ran out) is done after all: it joined.
 			if step.State == wire.MachineSetupStateFailed {
-				st.Steps[stepIndex(id)].State = wire.MachineSetupStateRunning
-				st.Steps[stepIndex(id)].Error = ""
+				step.State, step.Error = wire.MachineSetupStateRunning, ""
 			}
 			d, done, err := st.report(wire.MachineSetupReport{Step: id, State: wire.MachineSetupStateDone, Detail: &detail}, now)
 			if err != nil {
@@ -325,7 +504,8 @@ func (st *storedSetup) wire(now time.Time, times map[wire.MachineSetupStepID][]f
 		out.ReadyAt = optional(wire.DateOf(*st.Ready))
 	}
 	for _, s := range st.Steps {
-		row := wire.MachineSetupStep{ID: s.ID, State: s.State, Detail: optional(s.Detail), Error: optional(s.Error), FromPool: optional(s.FromPool)}
+		row := wire.MachineSetupStep{ID: s.ID, State: s.State, Detail: optional(s.Detail), Error: optional(s.Error), FromPool: optional(s.FromPool),
+			Hash: optional(s.Hash), Warning: optional(s.Warning)}
 		if s.Started != nil {
 			row.StartedAt = optional(wire.DateOf(*s.Started))
 		}
@@ -353,7 +533,7 @@ func (s *Service) readMachineSetup(ctx context.Context, host string) (*storedSet
 		return nil, "", err
 	}
 	var stored storedSetup
-	if json.Unmarshal(object.Data, &stored) != nil || len(stored.Steps) != len(setupSteps) {
+	if json.Unmarshal(object.Data, &stored) != nil || !stored.readable() {
 		return nil, object.ETag, nil
 	}
 	return &stored, object.ETag, nil
@@ -376,6 +556,9 @@ func (s *Service) changeMachineSetup(ctx context.Context, host string, create bo
 				return nil, nil
 			}
 			stored = newStoredSetup(time.Now())
+			if scriptOnly, _ := ctx.Value(scriptOnlyKey{}).(bool); scriptOnly {
+				stored.Steps, stored.ScriptOnly = nil, true
+			}
 		}
 		if err := change(stored); err != nil {
 			return nil, err
@@ -492,7 +675,7 @@ func sweepMachineObjects(ctx context.Context, rs *records.Records, prefix string
 	return swept, false, nil
 }
 
-// BeginSetup starts a machine's set-up, all eight steps waiting. It does nothing when the
+// BeginSetup starts a machine's set-up, its eight steps waiting. It does nothing when the
 // machine has one already.
 func (s *Service) BeginSetup(ctx context.Context, host string) error {
 	_, err := s.changeMachineSetup(ctx, host, true, func(*storedSetup) error { return nil })
@@ -502,9 +685,16 @@ func (s *Service) BeginSetup(ctx context.Context, host string) error {
 	return err
 }
 
+// scriptOnlyKey marks a change of a set-up that, made now, has only the steps its host says.
+type scriptOnlyKey struct{}
+
 // setupStep is machine/setupStep: a step the installer on the machine says. A machine whose
-// person pasted the installer has no set-up yet: its first report makes one.
+// person pasted the installer has no set-up yet: its first report makes one. Your set-up or root
+// set-up said first, by a machine that no installer set up, makes one of those steps alone (#7155).
 func (s *Service) setupStep(ctx context.Context, host string, report wire.MachineSetupReport) error {
+	if report.Step == wire.MachineSetupStepIDUser || report.Step == wire.MachineSetupStepIDRoot {
+		ctx = context.WithValue(ctx, scriptOnlyKey{}, true)
+	}
 	var took time.Duration
 	var finished bool
 	_, err := s.changeMachineSetup(ctx, host, true, func(st *storedSetup) (err error) {
@@ -521,6 +711,9 @@ func (s *Service) setupStep(ctx context.Context, host string, report wire.Machin
 		s.noteSetupTime(ctx, report.Step, took)
 		if report.Step == wire.MachineSetupStepIDCompare && s.madeAndCompared(ctx, host) {
 			s.lockJoins.compared(ctx, host)
+			if !s.unclaimedPoolMachine(ctx, host) {
+				s.setupWanted(ctx, host)
+			}
 		}
 	}
 	s.setupChanged(ctx, host)
@@ -535,13 +728,20 @@ func (s *Service) madeAndCompared(ctx context.Context, host string) bool {
 	if err != nil || stored == nil || stored.Expect == "" {
 		return false
 	}
-	return stored.Steps[stepIndex(wire.MachineSetupStepIDCompare)].State == wire.MachineSetupStateDone
+	return stored.step(wire.MachineSetupStepIDCompare).State == wire.MachineSetupStateDone
 }
 
 // retrySetup is machines/retrySetup.
 func (s *Service) retrySetup(ctx context.Context, host string) error {
-	retried := false
+	retried, root := false, false
 	stored, err := s.changeMachineSetup(ctx, host, false, func(st *storedSetup) error {
+		if failed := st.failedStep(); failed != nil {
+			if failed.ID == wire.MachineSetupStepIDUser {
+				// Your set-up runs on the machine (#7155): its client runs it again there, with setup/run.
+				return fail(invalidParams, "Your set-up runs on the machine: run it again with Run Again on its page.")
+			}
+			root = failed.ID == wire.MachineSetupStepIDRoot
+		}
 		retried = st.retry()
 		if !retried {
 			return fail(invalidParams, "No step of this machine's set-up has failed.")
@@ -557,8 +757,46 @@ func (s *Service) retrySetup(ctx context.Context, host string) error {
 	if stored == nil {
 		return fail(noSuchHost, "This machine has no set-up.")
 	}
+	if root {
+		// The machine reads root.sh's result again (#7159): the person may have run the copied
+		// root command there. Then it runs the steps after it, which never began.
+		s.rootAgain(ctx, host)
+	}
 	s.setupChanged(ctx, host)
 	return nil
+}
+
+// rootAgainPatience is how long Try Again waits for a machine to take setup/rootAgain: it answers
+// at once, and reports the step as it reads it.
+const rootAgainPatience = 10 * time.Second
+
+// rootAgain asks host to read root.sh's result again and run the steps after it (#7159). A
+// machine that does not take it keeps its Root set-up failed, and says why.
+func (s *Service) rootAgain(ctx context.Context, host string) {
+	answer := s.router.Ask(host, wire.CallSetupRootAgain.Name, wire.SetupRootAgain{Rest: true}, rootAgainPatience)
+	problem := ""
+	switch {
+	case answer == nil:
+		problem = "The machine did not answer, so root.sh’s result was not read again. Try again when it is online."
+	case len(answer.Error) > 0:
+		var refused struct {
+			Message string `json:"message"`
+		}
+		_ = json.Unmarshal(answer.Error, &refused)
+		problem = refused.Message
+		if problem == "" {
+			problem = "The machine did not read root.sh’s result again."
+		}
+	default:
+		return
+	}
+	_, _ = s.changeMachineSetup(ctx, host, false, func(st *storedSetup) error {
+		if step := st.step(wire.MachineSetupStepIDRoot); step != nil && step.State == wire.MachineSetupStateWaiting {
+			now := time.Now()
+			step.State, step.Error, step.Ended = wire.MachineSetupStateFailed, problem, &now
+		}
+		return nil
+	})
 }
 
 // machineSetup is a machine's set-up for its row, or none.
@@ -584,4 +822,41 @@ func (s *Service) setupChanged(ctx context.Context, host string) {
 		described["setup"] = setup
 	}
 	s.router.BroadcastHost(host, "control/hostChanged", described)
+}
+
+// unclaimedPoolMachine says that host is a warm pool's machine that no person claimed yet: it
+// gets the person's setup.sh at the claim, not before (#7155).
+func (s *Service) unclaimedPoolMachine(ctx context.Context, host string) bool {
+	if s.pools == nil {
+		return false
+	}
+	stored, _, err := s.readMachineSetup(ctx, host)
+	if err != nil || stored == nil || stored.claimed() {
+		return false
+	}
+	p, err := s.pools.poolOf(ctx, s.records.Host(host), s.madeWorkspace(ctx, host))
+	return err == nil && p != nil
+}
+
+// setupWanted tells the machine that carries the provider that made host that host is ready for
+// the person's setup.sh (#7155, setup/wanted). It carries no text: the sender sends one only
+// with an approval of scope made, which the target takes once.
+func (s *Service) setupWanted(ctx context.Context, host string) {
+	if s.providers == nil {
+		return
+	}
+	made := s.madeWorkspace(ctx, host)
+	if made == nil {
+		return
+	}
+	sender := s.providers.CarrierOf(made.Provider)
+	if sender == "" || sender == host {
+		return
+	}
+	if h := s.records.Host(sender); h == nil || !wire.Has(hostCapabilities(*h), wire.CapHostMachineSetup2) {
+		return
+	}
+	if !s.router.Tell(sender, wire.NotifySetupWanted.Name, wire.SetupWanted{Host: host}) {
+		s.log("machine " + host + ": the machine with its person's scripts is offline, so setup.sh is not sent")
+	}
 }

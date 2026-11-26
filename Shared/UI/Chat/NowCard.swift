@@ -256,6 +256,27 @@ struct NowCard: View {
     }
 }
 
+extension NowCard {
+    /// The foot card as a chat draws it (#5033), and the summary under its Asks (#7322):
+    /// the cards that are not Asks are its parts, and the rest comes from the chat's actions.
+    init(agent: Agent, isComingBack: Bool, cards: [WaitingCard], actions: ChatActions) {
+        let agentID = agent.id
+        var background = BackgroundActions(output: actions.backgroundOutput)
+        if let stop = actions.stopBackground {
+            background.stop = { item in await stop(item, agentID) }
+        }
+        if let steps = actions.subagentSteps {
+            background.steps = { item in steps(item.id) }
+        }
+        self.init(agent: agent, isComingBack: isComingBack,
+                  parts: cards.filter { !$0.asks },
+                  leases: actions.leaseStatus(agentID)?.without(agent.eventWait),
+                  capacityStart: actions.capacityStart(agent),
+                  background: background,
+                  openLease: actions.openLease)
+    }
+}
+
 /// The goal's row in the top card: its objective and where it stands; a stopped goal says
 /// why under it; a budget is a bar. A goal is not a status, so its word is grey. Its words
 /// are `Goal.statusWord`, `progressLine` and `summary`, as the web page's.

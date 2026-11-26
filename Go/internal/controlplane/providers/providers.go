@@ -129,6 +129,10 @@ type Hooks struct {
 	// Setup is a made machine's set-up as it stands (#6073), for its row while it is made and
 	// until it joins. Nil, or nil for a host, shows none.
 	Setup func(host string) *wire.MachineSetup
+	// Capacity is the host's last pushed capacity level and 5-minute load per core, and when
+	// the control plane heard them (#5875), for forAgent's list of machines. False for no
+	// figure. Nil shows none.
+	Capacity func(host string) (level wire.CapacityLevel, load5 *float64, at time.Time, ok bool)
 	// BackUp makes a backup of the host, and waits for it, before its workspace is deleted
 	// (#1815). False when the host can't make one: it is offline, or older than backups.
 	// Nil makes none.
@@ -149,6 +153,9 @@ type Hooks struct {
 	ProjectFolders func(project string) map[string][]string
 	// ProjectSessions is projects/sessions for an agent's person (#3277). Nil: refused.
 	ProjectSessions func(request wire.ProjectSessionsRequest, caller Caller) (wire.ProjectSessions, error)
+	// PreviewStart is sessions/previewStart for an agent's person (#5876): which machine
+	// Auto picks. Nil: refused.
+	PreviewStart func(request wire.AutoMachineRequest, caller Caller) (wire.AutoMachinePick, error)
 	// HasTool says this machine has a CLI on its PATH (#3367). Nil: exec.LookPath.
 	HasTool func(name string) bool
 }
@@ -542,10 +549,14 @@ func (p *Providers) AgentCall(host, agent, method string, params json.RawMessage
 		return p.sendFolder(hostName, agent, rawOf(given), caller, deliver)
 	case MethodBotKey:
 		return p.botKey(host, hostName, rawOf(given), caller, deliver)
+	case MethodSetupDeliver:
+		return p.setupDeliver(host, hostName, rawOf(given), caller, deliver)
 	case MethodProjectFolders:
 		return p.projectFolders(rawOf(given), caller)
 	case MethodProjectSessions:
 		return p.projectSessions(host, rawOf(given), caller)
+	case MethodPreviewStart:
+		return p.previewStart(rawOf(given), caller)
 	}
 	if method == MethodProvidersCreate || method == MethodProvidersOptions || method == MethodProvidersDeleteWorkspace {
 		if err := p.agentProvider(given); err != nil {
@@ -664,7 +675,7 @@ func (p *Providers) forAgent(person string) AgentMachines {
 		}
 		workspaces := []AgentWorkspace{}
 		for _, w := range summary.Workspaces {
-			aw := AgentWorkspace{ID: w.ID, Name: w.Name, State: w.State, Cost: w.Cost, Reason: w.Reason}
+			aw := AgentWorkspace{ID: w.ID, Name: w.Name, State: w.State, Cost: w.Cost, Reason: w.Reason, Addresses: w.Addresses}
 			for _, h := range hosts {
 				if w.Host != nil && *w.Host != "" && h.ID == string(*w.Host) {
 					aw.Host = &h.Name
@@ -680,7 +691,16 @@ func (p *Providers) forAgent(person string) AgentMachines {
 	out.Hosts = []AgentHost{}
 	for _, h := range hosts {
 		if p.hooks.OwnerOf(h.ID) == person {
-			out.Hosts = append(out.Hosts, AgentHost{Name: h.Name, State: p.router.HostState(h.ID)})
+			host := AgentHost{Name: h.Name, State: p.router.HostState(h.ID)}
+			if h.Platform != "" {
+				host.Platform = &h.Platform
+			}
+			if p.hooks.Capacity != nil {
+				if level, load5, at, ok := p.hooks.Capacity(h.ID); ok {
+					host.Capacity, host.LoadPerCore5, host.CapacityAt = &level, load5, new(wire.DateOf(at))
+				}
+			}
+			out.Hosts = append(out.Hosts, host)
 		}
 	}
 	return out
@@ -1921,6 +1941,7 @@ func (p *Providers) create(request ProviderCreate, who string, caller *Caller) (
 	var made *MachineInfo
 	var runs bool
 	var said []string
+	var root rootSent
 	// Its row, with its set-up, until the provider answers (#6073): a client that opens now
 	// sees it being made.
 	p.addMaking(id, name, madeHost)
@@ -1933,7 +1954,11 @@ func (p *Providers) create(request ProviderCreate, who string, caller *Caller) (
 	turn.Lock()
 	_, err = p.providerCall(id, func(c Provider) (any, error) {
 		var err error
-		if saying, ok := c.(Saying); ok {
+		if rooted, ok := c.(Rooted); ok {
+			var out CarriedCreate
+			out, err = rooted.CreateCarried(name, options, &firstBoot)
+			made, runs, said, root = out.Made, out.Runs, out.Said, rootSent{out.Root, out.RootRuns}
+		} else if saying, ok := c.(Saying); ok {
 			made, runs, said, err = saying.CreateSaying(name, options, &firstBoot)
 		} else {
 			made, runs, err = c.Create(name, options, &firstBoot)
@@ -1953,6 +1978,7 @@ func (p *Providers) create(request ProviderCreate, who string, caller *Caller) (
 		madeWords = strings.Join(said, " ")
 	}
 	p.setupStep(madeHost, wire.MachineSetupStepIDCreate, wire.MachineSetupStateDone, madeWords, "")
+	p.rootStep(madeHost, provider.Name, root)
 	if runs {
 		p.setupStep(madeHost, wire.MachineSetupStepIDJoin, wire.MachineSetupStateRunning,
 			"Waiting for "+name+" to start and join", "")
@@ -2217,6 +2243,37 @@ func (p *Providers) setupStep(host string, step wire.MachineSetupStepID, state w
 	if p.records.Host(host) == nil {
 		p.changed()
 	}
+}
+
+// rootSent is the root.sh a carrying machine sent with a make, and whether the provider runs it
+// (#7154).
+type rootSent struct {
+	sent *RootBootSent
+	runs bool
+}
+
+// rootStep is the Root set-up step of a made machine, from what its carrier sent (#7154): none
+// with no root.sh; waiting for Compare digits when the provider runs it, and the machine says how
+// it went; else done with a warning once Compare digits is, because root.sh never runs there.
+func (p *Providers) rootStep(host, provider string, root rootSent) {
+	if host == "" || root.sent == nil {
+		return
+	}
+	report := wire.MachineSetupReport{Step: wire.MachineSetupStepIDRoot, State: wire.MachineSetupStateWaiting}
+	detail, warned := "Waits for Compare digits", true
+	switch {
+	case root.sent.Problem != "":
+		detail = root.sent.Problem
+		report.Warning = &warned
+	case !root.runs:
+		detail = provider + " can’t run root set-up. Put it in the image."
+		report.Warning = &warned
+	}
+	report.Detail = &detail
+	if root.sent.Hash != "" {
+		report.Hash = &root.sent.Hash
+	}
+	p.hooks.SetupStep(host, report)
 }
 
 // addMaking shows a make its provider has not answered yet (#6073).

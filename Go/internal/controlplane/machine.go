@@ -84,9 +84,11 @@ func SelfSigned(dir, name string) (*tls.Config, string, error) {
 			return nil, "", err
 		}
 		sec1, _ := x509.MarshalECPrivateKey(key)
+		// store-bounds: kind=secret; count=1; size=4KiB; age=until-deleted; applied=made once when it or the certificate is missing, so every member keeps its pin
 		if err := os.WriteFile(keyFile, pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: sec1}), 0o600); err != nil {
 			return nil, "", err
 		}
+		// store-bounds: kind=key-value; count=1; size=4KiB; age=until-deleted; applied=made once with its key
 		if err := os.WriteFile(certFile, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}), 0o644); err != nil {
 			return nil, "", err
 		}

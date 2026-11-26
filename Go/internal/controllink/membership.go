@@ -119,7 +119,7 @@ func AcceptableEndpoint(e wire.ControlEndpoint) bool {
 type MachineHello = wire.MachineHello
 
 func LoadMembership(root string) (*Membership, error) {
-	b, err := os.ReadFile(filepath.Join(root, "control-host.json"))
+	b, err := readAtMost(filepath.Join(root, "control-host.json"), "control-host.json", MembershipMostBytes)
 	if err != nil {
 		return nil, err
 	}
@@ -129,15 +129,50 @@ func LoadMembership(root string) (*Membership, error) {
 
 func (m *Membership) Save(root string) error {
 	b, _ := json.Marshal(m)
+	if err := fits("This machine's membership", b, MembershipMostBytes); err != nil {
+		return err
+	}
 	tmp := filepath.Join(root, ".control-host.json.tmp")
+	// store-bounds: kind=key-value; count=1; size=256KiB; age=until-deleted; applied=on write (refused, and the one before stays), a new enrolment replaces it
 	if err := os.WriteFile(tmp, b, 0o600); err != nil {
 		return err
 	}
 	return os.Rename(tmp, filepath.Join(root, "control-host.json"))
 }
 
+// ControlOnlyFile, in a host's root, says the machine was installed with the control role
+// alone (agentsd install --control --no-agents --join, #7314): the host enrols with roles
+// ["control"], and takes no agent work.
+const ControlOnlyFile = "control-only"
+
+// ControlOnly says the host in root is a control-only machine's.
+func ControlOnly(root string) bool {
+	_, err := os.Stat(filepath.Join(root, ControlOnlyFile))
+	return err == nil
+}
+
+// MarkControlOnly makes the host in root a control-only machine's, before it first enrols.
+func MarkControlOnly(root string) error {
+	// store-bounds: not a store: one fixed 8-byte marker, written once by the install
+	return os.WriteFile(filepath.Join(root, ControlOnlyFile), []byte("control\n"), 0o600)
+}
+
+// RolesOf is the roles the host in root enrols with: control alone on a control-only
+// machine, else none, which means agents.
+func RolesOf(root string) []string {
+	if ControlOnly(root) {
+		return []string{"control"}
+	}
+	return nil
+}
+
 // Enroll uses a host code once: proves the code's key, says machines/announce, keeps the answer.
 func Enroll(ctx context.Context, root string, code *Code, private []byte, hello MachineHello) (*Membership, error) {
+	return EnrollAs(ctx, root, code, private, hello, nil)
+}
+
+// EnrollAs is Enroll with the machine's roles (#7314); none means agents.
+func EnrollAs(ctx context.Context, root string, code *Code, private []byte, hello MachineHello, roles []string) (*Membership, error) {
 	if !code.Host {
 		return nil, errors.New("that is not a host code")
 	}
@@ -157,7 +192,7 @@ func Enroll(ctx context.Context, root string, code *Code, private []byte, hello 
 		name = *hello.Name
 	}
 	params, _ := json.Marshal(wire.MachineAnnounce{PublicKey: pub, Name: name, Platform: hello.Platform, Version: hello.Version,
-		MachineID: hello.MachineID, Implementation: hello.Implementation})
+		MachineID: hello.MachineID, Implementation: hello.Implementation, Roles: roles})
 	req, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": 1, "method": "machines/announce", "params": json.RawMessage(params)})
 	if err := l.Write(ctx, string(req)); err != nil {
 		return nil, err
@@ -211,7 +246,11 @@ type LockInvite struct {
 // SaveLockInvite keeps an invite in the root.
 func SaveLockInvite(root string, invite LockInvite) error {
 	b, _ := json.Marshal(invite)
+	if err := fits("The lock's invite", b, LockInviteMostBytes); err != nil {
+		return err
+	}
 	tmp := filepath.Join(root, "."+LockInviteFile+".tmp")
+	// store-bounds: kind=secret; count=1; size=4KiB; age=until-deleted; applied=on write (refused), dropped once spent, expired or not this lock's
 	if err := os.WriteFile(tmp, b, 0o600); err != nil {
 		return err
 	}
@@ -220,7 +259,7 @@ func SaveLockInvite(root string, invite LockInvite) error {
 
 // LoadLockInvite is the invite kept in the root, or nil.
 func LoadLockInvite(root string) *LockInvite {
-	b, err := os.ReadFile(filepath.Join(root, LockInviteFile))
+	b, err := readAtMost(filepath.Join(root, LockInviteFile), LockInviteFile, LockInviteMostBytes)
 	if err != nil {
 		return nil
 	}

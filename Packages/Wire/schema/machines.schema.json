@@ -76,6 +76,22 @@
         },
         "state": {
           "type": "string"
+        },
+        "capacity": {
+          "$ref": "#/definitions/CapacityLevel",
+          "description": "The machine's capacity level as it last pushed it (#5875), so an agent does not start heavy work on a full machine. Absent before its first push."
+        },
+        "loadPerCore5": {
+          "type": "number",
+          "description": "Its 5-minute load per core when it last pushed."
+        },
+        "capacityAt": {
+          "$ref": "core.schema.json#/definitions/WireDate",
+          "description": "When the control plane last heard its capacity. A figure older than 2 minutes is no figure (Auto's rule)."
+        },
+        "platform": {
+          "type": "string",
+          "description": "The machine's platform as it announced it (macOS 15, Linux), so Autopilot (#5900) sends a linux-ok issue to a Linux machine. Absent when it did not say."
         }
       },
       "required": [
@@ -108,6 +124,13 @@
         "reason": {
           "type": "string",
           "description": "Why it failed, on a make that failed (#4706)."
+        },
+        "addresses": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Its public addresses, IPv4 then IPv6, from the provider's own record (#7466)."
         }
       },
       "required": [
@@ -809,10 +832,11 @@
     },
     "CapacityReason": {
       "type": "string",
-      "description": "What put a machine near or at capacity (#6596): cpu (its load per core) or memory (critical memory pressure). It stays while the level waits to fall. Absent at ok.",
+      "description": "What put a machine near or at capacity (#6596): cpu (its load per core), memory (critical memory pressure) or disk (disk pressure, #7300). It stays while the level waits to fall. Absent at ok.",
       "enum": [
         "cpu",
-        "memory"
+        "memory",
+        "disk"
       ]
     },
     "CapacityReport": {
@@ -1179,6 +1203,7 @@
       "description": "One live control plane copy's most recent capacity look (#6590).",
       "properties": {
         "copy": {"type": "string"},
+        "machine": {"type": "string", "description": "The id of the machine record that runs this copy (#6609, #6591): the row in Machines it is the level of. Absent from an older copy, and from a hosted copy, which has no machine record."},
         "level": {"$ref": "#/definitions/CapacityLevel"},
         "reason": {"type": "string"},
         "loadPerCore": {"type": "number"},
@@ -1209,6 +1234,22 @@
           "items": {
             "$ref": "#/definitions/ControlEligibleReason"
           }
+        },
+        "address": {
+          "type": "string",
+          "description": "Where the control plane reached the machine's control role, as a person reads it (#7313): its domain, or its public address, with the port when it is not 443. Absent when it did not reach it there, or reached it by its tunnel."
+        },
+        "memoryBytes": {
+          "type": "integer",
+          "description": "The machine's memory, as it said it (#7313). Absent when it did not say."
+        },
+        "diskFreeBytes": {
+          "type": "integer",
+          "description": "The free space on its fullest disk, as it said it (#7313). Absent when it did not say."
+        },
+        "frozenSeconds": {
+          "type": "integer",
+          "description": "About how long a move to the machine keeps the control plane frozen, in seconds, from the store's size and the copy's batches (#7395). Changes are refused while it is frozen. Absent from a control plane before #7395."
         }
       },
       "required": [
@@ -1262,6 +1303,172 @@
         "bothRoles",
         "olderVersion"
       ]
+    },
+    "ControlMove": {
+      "type": "object",
+      "description": "One move of the control plane to another machine (#6612, epic #6608), as v1/moves/<id>.json keeps it: at most 20, for 90 days. At most one runs at a time.",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "from": {
+          "type": "string",
+          "description": "The copy that moves: its id."
+        },
+        "to": {
+          "$ref": "#/definitions/MachineRef"
+        },
+        "toName": {
+          "type": "string",
+          "description": "The machine's name when the move started."
+        },
+        "phase": {
+          "$ref": "#/definitions/ControlMovePhase"
+        },
+        "failedPhase": {
+          "$ref": "#/definitions/ControlMovePhase",
+          "description": "With failed: the step that failed."
+        },
+        "address": {
+          "type": "string",
+          "description": "Where the new copy answers, once it said so."
+        },
+        "copied": {
+          "type": "integer",
+          "description": "With copying: the records copied so far (#7395). control/moveChanged says it every few seconds during the copy."
+        },
+        "total": {
+          "type": "integer",
+          "description": "With copying: the records the copy takes (#7395)."
+        },
+        "forwardingUntil": {
+          "$ref": "core.schema.json#/definitions/WireDate",
+          "description": "With forwarding: until when the old copy sends members to the new one (30 days at most)."
+        },
+        "startedAt": {
+          "$ref": "core.schema.json#/definitions/WireDate"
+        },
+        "updatedAt": {
+          "$ref": "core.schema.json#/definitions/WireDate"
+        },
+        "error": {
+          "type": "string",
+          "description": "With failed: what went wrong, in words. The old copy serves again."
+        },
+        "by": {
+          "type": "string",
+          "description": "The person who started it."
+        }
+      },
+      "required": [
+        "id",
+        "from",
+        "to",
+        "toName",
+        "phase",
+        "startedAt",
+        "updatedAt",
+        "by"
+      ],
+      "additionalProperties": false
+    },
+    "ControlMovePhase": {
+      "type": "string",
+      "description": "Where a move stands (#6612), in this order: checking, control/eligible's checks; receiving, the new machine is given the control key, sealed to its own key, and starts a copy that is empty; frozen, the old copy changes no record; copying, the store goes to the new copy; forwarding, the new copy took over and the old one sends members to it (30 days at most); done, the new copy took over at the old address. failed: a step failed, and the old copy serves again.",
+      "enum": [
+        "checking",
+        "copying",
+        "receiving",
+        "frozen",
+        "forwarding",
+        "done",
+        "failed"
+      ]
+    },
+    "ControlMoveRequest": {
+      "type": "object",
+      "description": "control/move (#6612): the machine to move the control plane to.",
+      "properties": {
+        "machine": {
+          "$ref": "#/definitions/MachineRef"
+        }
+      },
+      "required": [
+        "machine"
+      ],
+      "additionalProperties": false
+    },
+    "ControlMoveResult": {
+      "type": "object",
+      "description": "control/move's answer: the move, started. control/moveChanged says each step after.",
+      "properties": {
+        "move": {
+          "$ref": "#/definitions/ControlMove"
+        }
+      },
+      "required": [
+        "move"
+      ],
+      "additionalProperties": false
+    },
+    "ControlMoves": {
+      "type": "object",
+      "description": "control/moves/list (#6612): the newest moves first, at most 20.",
+      "properties": {
+        "moves": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ControlMove"
+          }
+        }
+      },
+      "required": [
+        "moves"
+      ],
+      "additionalProperties": false
+    },
+    "ControlReceive": {
+      "type": "object",
+      "description": "control/receive's answer: where the machine's copy answers now, empty and receiving, and its certificate's pin when it has its own.",
+      "properties": {
+        "url": {
+          "type": "string"
+        },
+        "pin": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "url"
+      ],
+      "additionalProperties": false
+    },
+    "ControlReceiveRequest": {
+      "type": "object",
+      "description": "control/receive (#6612): the control plane asks a machine with the control role to start its copy empty, to receive a move. The control key is sealed to the machine's own key, with the move, the machine and the control key's public half as its associated data.",
+      "properties": {
+        "move": {
+          "type": "string"
+        },
+        "url": {
+          "type": "string",
+          "description": "The address that clients reach the machine at, as control/eligible found it."
+        },
+        "controlKey": {
+          "$ref": "core.schema.json#/definitions/Base64",
+          "description": "The control key's public half (X9.63)."
+        },
+        "key": {
+          "$ref": "org.schema.json#/definitions/SealedEnvelope"
+        }
+      },
+      "required": [
+        "move",
+        "url",
+        "controlKey",
+        "key"
+      ],
+      "additionalProperties": false
     },
     "DaemonStatus": {
       "type": "object",
@@ -1927,6 +2134,17 @@
         },
         "implementation": {
           "type": "string"
+        },
+        "roles": {
+          "type": "array",
+          "description": "What the machine does (#6609, #7314): agents, control or both, from its install. Absent means agents. A machine with control alone runs no agents: it keeps a link for the store copy and the handover, and the control plane opens no client's channel to it.",
+          "items": {
+            "type": "string",
+            "enum": [
+              "agents",
+              "control"
+            ]
+          }
         }
       },
       "required": [
@@ -2001,6 +2219,23 @@
         "machine",
         "machineName",
         "connections"
+      ],
+      "additionalProperties": false
+    },
+    "MachineControlAddress": {
+      "type": "object",
+      "description": "Where a machine's control role serves (#7313): the domain its certificate is for, when it has one, and the port. With no domain, the control plane dials the public address that the machine's uplink comes from.",
+      "properties": {
+        "domain": {
+          "type": "string"
+        },
+        "port": {
+          "type": "integer",
+          "description": "From 1 to 65535; a hello with another is taken as none."
+        }
+      },
+      "required": [
+        "port"
       ],
       "additionalProperties": false
     },
@@ -2282,6 +2517,10 @@
         "maturity": {
           "$ref": "core.schema.json#/definitions/Maturity",
           "description": "The levels of this host's capabilities that are not GA (#6579). None from a host older than that."
+        },
+        "control": {
+          "$ref": "#/definitions/MachineControlAddress",
+          "description": "Where this machine's own control plane serves, when its install gave it the control role (agentsd install --control, #6610, #7313). Absent when it has none, and from an older host."
         }
       },
       "required": [
@@ -2320,6 +2559,13 @@
         },
         "ssh": {
           "type": "string"
+        },
+        "addresses": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Its public addresses, IPv4 then IPv6, from the provider's own record (#7466): an agent reaches root@<address> with the Agent Loops ssh key."
         },
         "tunnel": {
           "type": "boolean"
@@ -2632,6 +2878,20 @@
       ],
       "additionalProperties": false
     },
+    "MachineSetupDeliver": {
+      "type": "object",
+      "description": "machines/setupDeliver through machine/machines (#7155): one of the person's machines, the sender, gives another of theirs a set-up script. The control plane sends that machine's setup/deliver as the sender signed it, and keeps nothing of the text.",
+      "properties": {
+        "host": {
+          "type": "string",
+          "description": "The machine's id, as the person's lock names it."
+        }
+      },
+      "required": [
+        "host"
+      ],
+      "additionalProperties": false
+    },
     "MachineSetupProject": {
       "type": "object",
       "description": "A project folder a pool machine gets: path is the folder on its sources, project the project id it joins there, and sources the person's machines that have it, those online first.",
@@ -2707,6 +2967,14 @@
         "code": {
           "type": "string",
           "description": "The digits the host shows for its join token (controllink.TokenCode), said with the compare step: the control plane compares them with the ones it made (#5359)."
+        },
+        "hash": {
+          "type": "string",
+          "description": "The SHA-256, in lower-case hexadecimal, of the script that the root or user step runs (#7167)."
+        },
+        "warning": {
+          "type": "boolean",
+          "description": "The step is done with a warning in its detail, such as a provider that cannot run root set-up (#7167)."
         }
       },
       "required": [
@@ -2772,6 +3040,14 @@
         },
         "slower": {
           "type": "boolean"
+        },
+        "hash": {
+          "type": "string",
+          "description": "The SHA-256, in lower-case hexadecimal, of the script that the root or user step runs (#7167)."
+        },
+        "warning": {
+          "type": "boolean",
+          "description": "The step is done with a warning in its detail, such as a provider that cannot run root set-up (#7167)."
         }
       },
       "required": [
@@ -2782,7 +3058,7 @@
     },
     "MachineSetupStepID": {
       "type": "string",
-      "description": "The eight steps, in order: create machine, join machine, install Agents, compare digits, install runtimes, send projects, sign in to runtimes, smoke session.",
+      "description": "The steps: create machine, join machine, install Agents, compare digits, install runtimes, send projects, sign in to runtimes, smoke session (#5353), and root set-up and your set-up, each only when its script was sent (#7167). The control plane reads a set-up by step id: a client that does not know an id shows it as its name.",
       "enum": [
         "create",
         "join",
@@ -2791,7 +3067,9 @@
         "runtimes",
         "projects",
         "signIn",
-        "smoke"
+        "smoke",
+        "root",
+        "user"
       ]
     },
     "MachineSetupWork": {
@@ -5267,6 +5545,207 @@
       "required": [
         "runtimeID",
         "providerID"
+      ],
+      "additionalProperties": false
+    },
+    "SetupApprove": {
+      "type": "object",
+      "description": "setup/approve (#7167): a client of the person's lock approves the text of one of this machine's set-up scripts as it is now, for machines as they are made (scope made) or for one machine (m:<id>). approval is a setup.script record whose subject is script and whose content is the script's hash and size; empty content takes the approval of that scope away. The machine keeps the text and the approval only when the record checks against its lock, its number is not lower than the last of its scope, and the file is that text.",
+      "properties": {
+        "script": {
+          "type": "string",
+          "enum": [
+            "root",
+            "setup"
+          ]
+        },
+        "approval": {
+          "$ref": "org.schema.json#/definitions/LockRecord"
+        }
+      },
+      "required": [
+        "script",
+        "approval"
+      ],
+      "additionalProperties": false
+    },
+    "SetupDeliver": {
+      "type": "object",
+      "description": "setup/deliver (#7155, gate 1 of #7151, section 3): a machine of the person's lock, the sender, gives this machine a set-up script with its approval, signed for this machine. This machine takes it only by the four rules of section 3 (setupdelivery.go), keeps it in <root>/machine-setup.json, and runs it as its user, as the step user (Your set-up). made: an automatic send to a machine as it is made or claimed, with an approval of scope made, which a machine takes once.",
+      "properties": {
+        "script": {
+          "type": "string",
+          "enum": [
+            "setup"
+          ]
+        },
+        "text": {
+          "type": "string"
+        },
+        "approval": {
+          "$ref": "org.schema.json#/definitions/LockRecord"
+        },
+        "made": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "script",
+        "text",
+        "approval"
+      ],
+      "additionalProperties": false
+    },
+    "SetupRootAgain": {
+      "type": "object",
+      "description": "setup/rootAgain (#7159): read root.sh's result on this machine again.",
+      "properties": {
+        "rest": {
+          "type": "boolean",
+          "description": "Then run the steps after Root set-up too, as Try Again does after it failed."
+        }
+      },
+      "required": [
+        "rest"
+      ],
+      "additionalProperties": false
+    },
+    "SetupRootCommand": {
+      "type": "object",
+      "description": "setup/rootCommand (#7159): the command a person runs as root on a machine that cannot run root.sh by itself, such as their own server or a made machine whose root.sh failed. It runs the root.sh that a client approved for made machines, once, and leaves its result where Root set-up reads it.",
+      "properties": {
+        "command": {
+          "type": "string",
+          "description": "One line to paste in a terminal there: the script in base64, run with sudo."
+        },
+        "hash": {
+          "type": "string",
+          "description": "The hash of the root.sh it runs."
+        }
+      },
+      "required": [
+        "command",
+        "hash"
+      ],
+      "additionalProperties": false
+    },
+    "SetupRootLog": {
+      "type": "object",
+      "description": "setup/rootLog (#7159): this machine's root.log, from its last root.sh run, for Show Log.",
+      "properties": {
+        "text": {
+          "type": "string",
+          "description": "The end of root.log, at most 64 KiB; empty when there is none."
+        },
+        "cut": {
+          "type": "boolean",
+          "description": "The log is longer, and text is only its end."
+        }
+      },
+      "required": [
+        "text",
+        "cut"
+      ],
+      "additionalProperties": false
+    },
+    "SetupScript": {
+      "type": "object",
+      "description": "One set-up script on this machine (#7167): root (root.sh) or setup (setup.sh) in ~/.agents/machine-setup/. present: the file is there. text, hash and size are the file as it is now (hash: SHA-256 in lower-case hexadecimal); problem says why they are absent from a file that is there (over its limit, or unreadable). approvedText and approvedHash are the text a client approved last, and approvals the records in force for it, one a scope. changed: the file is not the approved text, so it is not used until a client approves it. nextSeq is the number to sign the next approval with.",
+      "properties": {
+        "name": {
+          "type": "string",
+          "enum": [
+            "root",
+            "setup"
+          ]
+        },
+        "present": {
+          "type": "boolean"
+        },
+        "text": {
+          "type": "string"
+        },
+        "hash": {
+          "type": "string"
+        },
+        "size": {
+          "type": "integer"
+        },
+        "problem": {
+          "type": "string"
+        },
+        "approvedText": {
+          "type": "string"
+        },
+        "approvedHash": {
+          "type": "string"
+        },
+        "approvals": {
+          "type": "array",
+          "items": {
+            "$ref": "org.schema.json#/definitions/LockRecord"
+          }
+        },
+        "changed": {
+          "type": "boolean"
+        },
+        "nextSeq": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "name",
+        "present",
+        "approvals",
+        "changed",
+        "nextSeq"
+      ],
+      "additionalProperties": false
+    },
+    "SetupScripts": {
+      "type": "object",
+      "description": "setup/scripts (#7167): this machine's two set-up scripts, root then setup, as a client reads them to approve one.",
+      "properties": {
+        "scripts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/SetupScript"
+          }
+        }
+      },
+      "required": [
+        "scripts"
+      ],
+      "additionalProperties": false
+    },
+    "SetupSend": {
+      "type": "object",
+      "description": "setup/send (#7155, gate 1 of #7151, section 3): Send Set-up. A client of the person's lock asks this machine, the sender, to send its setup.sh to the machine host and run it there. approval is a setup.script record of setup, scope m:<host>, of the file as it is now: the sender keeps it as setup/approve does, then sends the approved text, signed by this machine for host, through the control plane (machines/setupDeliver). It answers when host took it, which then runs it.",
+      "properties": {
+        "host": {
+          "type": "string",
+          "description": "The machine's id, as the person's lock names it."
+        },
+        "approval": {
+          "$ref": "org.schema.json#/definitions/LockRecord"
+        }
+      },
+      "required": [
+        "host",
+        "approval"
+      ],
+      "additionalProperties": false
+    },
+    "SetupWanted": {
+      "type": "object",
+      "description": "setup/wanted (#7155): the control plane tells the machine that carries a provider that a machine it made (or a warm pool's machine that a person claimed) is ready for the person's setup.sh. It carries no text; the sender sends it only with an approval of scope made, and the target takes one such send.",
+      "properties": {
+        "host": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "host"
       ],
       "additionalProperties": false
     },

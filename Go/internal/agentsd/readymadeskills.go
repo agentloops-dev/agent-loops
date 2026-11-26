@@ -42,9 +42,13 @@ func markReadyMadeSkillMade(home, id, digest string) {
 	if made[id] == digest {
 		return
 	}
+	if _, had := made[id]; !had && keepsReadyMadeID(madeReadyMadeSkillsPath(home), id, len(made)) != nil {
+		return
+	}
 	made[id] = digest
 	data, err := json.Marshal(made)
 	if err == nil && os.MkdirAll(filepath.Dir(madeReadyMadeSkillsPath(home)), 0o750) == nil {
+		// store-bounds: kind=key-value; count=1_000; size=256B an id; age=until-deleted; applied=on write (one more is refused) (#7349)
 		_ = store.WriteAtomically(madeReadyMadeSkillsPath(home), data, 0o600)
 	}
 }
@@ -80,6 +84,7 @@ func ensureReadyMadeSkill(home, id, skill, madeDigest string) {
 			return // the person's own edit
 		}
 	}
+	// store-bounds: not a store: an install: a ready-made skill into the person's .agents.
 	if store.WriteAtomically(path, []byte(skill), 0o644) != nil {
 		return
 	}

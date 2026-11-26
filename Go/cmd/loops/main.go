@@ -166,6 +166,18 @@ func dialWith(ctx context.Context, o *options, mode joinMode) (*controllink.Sess
 		return nil, &exit{code: exitError, msg: err.Error()}
 	}
 	m := h.pick(o.control)
+	if m == nil && o.control == "" && mode == joinAsk {
+		// No pairing: on a Mac with Agent Loops, ask it for one (#6875).
+		switch err := pairFromApp(ctx, os.Stderr); {
+		case err == nil:
+			if h, err = readHosts(); err != nil {
+				return nil, &exit{code: exitError, msg: err.Error()}
+			}
+			m = h.pick("")
+		case !errors.Is(err, errNoApp):
+			return nil, err
+		}
+	}
 	if m == nil {
 		if o.control != "" {
 			return nil, &exit{code: exitNotPair, msg: fmt.Sprintf("This terminal is not paired with %s.\nThen: loops auth login '<code>'", o.control)}

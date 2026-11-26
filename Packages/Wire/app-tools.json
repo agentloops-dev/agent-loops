@@ -440,7 +440,7 @@
           "type": "array"
         },
         "machine": {
-          "description": "Optional. Another of the person's machines, by name, as list_machines shows it, to start the session there instead of here, in this project's folder there unless folder names another.",
+          "description": "Optional. Another of the person's machines, by name, as list_machines shows it, to start the session there instead of here, in this project's folder there unless folder names another. Or \"auto\": the control plane picks the machine that has this project and the runtime, by capacity and then load, as New Session's Auto does, and the answer says why.",
           "type": "string"
         },
         "model": {
@@ -901,7 +901,7 @@
     "annotations": {
       "readOnlyHint": true
     },
-    "description": "The machines this control plane's hosts run on, from every machine provider: each machine's state, the host it is linked to and that host's state, and, for a provider that can make machines, the choices a new one takes. Then every machine of the person's by name and state, made by a provider or not, where start_session with machine can start a session.",
+    "description": "The machines this control plane's hosts run on, from every machine provider: each machine's state, the host it is linked to and that host's state, its public addresses (IPv4 and IPv6, from the provider's record), and, for a provider that can make machines, the choices a new one takes. Then every machine of the person's by name and state, made by a provider or not, where start_session with machine can start a session.",
     "inputSchema": {
       "properties": {
         "description": {
@@ -1351,7 +1351,7 @@
     "annotations": {
       "readOnlyHint": true
     },
-    "description": "The trailer lines for a commit by this session, by the commit trailers rule of this folder's policy (Made-by, Session, Fixes, Epic, Requested-by, Approved-by, Cost, Tokens, Duration, Co-authored-by; each on or off by the policy, and one with no value is left out). With pr, the lines for that pull request's squash message: Fixes in place of Refs, its approvers, and the totals of every session on it. Write the lines as they come, as the last paragraph of the message: for a squash, in the file you give gh pr merge --auto --squash --body-file. Never type a trailer by hand.",
+    "description": "The trailer lines for a commit by this session, by the commit trailers rule of this folder's policy (Managed-by, Runtime, Model, Session, Fixes, Epic, Requested-by, Approved-by, Cost, Tokens, Duration; each on or off by the policy, and one with no value is left out; a Co-authored-by is the runtime's own, never one of these). With pr, the lines for that pull request's squash message: Fixes in place of Refs, its approvers, and the totals of every session on it. Write the lines as they come, as the last paragraph of the message: for a squash, in the file you give gh pr merge --auto --squash --body-file. Never type a trailer by hand.",
     "inputSchema": {
       "type": "object",
       "properties": {

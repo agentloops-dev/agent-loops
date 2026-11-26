@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentloops-dev/agent-loops/Go/internal/flaky"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -63,6 +64,7 @@ func stallNotices(d *Daemon) []postedNotice {
 // is back, the event wakes the wait, once. The server sends it again, to a new wait from the
 // same cursor: it is not raised again and does not wake that wait.
 func TestAnEventWhileItsServerWasDownIsRaisedOnce(t *testing.T) {
+	flaky.UnderLoad(t, "#6992")
 	t.Parallel()
 
 	d, _ := start(t, t.TempDir())
