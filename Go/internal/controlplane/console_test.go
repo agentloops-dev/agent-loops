@@ -3,7 +3,9 @@ package controlplane
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -64,6 +66,71 @@ func TestControlCapacityListsLastLookOfLiveCopies(t *testing.T) {
 	must(t, json.Unmarshal(call(t, admin, "", "control/capacity", map[string]any{}), &got))
 	if len(got.Copies) != 1 || got.Copies[0].Copy != want.Copy || got.Copies[0].Level != want.Level || got.Copies[0].LoadPerCore != want.LoadPerCore {
 		t.Fatalf("got %+v, want %+v", got, want)
+	}
+}
+
+// readsOf is a store that records the keys read in a context that carries readsKey.
+type readsOf struct {
+	store.Store
+	mu   sync.Mutex
+	read []string
+}
+
+type readsKey struct{}
+
+func (r *readsOf) Get(ctx context.Context, key string) (*store.Object, error) {
+	if ctx.Value(readsKey{}) != nil {
+		r.mu.Lock()
+		r.read = append(r.read, key)
+		r.mu.Unlock()
+	}
+	return r.Store.Get(ctx, key)
+}
+
+// #7360: control/capacity finds the copies from their samples, so it never reads a host's
+// kept list in v1/copies/, however large, and leaves out the sample of a copy that is gone.
+func TestControlCapacityReadsNoHostsKeptList(t *testing.T) {
+	t.Parallel()
+	st := &readsOf{Store: store.NewMemory()}
+	p := startPlane(t, st, controllink.NewPrivateKey())
+	ctx := context.Background()
+	live := copyRecord{ID: p.s.copyID, PeerURL: p.url, Started: records.Now(), Heartbeat: records.Now()}
+	data, err := json.Marshal(live)
+	must(t, err)
+	_, err = st.Put(ctx, copyRecordKey(live.ID), data, store.Always)
+	must(t, err)
+	for _, id := range []string{live.ID, "deadc0de"} {
+		data, err := json.Marshal(wire.ControlCapacityCopy{Copy: id, Level: wire.CapacityLevelOk, At: wire.DateOf(time.Now())})
+		must(t, err)
+		_, err = st.Put(ctx, controlCapacityKey(id), data, store.Always)
+		must(t, err)
+	}
+	agents := make([]map[string]any, 500)
+	for i := range agents {
+		agents[i] = map[string]any{"id": fmt.Sprintf("A%d", i), "state": "running", "title": strings.Repeat("x", 200)}
+	}
+	list, err := json.Marshal(map[string]any{"agents": agents})
+	must(t, err)
+	for i := range 20 {
+		_, err = st.Put(ctx, copyKey(fmt.Sprintf("HOST-%d", i)), list, store.Always)
+		must(t, err)
+	}
+
+	got, err := p.s.methods.controlCapacity(context.WithValue(ctx, readsKey{}, true))
+	must(t, err)
+	if len(got.Copies) != 1 || got.Copies[0].Copy != live.ID {
+		t.Fatalf("only the live copy's sample: %+v", got)
+	}
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	for _, key := range st.read {
+		if strings.HasPrefix(key, copiesPrefix) && key != copyRecordKey(live.ID) && key != copyRecordKey("deadc0de") {
+			t.Errorf("control/capacity read %s", key)
+		}
+	}
+	// This copy's own sample needs no copy record (#6591).
+	if len(st.read) != 3 {
+		t.Errorf("two samples and the other copy's record, not %v", st.read)
 	}
 }
 
