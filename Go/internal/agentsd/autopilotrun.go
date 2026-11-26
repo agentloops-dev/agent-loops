@@ -104,36 +104,24 @@ func (d *Daemon) autopilotLeads(ctx context.Context, folder string, mode wire.Au
 		return
 	}
 	dismissed, _ := d.dismissedLeads.Read()
+	red := d.autopilotMainCheck(folder)
+	ledger := d.autopilotLedger()
 	var epics []autopilotEpic
 	at := now()
 	restarts := d.autopilotRestarts(folder, at)
 	for _, r := range next.Rows {
-		e := autopilotEpic{row: r}
-		prev := d.autopilotLastLead(r.Item.Node)
-		e.led = d.leadOf(r.Item.Node) != nil
-		if prev != nil {
-			e.prev = prev.ID
-			e.capped = len(restarts[r.Item.Node.Ref]) >= autopilotMostRestarts
-			// A lead that stopped or ended is replaced, unless the epic is capped (the person looks).
-			if e.led && !e.capped && autopilotStalled(*prev, at) {
-				if err := d.archiveBy(prev.ID, wire.AgentArchivedReasonByAgent); err != nil {
-					log.Printf("autopilot: %s: lead %s not archived: %v", folder, prev.ID, err)
-				} else {
-					e.led = false
-				}
-			}
-		}
-		x, ok := dismissed[r.Item.Node.Ref]
-		p := progressOf(r.Item)
-		e.dismissed = ok && x.Done == p.Done && x.Total == p.Total
-		epics = append(epics, e)
+		epics = append(epics, d.autopilotEpicOf(folder, r, ledger, dismissed, restarts, at))
 	}
-	room := autopilotRoom{limit: d.helperLimitRefusal(folder) != "", capacity: d.capacityLevel()}
+	room := autopilotRoom{limit: d.helperLimitRefusal(folder) != "", capacity: d.capacityLevel(), mainRed: red}
 	// The open-PR count is read only when an epic could start.
-	if autopilotCanStart(epics, mode) {
+	if !red && autopilotCanStart(epics, mode) {
 		room.openPRs, room.prLimit = d.autopilotOpenPRs(ctx, folder)
 	}
 	for _, o := range autopilotLeadPlan(epics, mode, room) {
+		if o.over {
+			d.autopilotPause(folder, o.epic.Node.Ref, wire.AutopilotRowKindLead, o.why, o.lead)
+			continue
+		}
 		row := wire.AutopilotRow{Ref: o.epic.Node.Ref, Kind: wire.AutopilotRowKindLead, State: wire.AutopilotRowStateWaiting, Reason: o.why}
 		if o.paused {
 			row.State = wire.AutopilotRowStatePaused
@@ -154,6 +142,51 @@ func (d *Daemon) autopilotLeads(ctx context.Context, folder string, mode wire.Au
 			log.Printf("autopilot: %s: %v", folder, err)
 		}
 	}
+	// An epic that has a lead and is not over budget now is resumed.
+	for _, e := range epics {
+		if e.over == "" && (e.led || e.dismissed) {
+			d.autopilotResume(folder, e.row.Item.Node.Ref, wire.AutopilotRowKindLead, "back under its estimate")
+		}
+	}
+}
+
+// autopilotMainCheck pauses the folder when its main has been red too long (#5902), and resumes
+// it when main is green; it says whether the folder is paused.
+func (d *Daemon) autopilotMainCheck(folder string) bool {
+	since, red := d.autopilotMainRed(folder)
+	if red {
+		d.autopilotPause(folder, autopilotMainRef, wire.AutopilotRowKindLead, autopilotMainWords(since), nil)
+	} else {
+		d.autopilotResume(folder, autopilotMainRef, wire.AutopilotRowKindLead, "main is green")
+	}
+	return red
+}
+
+// autopilotEpicOf is an epic of forge/next with its lead, its spend and its last lead (#5899,
+// #5901, #5902). A lead that stopped or ended is archived, to be replaced, unless the epic is
+// capped (the person looks) or over budget.
+func (d *Daemon) autopilotEpicOf(folder string, r wire.ForgeNextRow, ledger []wire.LineageCostNode,
+	dismissed map[string]dismissedLead, restarts map[string][]wire.Date, at wire.Date) autopilotEpic {
+	e := autopilotEpic{row: r}
+	prev := d.autopilotLastLead(r.Item.Node)
+	lead := d.leadOf(r.Item.Node)
+	e.led, e.lead = lead != nil, lead
+	e.over = autopilotOverBudget(ledger, r.Item.Node)
+	if prev != nil {
+		e.prev = prev.ID
+		e.capped = len(restarts[r.Item.Node.Ref]) >= autopilotMostRestarts
+		if e.led && !e.capped && e.over == "" && autopilotStalled(*prev, at) {
+			if err := d.archiveBy(prev.ID, wire.AgentArchivedReasonByAgent); err != nil {
+				log.Printf("autopilot: %s: lead %s not archived: %v", folder, prev.ID, err)
+			} else {
+				e.led = false
+			}
+		}
+	}
+	x, ok := dismissed[r.Item.Node.Ref]
+	p := progressOf(r.Item)
+	e.dismissed = ok && x.Done == p.Done && x.Total == p.Total
+	return e
 }
 
 // autopilotLeadRequest is Start lead's request for an epic: Auto runtime, the lead prompt, the
@@ -191,8 +224,11 @@ type autopilotEpic struct {
 	row       wire.ForgeNextRow
 	led       bool
 	dismissed bool
-	prev      wire.UUID // the newest lead the epic had, in any state ("" for none)
-	capped    bool      // it has been restarted autopilotMostRestarts times in a day
+	lead      *wire.ForgeLead
+	// over is why the epic is paused for its spend, "" when it is not (#5902).
+	over   string
+	prev   wire.UUID // the newest lead the epic had, in any state ("" for none)
+	capped bool      // it has been restarted autopilotMostRestarts times in a day
 }
 
 // autopilotRoom is what the folder and the machine allow.
@@ -201,6 +237,7 @@ type autopilotRoom struct {
 	openPRs  int
 	prLimit  int
 	capacity wire.CapacityLevel
+	mainRed  bool // main has been red for too long (#5902)
 }
 
 // wait is why the room has no place for a start: the helper limits, the open-PR limit or the
@@ -226,6 +263,9 @@ type autopilotOutcome struct {
 	paused bool
 	why    string
 	prev   wire.UUID
+	// over: the epic is over budget (#5902); lead is its lead, which is told.
+	over bool
+	lead *wire.ForgeLead
 }
 
 func isHigh(i wire.ForgeItem) bool {
@@ -235,7 +275,7 @@ func isHigh(i wire.ForgeItem) bool {
 // autopilotCanStart is whether some epic could start before the limits are looked at.
 func autopilotCanStart(epics []autopilotEpic, mode wire.AutopilotMode) bool {
 	for _, e := range epics {
-		if !e.led && !e.dismissed && !e.row.OnHold && (mode != wire.AutopilotModeHigh || isHigh(e.row.Item)) {
+		if !e.led && !e.dismissed && e.over == "" && !e.row.OnHold && (mode != wire.AutopilotModeHigh || isHigh(e.row.Item)) {
 			return true
 		}
 	}
@@ -249,11 +289,17 @@ func autopilotLeadPlan(epics []autopilotEpic, mode wire.AutopilotMode, room auto
 	var out []autopilotOutcome
 	started := false
 	for _, e := range epics {
+		if e.over != "" {
+			out = append(out, autopilotOutcome{epic: e.row.Item, over: true, why: e.over, lead: e.lead})
+			continue
+		}
 		if e.led || e.dismissed {
 			continue
 		}
 		o := autopilotOutcome{epic: e.row.Item, prev: e.prev}
 		switch {
+		case room.mainRed:
+			o.why = "main red"
 		case e.prev != "" && e.capped && !e.row.OnHold:
 			o.why, o.paused = autopilotLeadStopping, true
 		case e.row.OnHold:

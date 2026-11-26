@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
+	"github.com/agentloops-dev/agent-loops/Go/internal/citimings"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -125,6 +126,75 @@ func TestAutopilotHear(t *testing.T) {
 	d.autopilotHear(wire.Event{Name: "agent.ended"})
 	if len(d.autopilotKick) != 1 {
 		t.Fatal("one wake")
+	}
+}
+
+func ciRun(ref string, made int64, conclusion string, attempt int) citimings.Run {
+	return citimings.Run{Ref: ref, Attempt: attempt, Workflow: "ci.yml", Default: true, Made: made, Ended: 600, Conclusion: conclusion}
+}
+
+// Main is red from the end of the first failed run that runs on to the newest (#5902).
+func TestMainRedSince(t *testing.T) {
+	t.Parallel()
+	if _, red := mainRedSince(nil, "ci.yml"); red {
+		t.Fatal("no runs")
+	}
+	green := []citimings.Run{ciRun("a", 100, "failure", 1), ciRun("b", 200, "success", 1)}
+	if _, red := mainRedSince(green, "ci.yml"); red {
+		t.Fatal("latest is green")
+	}
+	runs := []citimings.Run{ciRun("a", 100, "success", 1), ciRun("b", 200, "failure", 1), ciRun("c", 300, "cancelled", 1), ciRun("d", 400, "timed_out", 1)}
+	runs = append(runs, citimings.Run{Ref: "e", Attempt: 1, Workflow: "ci.yml", Made: 500, Conclusion: "success"}, // a PR run
+		citimings.Run{Ref: "f", Attempt: 1, Workflow: "other.yml", Default: true, Made: 600, Conclusion: "success"})
+	since, red := mainRedSince(runs, "ci.yml")
+	if !red || since.Unix() != 800 {
+		t.Fatalf("%v %v", since, red)
+	}
+	// A re-run that passes makes the run green.
+	runs = append(runs, ciRun("d", 400, "success", 2))
+	if _, red := mainRedSince(runs, "ci.yml"); red {
+		t.Fatal("re-run passed")
+	}
+}
+
+// An epic at 2× its estimate is paused; the plan puts it ahead of the started lead, with its lead (#5902).
+func TestAutopilotPausePlan(t *testing.T) {
+	t.Parallel()
+	lead := &wire.ForgeLead{Session: "x"}
+	epics := []autopilotEpic{
+		{row: epicRow("#1", "", false), led: true, over: "over budget", lead: lead},
+		{row: epicRow("#2", "", false)},
+	}
+	ok := autopilotRoom{prLimit: 5, capacity: wire.CapacityLevelOk}
+	out := autopilotLeadPlan(epics, wire.AutopilotModeOn, ok)
+	if len(out) != 2 || !out[0].over || out[0].lead != lead || !out[1].start {
+		t.Fatalf("%+v", out)
+	}
+	red := ok
+	red.mainRed = true
+	out = autopilotLeadPlan(epics, wire.AutopilotModeOn, red)
+	if len(out) != 2 || !out[0].over || out[1].start || out[1].why != "main red" {
+		t.Fatalf("%+v", out)
+	}
+	if autopilotCanStart(epics[:1], wire.AutopilotModeOn) {
+		t.Fatal("over budget cannot start")
+	}
+}
+
+// A pause notes a paused row once, and a resume says so (#5902).
+func TestAutopilotPauseResume(t *testing.T) {
+	t.Parallel()
+	d, c := start(t, t.TempDir())
+	defer d.Shutdown()
+	dir := folder(t, c, 1)
+	d.autopilotPause(dir, "o/r#9", wire.AutopilotRowKindLead, "over budget", nil)
+	if d.autopilotRowState(dir, "o/r#9") != wire.AutopilotRowStatePaused {
+		t.Fatal("paused")
+	}
+	d.autopilotPause(dir, "o/r#9", wire.AutopilotRowKindLead, "over budget", nil)
+	d.autopilotResume(dir, "o/r#9", wire.AutopilotRowKindLead, "back under its estimate")
+	if d.autopilotRowState(dir, "o/r#9") != wire.AutopilotRowStateWaiting {
+		t.Fatal("resumed")
 	}
 }
 
