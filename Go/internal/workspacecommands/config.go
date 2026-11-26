@@ -91,7 +91,7 @@ type Listing struct {
 // Making is making and deleting workspaces (US5): only beside a listing, which finds what
 // was made.
 type Making struct {
-	// Create makes one: ${name}, ${firstBoot} and each option's key are filled in.
+	// Create makes one: ${name}, ${firstBoot}, ${rootBoot} and each option's key are filled in.
 	Create string
 	// Delete deletes one: ${id} and its listing's values are filled in.
 	Delete string
@@ -134,6 +134,15 @@ func (m Making) FirstBootRuns() bool {
 		return strings.Contains(string(data), "${firstBoot}")
 	}
 	return strings.Contains(m.Create, "${firstBoot}")
+}
+
+// RootBootRuns is whether a made workspace runs rootBoot, the person's root.sh (#7154).
+func (m Making) RootBootRuns() bool {
+	if m.CreateRequest != nil {
+		data, _ := json.Marshal(m.CreateRequest.Body)
+		return strings.Contains(string(data), "${rootBoot}")
+	}
+	return strings.Contains(m.Create, "${rootBoot}")
 }
 
 // CanCreate is whether it makes workspaces.

@@ -96,6 +96,7 @@ func (c Certificates) Ensure() error {
 		return err
 	}
 	write := func(path, kind string, b []byte, mode os.FileMode) error {
+		// store-bounds: kind=secret; count=4 (the CA and the server certificate, and their keys); size=4KiB a record; age=until-deleted; applied=made once, when one of the four is missing
 		return os.WriteFile(path, pem.EncodeToMemory(&pem.Block{Type: kind, Bytes: b}), mode)
 	}
 	caKeyDER, err := x509.MarshalPKCS8PrivateKey(caKey)

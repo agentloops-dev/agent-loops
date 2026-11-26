@@ -58,3 +58,39 @@ test("the checks and the confirmation say what happens", () => {
   assert.ok(same.includes("The address stays control.example.dev."));
   assert.equal(same.length, 4);
 });
+
+// #7395: the strip counts the copy's records, and the confirmation's time is the store's.
+test("the copy counts its records and the confirmation says how long it is frozen", () => {
+  assert.equal(m.moveLine(move("copying", { copied: 1200, total: 5000 }), "en-US"),
+    "Moving the control plane to droplet-ams3-1: copying the store, 1,200 of 5,000 records.");
+  assert.equal(m.moveLine(move("copying", { copied: 0, total: 0 })), "Moving the control plane to droplet-ams3-1: copying the store.");
+  assert.equal(m.about(5), "about 10 seconds");
+  assert.equal(m.about(35), "about 40 seconds");
+  assert.equal(m.about(80), "about a minute");
+  assert.equal(m.about(271), "about 5 minutes");
+  assert.equal(m.happens("droplet-ams3-1", undefined, undefined, 35).at(-1),
+    "Agents keep working. For about 40 seconds, the control plane is frozen: it refuses changes, and screens can’t reach machines.");
+  assert.equal(m.happens("droplet-ams3-1", undefined, undefined).at(-1),
+    "Agents keep working. While the store copies, the control plane is frozen: it refuses changes, and screens can’t reach machines.");
+});
+
+// #7393: a control-only machine that runs no copy is the one a team moves to, so a copy says which runs it.
+test("a copy, not the role, says which machine runs the control plane", () => {
+  const machine = (id, roles) => ({ id, name: id, roles });
+  const running = machine("vm-1", ["control"]);
+  const target = machine("vm-2", ["control"]);
+  const agents = machine("box", ["agents"]);
+  const copies = [{ copy: "a", machine: "vm-1" }];
+  assert.equal(m.runsControl(running, copies, 2), true);
+  assert.equal(m.runsControl(target, copies, 2), false);
+  assert.equal(m.runsControl(agents, copies, 2), false);
+  // Before the copies are read, the role says it: nothing offers a move to the copy that runs.
+  assert.equal(m.runsControl(target, null, 2), true);
+  assert.equal(m.runsControl(agents, null, 2), false);
+  // A copy from before #6591 names no machine: the only control machine runs it.
+  const unnamed = [{ copy: "b" }];
+  assert.equal(m.runsControl(running, unnamed, 1), true);
+  assert.equal(m.runsControl(agents, unnamed, 1), false);
+  assert.equal(m.runsControl(running, unnamed, 2), false);
+  assert.equal(m.controlRole(machine("old", undefined)), false);
+});

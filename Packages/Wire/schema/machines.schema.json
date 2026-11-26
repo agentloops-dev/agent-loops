@@ -76,6 +76,22 @@
         },
         "state": {
           "type": "string"
+        },
+        "capacity": {
+          "$ref": "#/definitions/CapacityLevel",
+          "description": "The machine's capacity level as it last pushed it (#5875), so an agent does not start heavy work on a full machine. Absent before its first push."
+        },
+        "loadPerCore5": {
+          "type": "number",
+          "description": "Its 5-minute load per core when it last pushed."
+        },
+        "capacityAt": {
+          "$ref": "core.schema.json#/definitions/WireDate",
+          "description": "When the control plane last heard its capacity. A figure older than 2 minutes is no figure (Auto's rule)."
+        },
+        "platform": {
+          "type": "string",
+          "description": "The machine's platform as it announced it (macOS 15, Linux), so Autopilot (#5900) sends a linux-ok issue to a Linux machine. Absent when it did not say."
         }
       },
       "required": [
@@ -1223,6 +1239,10 @@
         "diskFreeBytes": {
           "type": "integer",
           "description": "The free space on its fullest disk, as it said it (#7313). Absent when it did not say."
+        },
+        "frozenSeconds": {
+          "type": "integer",
+          "description": "About how long a move to the machine keeps the control plane frozen, in seconds, from the store's size and the copy's batches (#7395). Changes are refused while it is frozen. Absent from a control plane before #7395."
         }
       },
       "required": [
@@ -1305,6 +1325,14 @@
         "address": {
           "type": "string",
           "description": "Where the new copy answers, once it said so."
+        },
+        "copied": {
+          "type": "integer",
+          "description": "With copying: the records copied so far (#7395). control/moveChanged says it every few seconds during the copy."
+        },
+        "total": {
+          "type": "integer",
+          "description": "With copying: the records the copy takes (#7395)."
         },
         "forwardingUntil": {
           "$ref": "core.schema.json#/definitions/WireDate",

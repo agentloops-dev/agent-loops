@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -39,7 +40,7 @@ import (
 // stays frozen and says so.
 
 const (
-	// store-bounds: kind=document; count=20; size=4KiB a record; age=90d; applied=on write (refused past its size), and each write and list deletes the moves past the newest 20 and those of 90 days
+	// store-bounds: kind=document; count=20; size=4KiB a record; age=90d; applied=on write (refused past its size), and each write deletes, from the keys, the moves past the newest 20 and those started 90 days ago, and a read writes nothing (#7396)
 	movesPrefix = "v1/moves/"
 	// movesKept is how many moves are kept, the newest.
 	movesKept = 20
@@ -51,6 +52,8 @@ const (
 	moveReceivePatience = 2 * time.Minute
 	// moveDialPatience is how long the new copy has to answer after that.
 	moveDialPatience = 2 * time.Minute
+	// moveProgressEvery is how often, at most, the admins hear the copy's count (#7395).
+	moveProgressEvery = 2 * time.Second
 )
 
 // moveState is the move that runs, if any: one at a time.
@@ -59,6 +62,12 @@ type moveState struct {
 	running string
 	// dialEvery is the wait between dials of the new copy; tests make it short.
 	dialEvery time.Duration
+	// linkDelay is added to each call on the handover session; tests make a link between
+	// two machines with it (#7394).
+	linkDelay time.Duration
+	// progressEvery is the least wait between two counts of the copy (#7395); tests make it
+	// short.
+	progressEvery time.Duration
 }
 
 func (m *moveState) take(id string) bool {
@@ -129,6 +138,7 @@ func (s *Service) startMove(ctx context.Context, machine, person string) (wire.C
 	if !s.moving.take(id) {
 		return wire.ControlMove{}, fail(changedElsewhere, "Another move of the control plane is running. Wait for it to end.")
 	}
+	s.failLeftMoves(ctx)
 	now := time.Now()
 	move := wire.ControlMove{ID: id, From: s.copyID, To: wire.MachineRef(h.ID), ToName: cmpOr(h.Name, h.ID),
 		Phase: wire.ControlMovePhaseChecking, StartedAt: dateOf(now), UpdatedAt: dateOf(now), By: person}
@@ -201,7 +211,7 @@ func (s *Service) runMove(ctx context.Context, move wire.ControlMove, h records.
 	step(wire.ControlMovePhaseCopying)
 	forwarding := endpoint.URL != s.cfg.URL
 	until := time.Now().Add(longestForwarding)
-	if _, _, err := copyStoreLeaving(ctx, s.cfg.Store, PeerStore{Link: link}, append(slices.Clone(copySkipped), movesPrefix)); err != nil {
+	if _, _, err := copyStoreReporting(ctx, s.cfg.Store, PeerStore{Link: link}, append(slices.Clone(copySkipped), movesPrefix), s.moveCounter(&move)); err != nil {
 		s.moveFailed(ctx, &move, "The store did not copy: "+moveWords(err), true)
 		return
 	}
@@ -291,6 +301,7 @@ func (s *Service) moveDial(ctx context.Context, endpoint records.Endpoint) (*Han
 				link.Close()
 				return nil, fail(internalError, "The new copy at %s has another control key.", endpoint.URL)
 			}
+			link.delay = s.moving.linkDelay
 			return link, nil
 		}
 		if time.Now().After(deadline) {
@@ -328,7 +339,7 @@ func (s *Service) moveFailed(ctx context.Context, move *wire.ControlMove, why st
 		s.log("unfrozen: the move did not finish")
 	}
 	failed := move.Phase
-	move.Phase, move.FailedPhase, move.Error = wire.ControlMovePhaseFailed, &failed, &why
+	failedAt(move, why)
 	s.log(fmt.Sprintf("the move to %s stopped at %s: %s", move.ToName, failed, why))
 	s.moveChanged(ctx, move)
 }
@@ -342,6 +353,24 @@ func (s *Service) moveChanged(ctx context.Context, move *wire.ControlMove) {
 	s.tellAdmins(wire.NotifyControlMoveChanged.Name, *move)
 }
 
+// moveCounter is the copy's progress for a move (#7395): the admins hear the records copied
+// and the total as the copy starts, every moveProgressEvery at most, and as it ends. Only the
+// admins hear it: the store keeps the move's steps, not each count.
+func (s *Service) moveCounter(move *wire.ControlMove) copyProgress {
+	every := cmp.Or(s.moving.progressEvery, moveProgressEvery)
+	var told time.Time
+	return func(copied, total int) {
+		now := time.Now()
+		if !told.IsZero() && now.Sub(told) < every && copied < total {
+			return
+		}
+		told = now
+		move.Copied, move.Total = new(int64(copied)), new(int64(total))
+		move.UpdatedAt = dateOf(now)
+		s.tellAdmins(wire.NotifyControlMoveChanged.Name, *move)
+	}
+}
+
 func moveKey(id string) string { return movesPrefix + id + ".json" }
 
 // newMoveID sorts by when the move started.
@@ -351,8 +380,9 @@ func newMoveID() string {
 	return fmt.Sprintf("%013d-%s", time.Now().UnixMilli(), hex.EncodeToString(b))
 }
 
-// putMove writes the move, and drops the moves past the newest movesKept and those older
-// than moveKeptFor. It writes the store itself: a frozen copy still says how its move ends.
+// putMove writes the move, then drops the moves past the newest movesKept and those that
+// started more than moveKeptFor ago. It writes the store itself: a frozen copy still says
+// how its move ends.
 func (s *Service) putMove(ctx context.Context, move wire.ControlMove) error {
 	data, err := json.Marshal(move)
 	if err != nil {
@@ -374,34 +404,72 @@ func (s *Service) putMove(ctx context.Context, move wire.ControlMove) error {
 	if _, err := st.Put(ctx, key, data, when); err != nil {
 		return err
 	}
-	_, err = s.keptMoves(ctx)
-	return err
+	return s.pruneMoves(ctx)
 }
 
-// keptMoves reads the moves, the newest first, and deletes those past the bounds.
-func (s *Service) keptMoves(ctx context.Context) ([]wire.ControlMove, error) {
-	st := s.cfg.Store
-	keys, err := st.List(ctx, movesPrefix)
+// moveKeys lists the moves' keys, the newest first: the ids sort by when each started.
+func (s *Service) moveKeys(ctx context.Context) ([]store.Key, error) {
+	keys, err := s.cfg.Store.List(ctx, movesPrefix)
 	if err != nil {
 		return nil, err
 	}
-	// The ids sort by when each started: the newest last.
 	slices.SortFunc(keys, func(a, b store.Key) int { return strings.Compare(b.Key, a.Key) })
+	return keys, nil
+}
+
+// moveStarted is when the move of a key started, from its id; the zero time for a key that
+// is not a move's.
+func moveStarted(key string) time.Time {
+	id := strings.TrimSuffix(strings.TrimPrefix(key, movesPrefix), ".json")
+	millis, _, ok := strings.Cut(id, "-")
+	if !ok {
+		return time.Time{}
+	}
+	n, err := strconv.ParseInt(millis, 10, 64)
+	if err != nil {
+		return time.Time{}
+	}
+	return time.UnixMilli(n)
+}
+
+// pruneMoves deletes, from the keys alone, the moves past the newest movesKept and those
+// that started more than moveKeptFor ago (#7396): one list, and a delete for each.
+func (s *Service) pruneMoves(ctx context.Context) error {
+	keys, err := s.moveKeys(ctx)
+	if err != nil {
+		return err
+	}
+	oldest := time.Now().Add(-moveKeptFor)
+	for i, k := range keys {
+		if i < movesKept && !moveStarted(k.Key).Before(oldest) {
+			continue
+		}
+		if err := s.cfg.Store.Delete(ctx, k.Key); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// keptMoves reads the moves within the bounds, the newest first: one list, and a read of
+// each of the newest movesKept. It writes nothing (#7396): the next write prunes the rest.
+func (s *Service) keptMoves(ctx context.Context) ([]wire.ControlMove, error) {
+	keys, err := s.moveKeys(ctx)
+	if err != nil {
+		return nil, err
+	}
 	oldest := time.Now().Add(-moveKeptFor)
 	var out []wire.ControlMove
-	for i, k := range keys {
-		var move wire.ControlMove
-		object, err := st.Get(ctx, k.Key)
+	for _, k := range keys[:min(len(keys), movesKept)] {
+		if moveStarted(k.Key).Before(oldest) {
+			break
+		}
+		object, err := s.cfg.Store.Get(ctx, k.Key)
 		if err != nil {
 			return nil, err
 		}
-		if object == nil {
-			continue
-		}
-		if i >= movesKept || json.Unmarshal(object.Data, &move) != nil || move.UpdatedAt.Time().Before(oldest) {
-			if err := st.Delete(ctx, k.Key); err != nil {
-				return nil, err
-			}
+		var move wire.ControlMove
+		if object == nil || json.Unmarshal(object.Data, &move) != nil {
 			continue
 		}
 		out = append(out, move)
@@ -409,29 +477,56 @@ func (s *Service) keptMoves(ctx context.Context) ([]wire.ControlMove, error) {
 	return out, nil
 }
 
-// listMoves is control/moves/list. A move that no copy runs any more (this one stopped
-// during it) failed at the step it was at.
+// leftMove is a move that has not ended and that this copy does not run: the copy that ran
+// it stopped during it.
+func (s *Service) leftMove(move wire.ControlMove) bool {
+	switch move.Phase {
+	case wire.ControlMovePhaseDone, wire.ControlMovePhaseFailed, wire.ControlMovePhaseForwarding:
+		return false
+	}
+	return move.ID != s.moving.now()
+}
+
+// leftMoveWhy is why a left move failed.
+const leftMoveWhy = "The control plane stopped during this step."
+
+// failedAt is the move as failed at the step it is at.
+func failedAt(move *wire.ControlMove, why string) {
+	failed := move.Phase
+	move.Phase, move.FailedPhase, move.Error = wire.ControlMovePhaseFailed, &failed, &why
+}
+
+// listMoves is control/moves/list. A move that no copy runs any more failed at the step it
+// was at: the list says so, and writes nothing (#7396); the next move writes it.
 func (s *Service) listMoves(ctx context.Context) []wire.ControlMove {
 	moves, err := s.keptMoves(ctx)
 	if err != nil {
 		s.log("the moves could not be read: " + err.Error())
 	}
-	running := s.moving.now()
 	for i := range moves {
-		move := &moves[i]
-		switch move.Phase {
-		case wire.ControlMovePhaseDone, wire.ControlMovePhaseFailed, wire.ControlMovePhaseForwarding:
-			continue
+		if s.leftMove(moves[i]) {
+			failedAt(&moves[i], leftMoveWhy)
 		}
-		if move.ID == running {
-			continue
-		}
-		s.moveFailed(ctx, move, "The control plane stopped during this step.", false)
 	}
 	if moves == nil {
 		moves = []wire.ControlMove{}
 	}
 	return moves
+}
+
+// failLeftMoves keeps each left move as failed at its step, and tells the admins. A move
+// that starts does it first, so that one move at a time stands in the record too.
+func (s *Service) failLeftMoves(ctx context.Context) {
+	moves, err := s.keptMoves(ctx)
+	if err != nil {
+		s.log("the moves could not be read: " + err.Error())
+		return
+	}
+	for i := range moves {
+		if s.leftMove(moves[i]) {
+			s.moveFailed(ctx, &moves[i], leftMoveWhy, false)
+		}
+	}
 }
 
 // moveWords is an error in the words a person reads, with no code.

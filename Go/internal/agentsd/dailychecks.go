@@ -47,6 +47,8 @@ const (
 	checkLines = 10
 	// dismissalsKept is the most dismissals the checks keep: the oldest go first.
 	dismissalsKept = 200
+	// checksMost bounds suggestions.json (#7350): 50 suggestions and 200 dismissals.
+	checksMost = 4 << 20
 	// checksReach is how long a suggestion is kept, and the furthest back a check looks.
 	checksReach = 7 * 24 * time.Hour
 	// personalWorkflowFolder names the person's own workflows in a claim, the same on every
@@ -147,6 +149,12 @@ func writeChecks(home string, r checksRecord) error {
 	if err != nil {
 		return err
 	}
+	if len(b) > checksMost {
+		return fmt.Errorf("the checks' suggestions are %d bytes, at most %d: %w", len(b), checksMost, store.ErrLimit)
+	}
+	// No 90-day age-out: an exception to the 90-day rule until #7023 removes the daily checks
+	// (Alex, 2026-11-24, data-stores.md).
+	// store-bounds: kind=document; count=250; size=4MiB; age=until-deleted; applied=on write (the oldest go first, a larger file is refused) (#6726, #7350)
 	return store.WriteAtomically(checksPath(home), b, 0o600)
 }
 

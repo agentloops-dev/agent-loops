@@ -1,7 +1,8 @@
 import Foundation
 
 /// A machine's set-up in words (#5357, epic #5353): the header chip, the sidebar's grey line and
-/// each step's line, from the control plane's record of the eight steps.
+/// each step's line, from the control plane's record of the steps: the eight, and Root set-up
+/// and Your set-up when the machine runs the person's scripts (#7154).
 public enum MachineSetupWords {
     /// The steps' names, as the page lists them, by the wire's id.
     public static let names: [String: String] = [
@@ -20,6 +21,17 @@ public enum MachineSetupWords {
     /// Whether the run is over and well: every step done. A machine is ready then, and `New Session` turns on.
     public static func isReady(_ setup: DaemonAPI.MachineSetup) -> Bool {
         setup.readyAt != nil || (!setup.steps.isEmpty && setup.steps.allSatisfy { $0.state == .done })
+    }
+
+    /// Whether a step is done with a warning (#7154): a provider that can't run root set-up.
+    public static func isWarned(_ step: DaemonAPI.MachineSetupStep) -> Bool {
+        step.state == .done && step.warning == true
+    }
+
+    /// What a failed Root set-up says to do (#7154, gate 2's *page root failed*): root.sh runs
+    /// once, on the first boot, so a fixed one needs a new machine.
+    public static func rootFailedAdvice(_ machine: String) -> String {
+        "Fix root.sh, then make a new machine: \(machine) can’t run it again by itself. You can start sessions here."
     }
 
     /// The step that stopped the run, if one failed.
@@ -106,7 +118,8 @@ public enum MachineSetupWords {
     /// pool before the claim (#5366, board 4).
     public static func time(_ step: DaemonAPI.MachineSetupStep, now: Date = Date()) -> String? {
         if step.fromPool == true, step.state == .done { return "pool" }
-        guard let start = step.startedAt else { return nil }
+        // A step done with a warning ran nothing (#7154): no time.
+        guard !isWarned(step), let start = step.startedAt else { return nil }
         return duration((step.endedAt ?? now).timeIntervalSince(start))
     }
 

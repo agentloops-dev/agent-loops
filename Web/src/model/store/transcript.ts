@@ -149,6 +149,7 @@ export const transcriptMethods = {
       this.turns.value = keepingLatestByID(page.turns);
       this.firstTurn.value = page.firstTurn;
       this.firstPrompt.value = page.firstPrompt ?? null;
+      this.startRemoved.value = page.startRemoved ?? null;
       this.openTurnStart.value = page.openStart;
     });
   },
@@ -159,6 +160,7 @@ export const transcriptMethods = {
       this.turns.value = keepingLatestByID([...page.turns, ...this.turns.value]);
       this.firstTurn.value = page.firstTurn;
       this.firstPrompt.value = page.firstPrompt ?? null;
+      this.startRemoved.value = page.startRemoved ?? null;
     });
   },
   /**
@@ -243,6 +245,7 @@ export const transcriptMethods = {
     this.turns.value = [];
     this.firstTurn.value = 0;
     this.firstPrompt.value = null;
+    this.startRemoved.value = null;
     this.openTurnStart.value = 0;
     this.leadAsk = null;
     this.refold([]);

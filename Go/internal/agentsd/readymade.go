@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"log"
 	"os"
 	"path/filepath"
@@ -60,6 +61,26 @@ func pushesToForge(folder string) bool {
 	return false
 }
 
+// The ready-made state files in ~/.agents/settings (#7349): removed-workflows.json,
+// ready-made-updated.json, ready-made-workflows.json, ready-made-kept.json and
+// ready-made-skills.json, each a set of ids or a value by id. An id stays after its item goes
+// from the catalogue, so each file is bounded: readyMadeIDsMost ids of readyMadeIDMost bytes. A
+// new id past either is not kept, with a log line, and the file stays as it was.
+const (
+	readyMadeIDsMost = 1000
+	readyMadeIDMost  = 256
+)
+
+// keepsReadyMadeID says whether a state file that holds n ids, none of them id, can take id.
+func keepsReadyMadeID(file, id string, n int) error {
+	if len(id) <= readyMadeIDMost && n < readyMadeIDsMost {
+		return nil
+	}
+	err := fmt.Errorf("%s keeps %d ready-made ids of %d bytes at most: %w", filepath.Base(file), readyMadeIDsMost, readyMadeIDMost, store.ErrLimit)
+	log.Printf("workflows: a ready-made id of %d bytes is not kept: %v", len(id), err)
+	return err
+}
+
 // removedReadyMadePath keeps the IDs of built-in workflows that the person deleted.
 func removedReadyMadePath(home string) string {
 	return filepath.Join(home, ".agents", "settings", "removed-workflows.json")
@@ -79,6 +100,9 @@ func markReadyMadeRemoved(home, id string) error {
 			return nil
 		}
 	}
+	if err := keepsReadyMadeID(path, id, len(ids)); err != nil {
+		return err
+	}
 	ids = append(ids, id)
 	sort.Strings(ids)
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -88,6 +112,7 @@ func markReadyMadeRemoved(home, id string) error {
 	if err != nil {
 		return err
 	}
+	// store-bounds: kind=key-value; count=1_000; size=256B an id; age=until-deleted; applied=on write (one more is refused) (#7349)
 	return store.WriteAtomically(path, data, 0o600)
 }
 
@@ -136,6 +161,7 @@ func (d *Daemon) ensureReadyMadeUserWorkflowsLocked() {
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 			continue
 		}
+		// store-bounds: not a store: an install: a ready-made workflow into the person's .agents.
 		if err := store.WriteAtomically(path, []byte(workflow), 0o644); err != nil {
 			continue
 		}
@@ -211,7 +237,8 @@ var earlierReadyMade = map[string]map[string]bool{
 }
 
 // updatedReadyMadePath keeps when the daemon last wrote a newer version over each unedited
-// copy, by id, so its row and page can say so (#4071).
+// copy, by id, so its row and page can say so (#4071). Only the last readyMadeUpdatedFor is
+// read, so an older one goes at the next write (#7349).
 func updatedReadyMadePath(home string) string {
 	return filepath.Join(home, ".agents", "settings", "ready-made-updated.json")
 }
@@ -221,11 +248,23 @@ func markReadyMadeUpdated(home, id string, at time.Time) {
 	if data, err := os.ReadFile(updatedReadyMadePath(home)); err == nil {
 		_ = json.Unmarshal(data, &updated)
 	}
+	for was, when := range updated {
+		if at.Sub(when.Time()) >= readyMadeUpdatedFor {
+			delete(updated, was)
+		}
+	}
+	if _, had := updated[id]; !had && keepsReadyMadeID(updatedReadyMadePath(home), id, len(updated)) != nil {
+		return
+	}
 	updated[id] = wire.DateOf(at)
 	if data, err := json.Marshal(updated); err == nil {
+		// store-bounds: kind=key-value; count=1_000; size=256B an id; age=7d; applied=on write (one more is refused) (#7349)
 		_ = store.WriteAtomically(updatedReadyMadePath(home), data, 0o600)
 	}
 }
+
+// readyMadeUpdatedFor is how long a copy's row says the daemon updated it.
+const readyMadeUpdatedFor = 7 * 24 * time.Hour
 
 // readyMadeNotice is what a ready-made copy's summary says about its newer versions (#4071):
 // when the daemon updated an unedited copy, for 7 days, or, for a copy the person edited, what
@@ -246,7 +285,7 @@ func readyMadeNotice(home, id, text string, now time.Time) (updatedAt *wire.Date
 		if data, err := os.ReadFile(updatedReadyMadePath(home)); err == nil {
 			_ = json.Unmarshal(data, &updated)
 		}
-		if at, ok := updated[id]; ok && now.Sub(at.Time()) < 7*24*time.Hour {
+		if at, ok := updated[id]; ok && now.Sub(at.Time()) < readyMadeUpdatedFor {
 			return &at, nil
 		}
 		return nil, nil
@@ -276,9 +315,13 @@ func markReadyMadeMade(home, id, digest string) {
 	if made[id] == digest {
 		return
 	}
+	if _, had := made[id]; !had && keepsReadyMadeID(madeReadyMadePath(home), id, len(made)) != nil {
+		return
+	}
 	made[id] = digest
 	data, err := json.Marshal(made)
 	if err == nil && os.MkdirAll(filepath.Dir(madeReadyMadePath(home)), 0o755) == nil {
+		// store-bounds: kind=key-value; count=1_000; size=256B an id; age=until-deleted; applied=on write (one more is refused) (#7349)
 		_ = store.WriteAtomically(madeReadyMadePath(home), data, 0o600)
 	}
 }
@@ -363,7 +406,7 @@ func (d *Daemon) takeReadyMade(r wire.WorkflowRequest) (wire.WorkflowSummary, er
 			err = &Error{Code: wire.FailureWorkflowUnreadable, Message: why}
 		} else if text, kerr := withStateKeys(old, workflow, r.WorkflowID, home); kerr != nil {
 			err = &Error{Code: wire.FailureWorkflowUnreadable, Message: kerr.Error()}
-		} else if werr := store.WriteAtomically(path, []byte(text), 0o644); werr != nil {
+		} else if werr := store.WriteAtomically(path, []byte(text), 0o644); werr != nil { // store-bounds: not a store: an install: a ready-made workflow into the person's .agents.
 			err = &Error{Code: wire.FailureWorkflowUnreadable, Message: r.WorkflowID + ".md was not changed: " + werr.Error() + "."}
 		} else {
 			markReadyMadeMade(home, r.WorkflowID, want)
@@ -386,8 +429,14 @@ func (d *Daemon) keepReadyMade(r wire.WorkflowRequest) (wire.WorkflowSummary, er
 	home, _, _, want, err := d.readyMadeCopyLocked(r)
 	if err == nil {
 		kept := keptReadyMade(home)
+		if _, had := kept[r.WorkflowID]; !had {
+			if kerr := keepsReadyMadeID(keptReadyMadePath(home), r.WorkflowID, len(kept)); kerr != nil {
+				err = &Error{Code: wire.FailureWorkflowUnreadable, Message: "Could not save that you kept your copy: " + kerr.Error()}
+			}
+		}
 		kept[r.WorkflowID] = want
-		if data, merr := json.Marshal(kept); merr == nil {
+		if data, merr := json.Marshal(kept); err == nil && merr == nil {
+			// store-bounds: kind=key-value; count=1_000; size=256B an id; age=until-deleted; applied=on write (one more is refused) (#7349)
 			if werr := store.WriteAtomically(keptReadyMadePath(home), data, 0o600); werr != nil {
 				err = &Error{Code: wire.FailureWorkflowUnreadable, Message: "Could not save that you kept your copy: " + werr.Error()}
 			}
@@ -425,6 +474,7 @@ func (d *Daemon) updateReadyMadeLocked(home, id, path, workflow, madeDigest stri
 	if err != nil {
 		return
 	}
+	// store-bounds: not a store: an install: a ready-made workflow into the person's .agents.
 	if err := store.WriteAtomically(path, []byte(text), 0o644); err != nil {
 		return
 	}

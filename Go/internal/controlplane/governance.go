@@ -13,6 +13,7 @@ import (
 	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/audit"
 	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/records"
 	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/store"
+	"github.com/agentloops-dev/agent-loops/Go/internal/sizewords"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -110,7 +111,7 @@ func (s *Service) keepGovernanceReport(ctx context.Context, host string, report 
 		items = append(items, item)
 	}
 	data, _ := json.Marshal(governanceMachine{Host: host, At: dateOf(now), Items: items})
-	if err := governanceFits(data, governanceMachineBytes); err != nil {
+	if err := governanceFits(data, governanceMachineBytes, "This machine's list of servers and skills", "Remove some of them on the machine."); err != nil {
 		return err
 	}
 	if _, err := s.cfg.Store.Put(ctx, governanceHostKey(host), data, store.Always); err != nil {
@@ -431,7 +432,7 @@ func (s *Service) keepApproval(ctx context.Context, a wire.CatalogApproval) erro
 		return fail(invalidParams, "There are %d approvals already. Take back some first.", len(keys))
 	}
 	data, _ := json.Marshal(a)
-	if err := governanceFits(data, governanceRecordBytes); err != nil {
+	if err := governanceFits(data, governanceRecordBytes, "This approval", "Give it a shorter name or source."); err != nil {
 		return err
 	}
 	if _, err := s.cfg.Store.Put(ctx, key, data, store.Always); err != nil {
@@ -449,17 +450,17 @@ func boundedRequest(r *wire.CatalogRequest) ([]byte, error) {
 	for most := governanceWhyMost; ; most /= 2 {
 		r.Why = cutOptional(r.Why, most)
 		data, _ := json.Marshal(r)
-		err := governanceFits(data, governanceRecordBytes)
+		err := governanceFits(data, governanceRecordBytes, "This request", "Give it a shorter name.")
 		if err == nil || most == 0 {
 			return data, err
 		}
 	}
 }
 
-// governanceFits refuses a record over its largest size.
-func governanceFits(data []byte, most int) error {
+// governanceFits refuses a record over its largest size: what it is, and what the person can do.
+func governanceFits(data []byte, most int, what, next string) error {
 	if len(data) > most {
-		return fail(invalidParams, "What is kept of this is too large: %d bytes, and the most is %d.", len(data), most)
+		return fail(invalidParams, "%s is too large to keep: %s, and the most is %s. %s", what, sizewords.Int(len(data)), sizewords.Int(most), next)
 	}
 	return nil
 }

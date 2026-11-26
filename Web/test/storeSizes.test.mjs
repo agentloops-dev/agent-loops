@@ -85,3 +85,19 @@ test("99 stores on each of 50 machines join quickly, with a key each", () => {
   assert.equal(new Set(rows.map((r) => r.key)).size, 4950);
   assert.equal(m.filtersOf(rows).find(([f]) => f === "in:M7")[1], "M7 (99)");
 });
+
+test("over its limit, a store says what happens next; a read says when the next measurement is (#7408)", () => {
+  assert.equal(m.statusNote(status({ state: "over", percentBytes: 120, atLimit: "hourly" })), "The hourly sweep removes what is past its limit.");
+  assert.equal(m.statusNote(status({ state: "over", percentBytes: 120, atLimit: "refuse" })), "New writes are refused until it is within its limit.");
+  assert.equal(m.statusNote(status({ state: "current", atLimit: "refuse" })), undefined);
+  assert.equal(m.statusNote(status({ state: "unavailable", why: "Not measured yet." })), "Not measured yet.");
+  const rows = m.rowsOf([source([size({ measuredAt: wire(now - 35 * 60_000) })]),
+    { id: m.planeSource, name: "Control plane", got: { stores: [size({ owner: "controlPlane", measuredAt: wire(now - hour) })], total: 1 }, at: now }], now);
+  const next = m.nextMeasuredAt(rows);
+  assert.equal(next, now + 25 * 60_000);
+  assert.equal(m.nextMeasuredWords(next, now), "The next measurement is in 25 min.");
+  assert.equal(m.nextMeasuredWords(now - 1, now), "The next measurement is due now.");
+  assert.equal(m.nextMeasuredWords(now + 5 * hour, now), "The next measurement is in about 5 h.");
+  assert.equal(m.nextMeasuredWords(undefined, now), undefined);
+  assert.doesNotMatch(m.refreshingWords, /Refresh/);
+});

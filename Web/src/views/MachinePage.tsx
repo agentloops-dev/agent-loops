@@ -27,7 +27,8 @@ import { isInstalled, machineRuntimeLine, offersMachineSignIn, offersUpdate, sig
 import { forCleanup, pageLine, tally, worktreesIntro } from "../model/worktrees";
 import { failedStep, foldedLine, setupChip } from "../model/machineSetup";
 import { MachineSetupSection } from "./MachineSetup";
-import { ControlMoveSection, showsControlMove } from "./ControlMove";
+import { ControlMoveSection, showsControlMove, useControlCopies } from "./ControlMove";
+import { controlRole, runsControl } from "../model/controlMove";
 
 const disksHelp = "Each disk its agents write to. Low and almost full are the lines set in Folder Settings ▸ Disk Space.";
 
@@ -42,6 +43,8 @@ export function MachinePage({ store, host }: { store: Store; host: string }) {
   const [usage, setUsage] = useState<MachineUsageState | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
   const [readAt, setReadAt] = useState<number | null>(null);
+  const movable = showsControlMove(store);
+  const copies = useControlCopies(store, movable);
   useEffect(() => {
     if (!asks) return;
     let gone = false;
@@ -86,8 +89,9 @@ export function MachinePage({ store, host }: { store: Store; host: string }) {
           onClick={() => { chooseSettingsMachine(host); go({ nav: "settings" }); }}>Settings…</button>
       </div>
       {setup && <MachineSetupSection store={store} row={machine} setup={setup} />}
-      {/* Make This the Control Plane…, on a machine that does not run it, for an admin (#6614). */}
-      {showsControlMove(store) && !machine.roles?.includes("control") && <ControlMoveSection store={store} machine={machine} />}
+      {/* Make This the Control Plane…, on a machine that does not run it, for an admin (#6614): a control-only
+          machine that runs no copy too, the one a team moves to (#7393). */}
+      {movable && !runsControl(machine, copies, hosts.filter(controlRole).length) && <ControlMoveSection store={store} machine={machine} />}
       <MachineSessionsSection store={store} host={host} name={name} online={answers} />
       <MachineLabels store={store} host={host} machine={machine} />
       {!answers ? <p class="hint">{name} is offline, so it can’t say how it is doing now.</p>

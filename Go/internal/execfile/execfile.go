@@ -16,5 +16,6 @@ import (
 func Write(path string, data []byte, perm os.FileMode) error {
 	syscall.ForkLock.RLock()
 	defer syscall.ForkLock.RUnlock()
+	// store-bounds: not a store: a helper; each caller declares the file that it writes
 	return os.WriteFile(path, data, perm)
 }

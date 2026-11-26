@@ -443,6 +443,12 @@ func (p *Provider) act(start bool, id string) (Workspace, error) {
 // Create makes a workspace (US5) with the choices given, and answers once it is listed,
 // with what it did, in words, one line a step (#6073).
 func (p *Provider) Create(name string, options map[string]any, firstBoot string) (Workspace, []string, error) {
+	return p.CreateRooted(name, options, firstBoot, "")
+}
+
+// CreateRooted is Create with rootBoot too (#7154): the lines that run the person's root.sh,
+// filled in where the create has ${rootBoot}, and nothing where it has none.
+func (p *Provider) CreateRooted(name string, options map[string]any, firstBoot, rootBoot string) (Workspace, []string, error) {
 	making := p.Config.Making
 	if !making.CanCreate() {
 		return Workspace{}, nil, Failure{Reason: "It can't make workspaces."}
@@ -460,7 +466,7 @@ func (p *Provider) Create(name string, options map[string]any, firstBoot string)
 			return Workspace{}, nil, Failure{Reason: "There is already a workspace called " + name + "."}
 		}
 	}
-	values := map[string]string{"name": name, "firstBoot": firstBoot}
+	values := map[string]string{"name": name, "firstBoot": firstBoot, "rootBoot": rootBoot}
 	// A choice left out takes the form's default, as the form showed it: the account's
 	// choices where the preset reads them (#6686), else the plain form.
 	chosen := map[string]any{}
@@ -480,20 +486,7 @@ func (p *Provider) Create(name string, options map[string]any, firstBoot string)
 	for key, value := range options {
 		chosen[key] = value
 	}
-	for key, value := range chosen {
-		switch v := value.(type) {
-		case string:
-			values[key] = v
-		case json.Number:
-			values[key] = v.String()
-		case float64:
-			values[key] = fmt.Sprint(v)
-		case int:
-			values[key] = strconv.Itoa(v)
-		case bool:
-			values[key] = fmt.Sprint(v)
-		}
-	}
+	putChoices(values, chosen)
 	// A repository as owner/name (#1809) is also its two parts, for an address such as
 	// /repos/${repository.owner}/${repository.name}/codespaces.
 	if owner, name, ok := strings.Cut(values["repository"], "/"); ok && owner != "" && name != "" && !strings.Contains(name, "/") {
@@ -677,4 +670,27 @@ func words(d time.Duration) string {
 		return fmt.Sprintf("%d minutes", (seconds+30)/60)
 	}
 	return fmt.Sprintf("%d seconds", seconds)
+}
+
+// putChoices puts each choice in values as text, for the templates. The make's own values (its
+// name and what its first boot runs) are never a choice.
+func putChoices(values map[string]string, chosen map[string]any) {
+	for key, value := range chosen {
+		if key == "name" || key == "firstBoot" || key == "rootBoot" {
+			// The make's own: no choice is them.
+			continue
+		}
+		switch v := value.(type) {
+		case string:
+			values[key] = v
+		case json.Number:
+			values[key] = v.String()
+		case float64:
+			values[key] = fmt.Sprint(v)
+		case int:
+			values[key] = strconv.Itoa(v)
+		case bool:
+			values[key] = fmt.Sprint(v)
+		}
+	}
 }

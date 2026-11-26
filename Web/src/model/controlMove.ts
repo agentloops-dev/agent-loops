@@ -3,7 +3,7 @@
 // control/moves/list as it connects, each step from control/moveChanged. For an admin with the flag
 // control-plane-move; the control plane answers admins only.
 import { signal } from "@preact/signals";
-import type { ControlEligible, ControlMove, ControlMovePhase } from "../protocol/generated";
+import type { ControlCapacityCopy, ControlEligible, ControlMachine, ControlMove, ControlMovePhase } from "../protocol/generated";
 import { fromWireDate } from "../protocol/dates";
 
 export const flagName = "control-plane-move";
@@ -68,12 +68,16 @@ const stepTitle = (phase?: ControlMovePhase) => steps.find((s) => s.phase === ph
 const trimmed = (words: string) => words.trim().replace(/\.+$/, "");
 
 /** The strip's sentence. */
-export function moveLine(move: ControlMove): string {
+export function moveLine(move: ControlMove, locale?: string): string {
   if (move.phase === "failed") {
     const why = move.error ? `: ${trimmed(move.error)}` : "";
     return `The move to ${move.toName} stopped at “${stepTitle(move.failedPhase)}”${why}. The control plane still serves where it was.`;
   }
   if (move.phase === "done" || move.phase === "forwarding") return `${move.toName} is the control plane.`;
+  if (move.phase === "copying" && move.copied !== undefined && move.total !== undefined && move.total > 0) {
+    const count = (n: number) => n.toLocaleString(locale);
+    return `Moving the control plane to ${move.toName}: ${doing(move.phase)}, ${count(move.copied)} of ${count(move.total)} records.`;
+  }
   return `Moving the control plane to ${move.toName}: ${doing(move.phase)}.`;
 }
 
@@ -104,10 +108,25 @@ export function meetsLine(eligible: ControlEligible): string {
   return `It meets the checks: ${parts.join(", ")}.`;
 }
 
+/** The machine has the control role: it runs the control plane, or can take it (#6609). */
+export const controlRole = (machine: ControlMachine): boolean => machine.roles?.includes("control") === true;
+
+/** The machine runs the control plane now, as the window's ControlPlaneMachine.runsControl: a copy names it
+ * (#7393), not its role, since a team moves only to a control-only machine, which runs no copy until then. A
+ * copy from before #6591 names no machine: when it is the only copy, it runs on the only machine with the
+ * control role. Before the copies are read (null), the role says it, so nothing offers a move to the copy
+ * that runs. */
+export function runsControl(machine: ControlMachine, copies: readonly ControlCapacityCopy[] | null, controlMachines: number): boolean {
+  if (copies === null) return controlRole(machine);
+  if (copies.some((c) => c.machine === machine.id)) return true;
+  return controlRole(machine) && controlMachines === 1 && copies.length === 1 && copies[0]?.machine === undefined;
+}
+
 export const question = (name: string) => `Make ${name} the control plane?`;
 
-/** What the confirmation says happens. `now` is where clients reach the control plane today. */
-export function happens(name: string, address: string | undefined, now: string | undefined): string[] {
+/** What the confirmation says happens. `now` is where clients reach the control plane today; `frozenSeconds`
+ * is control/eligible's time for the store's size (#7395). */
+export function happens(name: string, address: string | undefined, now: string | undefined, frozenSeconds?: number): string[] {
   const lines = [
     `The store and the control key move to ${name}. The key is sealed to that machine.`,
     "Every window, phone, browser and machine reconnects by itself. Nobody pairs again.",
@@ -117,8 +136,21 @@ export function happens(name: string, address: string | undefined, now: string |
   } else if (address) {
     lines.push(`The address stays ${address}.`);
   }
-  lines.push("Agents keep working. For about a minute, screens can’t reach machines.");
+  lines.push(frozenLine(frozenSeconds));
   return lines;
+}
+
+/** How long the control plane is frozen, and what that means (#7395). */
+export function frozenLine(seconds?: number): string {
+  const when = seconds === undefined ? "While the store copies" : `For ${about(seconds)}`;
+  return `Agents keep working. ${when}, the control plane is frozen: it refuses changes, and screens can’t reach machines.`;
+}
+
+/** "about 10 seconds", "about 40 seconds", "about a minute", "about 5 minutes". */
+export function about(seconds: number): string {
+  if (seconds < 60) return `about ${Math.max(1, Math.ceil(seconds / 10)) * 10} seconds`;
+  const minutes = Math.floor((seconds + 30) / 60);
+  return minutes === 1 ? "about a minute" : `about ${minutes} minutes`;
 }
 
 // The moves this page has heard, the newest first.

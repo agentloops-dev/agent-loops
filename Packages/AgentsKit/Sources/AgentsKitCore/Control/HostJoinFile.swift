@@ -44,6 +44,7 @@ public struct HostJoinFile: Codable, Sendable, Equatable {
 
     public func write(to file: URL) {
         guard let data = try? JSONEncoder.iso8601.encode(self) else { return }
+        // store-bounds: not a store: the running host's status note; the app reads it only while that process runs
         try? data.write(to: file, options: .atomic)
     }
 

@@ -188,8 +188,15 @@ func readSelfUpdateSettings(path string) selfUpdateSettings {
 	return s
 }
 
+// selfUpdateSettingsMost bounds the self-update settings (#7350): a switch and a version.
+const selfUpdateSettingsMost = 4 << 10
+
 func writeSelfUpdateSettings(path string, s selfUpdateSettings) error {
 	b, _ := json.Marshal(s)
+	if len(b) > selfUpdateSettingsMost {
+		return fmt.Errorf("the self-update settings are %d bytes, at most %d: %w", len(b), selfUpdateSettingsMost, store.ErrLimit)
+	}
+	// store-bounds: kind=key-value; size=4KiB; count=1; age=until-deleted; applied=on write (a larger one is refused) (#7350)
 	return store.WriteAtomically(path, b, 0o600)
 }
 
@@ -400,6 +407,7 @@ func (u *selfUpdater) putInPlace(version, work, next string) error {
 
 func writeSelfUpdateMark(work string, m selfUpdateMarkFile) error {
 	b, _ := json.Marshal(m)
+	// store-bounds: not a store: a mark in the temporary folder of one update.
 	return store.WriteAtomically(filepath.Join(work, selfUpdateMark), b, 0o600)
 }
 
@@ -517,6 +525,7 @@ func (u *selfUpdater) downloadFrom(src releaseSource, version, work string) (str
 		return "", fmt.Errorf("Release %s lists no checksum for %s.", version, name)
 	}
 	zip := filepath.Join(work, name)
+	// store-bounds: not a store: an install: the download of an update.
 	f, err := os.Create(zip)
 	if err != nil {
 		return "", err

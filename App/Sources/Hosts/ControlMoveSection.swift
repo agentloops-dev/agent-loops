@@ -92,7 +92,7 @@ struct ControlMoveSection: View {
 
     private func check() async {
         guard let control = model.controlRequests else { return }
-        await model.controlMove.read(control)
+        // The moves come when the window connects and by control/moveChanged (#7396).
         await model.controlMove.check(control, page: host, machine: record.id)
     }
 }
@@ -159,11 +159,13 @@ struct ControlMoveSheet: View {
     }
 
     var body: some View {
-        let address = model.controlMove.checks[host]?.answer?.address
+        let answer = model.controlMove.checks[host]?.answer
+        let address = answer?.address
         VStack(alignment: .leading, spacing: 12) {
             Text(ControlMoveWords.question(record.name)).appText(.reading).fontWeight(.semibold)
             VStack(alignment: .leading, spacing: 6) {
-                ForEach(ControlMoveWords.happens(name: record.name, address: address, now: now), id: \.self) { line in
+                ForEach(ControlMoveWords.happens(name: record.name, address: address, now: now,
+                                                  frozenSeconds: answer?.frozenSeconds), id: \.self) { line in
                     Label(line, icon: "circle.fill").labelStyle(BulletLabelStyle())
                 }
             }

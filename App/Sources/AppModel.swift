@@ -2680,15 +2680,21 @@ final class AppModel {
         return controlPlaneHosts?.first { $0.id == id }
     }
 
-    /// The machines that run the control plane, for matching a copy that names none (#6591).
+    /// The machines with the control role, for matching a copy that names none (#6591).
     var controlPlaneMachineCount: Int {
-        (controlPlaneHosts ?? []).filter { ControlPlaneMachine.runsControl($0) }.count
+        (controlPlaneHosts ?? []).filter { ControlPlaneMachine.controlRole($0) }.count
+    }
+
+    /// The machine record runs a copy of the control plane now: a copy names it (#7393), not its
+    /// role. Before the first read of the copies, the role.
+    func runsControlCopy(_ record: DaemonAPI.ControlMachine?) -> Bool {
+        ControlPlaneMachine.runsControl(record, copies: controlCapacity.readLooks, controlMachines: controlPlaneMachineCount)
     }
 
     /// The machine runs the control plane and the person sees it as one (#6591). This Mac too,
     /// which `hosts.controlRows` leaves out.
     func runsControlPlane(_ host: MachineRef) -> Bool {
-        showsControlPlaneMachine && ControlPlaneMachine.runsControl(controlPlaneHosts?.first { $0.id == host })
+        showsControlPlaneMachine && runsControlCopy(controlPlaneHosts?.first { $0.id == host })
     }
 
     /// The latest look of the control plane on that machine; nil when it runs none, or before the first.

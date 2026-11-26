@@ -6,11 +6,11 @@
 // and Try Again…. The strip across the page says the move while it runs, and for a day after.
 import { useEffect, useState } from "preact/hooks";
 import type { Store } from "../model/store";
-import type { ControlEligible, ControlMachine } from "../protocol/generated";
+import type { ControlCapacityCopy, ControlEligible, ControlMachine } from "../protocol/generated";
 import { Capability } from "../protocol/capabilities.generated";
 import { flagOn } from "../model/featureFlags";
 import { closeMove, controlMoveWords as words, flagName, forwardingLine, happens, meetsLine, moveLine, moveTo,
-  movesHeardAt, question, runningMove, running, stepStates, steps, stripMove, takeMove } from "../model/controlMove";
+  moves, movesHeardAt, question, runningMove, running, stepStates, steps, stripMove, takeMove } from "../model/controlMove";
 import type { ControlMove as Move } from "../protocol/generated";
 import { failedWords } from "../model/console";
 import { go } from "../route";
@@ -21,6 +21,23 @@ import { Strip } from "./Strip";
 /** The person sees the move: the flag, an admin, and a control plane that moves. */
 export function showsControlMove(store: Store): boolean {
   return flagOn(flagName) && store.person.value?.role === "admin" && store.planeHas(Capability.controlMove1);
+}
+
+/** The control plane's copies, each naming the machine that runs it (#7393): which machine runs it now. Read
+ * as the page opens, and again when a move is heard; null until a read works, and the role says it until then. */
+export function useControlCopies(store: Store, on: boolean): ControlCapacityCopy[] | null {
+  const [copies, setCopies] = useState<ControlCapacityCopy[] | null>(null);
+  const heard = moves.value;
+  const asks = on && store.planeHas(Capability.console1);
+  useEffect(() => {
+    if (!asks) return;
+    let gone = false;
+    store.link.call("control/capacity", {}).then(
+      (board) => { if (!gone) setCopies(board.copies); },
+      () => { /* The last copies, or the role, say it until a read works. */ });
+    return () => { gone = true; };
+  }, [store, asks, heard]);
+  return copies;
 }
 
 /** The page's section, on a machine that does not run the control plane. */
@@ -74,7 +91,7 @@ export function ControlMoveSection({ store, machine }: { store: Store; machine: 
             : !failure && <p class="hint">{words.checking}</p>}
         </>
       )}
-      {asking && <ControlMoveDialog store={store} machine={machine} address={answer?.address} close={() => setAsking(false)} />}
+      {asking && <ControlMoveDialog store={store} machine={machine} address={answer?.address} frozenSeconds={answer?.frozenSeconds} close={() => setAsking(false)} />}
     </section>
   );
 }
@@ -95,8 +112,8 @@ export function MoveSteps({ move }: { move: Move }) {
 const spoken = { done: "done", current: "under way", failed: "failed", todo: "to do" } as const;
 
 /** The confirmation: what happens, then Cancel and Make Control Plane. A refusal stays in it. */
-function ControlMoveDialog({ store, machine, address, close }: {
-  store: Store; machine: ControlMachine; address: string | undefined; close: () => void;
+function ControlMoveDialog({ store, machine, address, frozenSeconds, close }: {
+  store: Store; machine: ControlMachine; address: string | undefined; frozenSeconds: number | undefined; close: () => void;
 }) {
   const [starting, setStarting] = useState(false);
   const [refused, setRefused] = useState<string | null>(null);
@@ -115,7 +132,7 @@ function ControlMoveDialog({ store, machine, address, close }: {
   return (
     <Modal label={question(machine.name)} close={close}>
       <h2>{question(machine.name)}</h2>
-      <ul class="control-move-happens">{happens(machine.name, address, location.host).map((line) => <li key={line}>{line}</li>)}</ul>
+      <ul class="control-move-happens">{happens(machine.name, address, location.host, frozenSeconds).map((line) => <li key={line}>{line}</li>)}</ul>
       {refused && <p class="failure small" role="alert">{refused}</p>}
       <div class="sheet-actions">
         <button type="button" onClick={close}>Cancel</button>

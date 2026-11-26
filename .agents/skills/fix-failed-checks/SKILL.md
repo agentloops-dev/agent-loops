@@ -103,8 +103,10 @@ event's `pr` and your own branch.
    in step 2, with its bug open. Run the check that failed, on your computer, when you
    can.
 5. **Push.** Commit with a message that says which check you fixed, and push to the same
-   branch. Never force-push. On a conflict with `main`, `git merge origin/main` and push
-   without running the tests again. CI on the remote runners is the gate (#6438).
+   branch. Never force-push. Do not lease `ci` for this push: a push that fixes a red check
+   or settles a conflict on an open PR goes at once (Alex, 2026-11-26, #7243). On a
+   conflict with `main`, `git merge origin/main` and push without running the tests again.
+   CI on the remote runners is the gate (#6438).
 6. **Tell the pull request or merge request.** Comment to say what failed and what you
    changed.
 

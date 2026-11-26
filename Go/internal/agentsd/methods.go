@@ -76,6 +76,7 @@ func (d *Daemon) register() {
 	d.registerContinueWhenBack()
 	d.registerMCP()
 	d.registerOptions()
+	d.registerSummary()
 	d.registerInstall()
 	d.registerSandbox()
 	d.registerDesktopControl()

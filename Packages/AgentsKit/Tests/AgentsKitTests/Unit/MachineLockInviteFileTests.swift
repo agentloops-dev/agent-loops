@@ -34,5 +34,20 @@ struct MachineLockInviteFileTests {
         #expect(mode == 0o600)
         #expect(try FileManager.default.contentsOfDirectory(atPath: root.path) == ["lock-invite.json"])
     }
+
+    /// An invite over its limit is refused, and the one before stays (#7351).
+    @Test func anInviteOverItsLimitIsRefused() throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: "invite-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let locations = StoreLocations(root: root)
+        let invite = MachineLock.inviteKey()
+        let pin = MachineLock.Pin(person: "p-1", count: 2, head: Data(repeating: 7, count: 32))
+        try MachineLock.keepInvite(invite.rawRepresentation, pin: pin, in: locations)
+        let big = MachineLock.Pin(person: String(repeating: "p", count: MachineLock.inviteMostBytes), count: 2, head: pin.head)
+        #expect(throws: MachineLock.Failure.self) { try MachineLock.keepInvite(invite.rawRepresentation, pin: big, in: locations) }
+        let kept = try JSONDecoder().decode(GoInvite.self, from: Data(contentsOf: locations.lockInvite))
+        #expect(kept.person == pin.person)
+    }
 }
 #endif

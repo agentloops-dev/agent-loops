@@ -100,6 +100,7 @@ func (s *Store) Add(number string, msgs ...Stored) error {
 		return fmt.Errorf("the WhatsApp store: %w", err)
 	}
 	p := s.path(number)
+	// store-bounds: not a store: the lock of the store file below
 	lock, err := os.OpenFile(p+".lock", os.O_CREATE|os.O_RDWR, 0o600)
 	if err != nil {
 		return fmt.Errorf("the WhatsApp store's lock: %w", err)
@@ -120,6 +121,7 @@ func (s *Store) Add(number string, msgs ...Stored) error {
 	if err != nil {
 		return err
 	}
+	// store-bounds: kind=document; count=2_000 a number; size=4MiB of text a number; age=30d; applied=on write (the oldest go first, a text over 64 KiB is cut) (#7191, #7352)
 	return writeAtomically(p, data)
 }
 
@@ -233,6 +235,7 @@ func writeAtomically(p string, data []byte) error {
 	b := make([]byte, 8)
 	_, _ = rand.Read(b)
 	tmp := filepath.Join(filepath.Dir(p), "."+filepath.Base(p)+"."+hex.EncodeToString(b)+".tmp")
+	// store-bounds: not a store: the temporary file of an atomic write
 	w, err := os.OpenFile(tmp, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
 	if err != nil {
 		return fmt.Errorf("the WhatsApp store: %w", err)

@@ -433,6 +433,12 @@ export interface Agent {
    * for a folder in no project.
    */
   project?: string;
+  /**
+   * What is going on in the session, in a few sentences, written by a short call to the runtime's
+   * fastest model when a client opens the session in summary mode (#7321, epic #7318), not by the
+   * agent. Absent until one is written.
+   */
+  summary?: SessionSummary;
 }
 
 export type AgentArchivedReason =
@@ -528,6 +534,23 @@ export interface AgentMachines {
 export interface AgentMachinesHost {
   name: string;
   state: string;
+  /**
+   * The machine's capacity level as it last pushed it (#5875), so an agent does not start heavy
+   * work on a full machine. Absent before its first push.
+   */
+  capacity?: CapacityLevel;
+  /** Its 5-minute load per core when it last pushed. */
+  loadPerCore5?: number;
+  /**
+   * When the control plane last heard its capacity. A figure older than 2 minutes is no figure
+   * (Auto's rule).
+   */
+  capacityAt?: WireDate;
+  /**
+   * The machine's platform as it announced it (macOS 15, Linux), so Autopilot (#5900) sends a
+   * linux-ok issue to a Linux machine. Absent when it did not say.
+   */
+  platform?: string;
 }
 
 export interface AgentMachinesMachine {
@@ -1242,6 +1265,58 @@ export interface AutoSettings {
 export interface AutoSkip {
   runtimeID: string;
   reason: string;
+}
+
+/**
+ * What Autopilot starts in a folder (#5898, epic #5897). Off starts nothing; high starts only work
+ * whose priority is high; on starts any ready work. Absent is off.
+ */
+export type AutopilotMode =
+  | "off"
+  | "high"
+  | "on";
+
+export interface AutopilotRequest {
+  folder: URLString;
+}
+
+export interface AutopilotRow {
+  /** The issue or epic, as the forge names it (#123). */
+  ref: string;
+  kind: AutopilotRowKind;
+  state: AutopilotRowState;
+  /**
+   * Why it waits or is paused: one of `limit running`, `limit open-prs`, `capacity near`, `capacity
+   * full`, `on hold`, `blocked by #n`, `paused: main red`, `paused: over budget`, `mode high`.
+   * Empty when it started.
+   */
+  reason: string;
+  /** The session Autopilot started for it; absent until it started one. */
+  session?: UUID;
+  since: WireDate;
+}
+
+/** A lead is for an epic; a lane is for an issue. */
+export type AutopilotRowKind =
+  | "lead"
+  | "lane";
+
+export type AutopilotRowState =
+  | "started"
+  | "waiting"
+  | "paused";
+
+export interface AutopilotSetRequest {
+  folder: URLString;
+  mode: AutopilotMode;
+}
+
+export interface AutopilotStatus {
+  mode: AutopilotMode;
+  /** When Autopilot last looked at the folder's work; absent when it never has. */
+  lastRunAt?: WireDate;
+  /** The newest 100 rows, the newest first. */
+  rows: AutopilotRow[];
 }
 
 export interface BackgroundItem {
@@ -3536,6 +3611,12 @@ export interface ControlEligible {
   memoryBytes?: number;
   /** The free space on its fullest disk, as it said it (#7313). Absent when it did not say. */
   diskFreeBytes?: number;
+  /**
+   * About how long a move to the machine keeps the control plane frozen, in seconds, from the
+   * store's size and the copy's batches (#7395). Changes are refused while it is frozen. Absent
+   * from a control plane before #7395.
+   */
+  frozenSeconds?: number;
 }
 
 /** One reason a machine cannot take the control role (#6611), with its words for the person. */
@@ -3676,6 +3757,13 @@ export interface ControlMove {
   failedPhase?: ControlMovePhase;
   /** Where the new copy answers, once it said so. */
   address?: string;
+  /**
+   * With copying: the records copied so far (#7395). control/moveChanged says it every few seconds
+   * during the copy.
+   */
+  copied?: number;
+  /** With copying: the records the copy takes (#7395). */
+  total?: number;
   /** With forwarding: until when the old copy sends members to the new one (30 days at most). */
   forwardingUntil?: WireDate;
   startedAt: WireDate;
@@ -5528,6 +5616,8 @@ export interface Folder {
   archivedAt?: WireDate;
   addedAt: WireDate;
   helperLimits?: HelperLimits;
+  /** What Autopilot may start in this folder (#5898). Absent is off. */
+  autopilot?: FolderAutopilot;
   diskSpace?: DiskThresholds;
   pinned?: boolean;
   /** Absent is off (#2352). */
@@ -5537,6 +5627,13 @@ export interface Folder {
    * from .agents/folder.json. Absent is 09:00-17:00, Mon-Fri. Never named.
    */
   workingHours?: WorkflowHours;
+}
+
+export interface FolderAutopilot {
+  mode: AutopilotMode;
+  /** Who chose the mode: a person's name, or the name of what set it. */
+  setBy: string;
+  setAt: WireDate;
 }
 
 export interface FolderDetection {
@@ -14741,6 +14838,34 @@ export interface SessionSecrets {
   secrets: SessionSecret[];
 }
 
+/**
+ * A session's summary (#7321): at most 600 characters of text, when it was written, the last turn
+ * it read, and the model that wrote it.
+ */
+export interface SessionSummary {
+  /**
+   * What is going on: two to four sentences, at most 600 characters. Empty until the first is
+   * written.
+   */
+  text: string;
+  /** When the text was written: the view's Last update. */
+  at?: WireDate;
+  /** The TurnSummary.id of the last turn the text read, so a turn is not read twice. */
+  throughTurn?: UUID;
+  state: SessionSummaryState;
+  /** The model that wrote the text. */
+  model?: string;
+}
+
+/**
+ * Where a session's summary is: being written; written; or the last try failed, and the text of the
+ * one before it stays.
+ */
+export type SessionSummaryState =
+  | "writing"
+  | "written"
+  | "failed";
+
 export interface SessionsListRequest {
   runtimeID: string;
   cwd: URLString;
@@ -15724,6 +15849,17 @@ export interface StopBackgroundRequest {
   itemID: string;
 }
 
+/**
+ * What happens to a store over its limit (#7408), by its declaration: refuse, a new write is
+ * refused until it is within its limit again; write, the next write removes what is past the limit;
+ * hourly or daily, the sweep removes what is past the limit each hour or each day.
+ */
+export type StoreAtLimit =
+  | "refuse"
+  | "write"
+  | "hourly"
+  | "daily";
+
 export interface StoreNotes {
   notes: string[];
 }
@@ -15771,6 +15907,10 @@ export interface StoreSize {
   percentRecords?: number;
   /** When this store's measurement ended. */
   measuredAt?: WireDate;
+  /**
+   * What happens to the store when it is over its limit (#7408). Absent from a host too old to say.
+   */
+  atLimit?: StoreAtLimit;
 }
 
 /**
@@ -16141,6 +16281,11 @@ export interface TurnsPage {
   firstTurn: number;
   openStart: number;
   firstPrompt?: number;
+  /**
+   * When the 90-day or size trim took the start of this chat (#7405): the line every client shows
+   * where its start was, once it shows the first turn kept. Absent when nothing was removed.
+   */
+  startRemoved?: string;
 }
 
 export interface TurnsRequest {
@@ -18735,7 +18880,7 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   AddFolderRequest: { required: ["folder"], optional: ["project"] },
   Admitted: { required: [], optional: ["client", "host"] },
   AdoptRequest: { required: ["runtimeID", "sessionID", "cwd"], optional: [] },
-  Agent: { required: ["id", "runtimeID", "cwd", "state", "startOptions", "advertisedOptions", "availableCommands", "createdAt", "lastActivityAt"], optional: ["revision", "title", "labels", "priority", "prioritySet", "prioritySource", "runtimeSessionID", "runtimeKeepsCopy", "browserUsedAt", "isUnread", "isMuted", "reportSeenAt", "endedReason", "archivedReason", "usage", "lastTurnUsage", "costToDate", "costCeiling", "tokensToDate", "tokenCeiling", "plans", "background", "additionalDirectories", "mcpServers", "queuedPrompts", "suggestedPrompts", "startedByWorkflow", "purpose", "startedByRun", "startedByAgent", "chainDepth", "eventWait", "worktree", "pendingMove", "startingPoint", "startRequestID", "persona", "restartPickUps", "report", "outcomeAsked", "archiveRequest", "afterTurn", "archivedAt", "archiveWhy", "sandboxOverride", "effectiveSandbox", "pendingSandboxFailure", "desktopControlPause", "missingFolder", "listsLeftOut", "titleIsPersons", "runtimeTitle", "madeInRoot", "queuedStart", "branchedFrom", "movedFrom", "fileToSee", "continueWhenBack", "runningTool", "accountID", "auto", "clientPermission", "levels", "voiceHungUpAt", "goal", "project"] },
+  Agent: { required: ["id", "runtimeID", "cwd", "state", "startOptions", "advertisedOptions", "availableCommands", "createdAt", "lastActivityAt"], optional: ["revision", "title", "labels", "priority", "prioritySet", "prioritySource", "runtimeSessionID", "runtimeKeepsCopy", "browserUsedAt", "isUnread", "isMuted", "reportSeenAt", "endedReason", "archivedReason", "usage", "lastTurnUsage", "costToDate", "costCeiling", "tokensToDate", "tokenCeiling", "plans", "background", "additionalDirectories", "mcpServers", "queuedPrompts", "suggestedPrompts", "startedByWorkflow", "purpose", "startedByRun", "startedByAgent", "chainDepth", "eventWait", "worktree", "pendingMove", "startingPoint", "startRequestID", "persona", "restartPickUps", "report", "outcomeAsked", "archiveRequest", "afterTurn", "archivedAt", "archiveWhy", "sandboxOverride", "effectiveSandbox", "pendingSandboxFailure", "desktopControlPause", "missingFolder", "listsLeftOut", "titleIsPersons", "runtimeTitle", "madeInRoot", "queuedStart", "branchedFrom", "movedFrom", "fileToSee", "continueWhenBack", "runningTool", "accountID", "auto", "clientPermission", "levels", "voiceHungUpAt", "goal", "project", "summary"] },
   AgentChanges: { required: ["epoch", "revision", "removed", "all"], optional: [] },
   AgentConfigEditorFile: { required: ["path", "content"], optional: [] },
   AgentConfigEditorRequest: { required: ["kind"], optional: ["folder"] },
@@ -18744,7 +18889,7 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   AgentConfigFileRequest: { required: ["path", "time", "counter"], optional: ["contents", "deleted"] },
   AgentConfigFiles: { required: ["files"], optional: ["updated"] },
   AgentMachines: { required: ["providers"], optional: ["hosts"] },
-  AgentMachinesHost: { required: ["name", "state"], optional: [] },
+  AgentMachinesHost: { required: ["name", "state"], optional: ["capacity", "loadPerCore5", "capacityAt", "platform"] },
   AgentMachinesMachine: { required: ["id", "name", "state"], optional: ["host", "hostState", "cost", "reason"] },
   AgentMachinesProvider: { required: ["id", "name", "canMake", "canDelete", "workspaces"], optional: ["options"] },
   AgentRemovedNotification: { required: ["agentID"], optional: [] },
@@ -18806,6 +18951,10 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   AutoPreviewRequest: { required: ["cwd"], optional: ["levels", "sandbox", "needs"] },
   AutoSettings: { required: ["order", "excluded", "overrides"], optional: ["setBy"] },
   AutoSkip: { required: ["runtimeID", "reason"], optional: [] },
+  AutopilotRequest: { required: ["folder"], optional: [] },
+  AutopilotRow: { required: ["ref", "kind", "state", "reason", "since"], optional: ["session"] },
+  AutopilotSetRequest: { required: ["folder", "mode"], optional: [] },
+  AutopilotStatus: { required: ["mode", "rows"], optional: ["lastRunAt"] },
   BackgroundItem: { required: ["id", "kind", "name", "state", "canStop", "isStopping", "startedAt"], optional: ["taskType", "detail", "command", "parentID", "toolCallID", "outputFilePath", "summary", "lastToolName", "endedAt"] },
   Backup: { required: ["id", "machine", "rootID", "madeAt", "bytes", "agents", "thisMachine"], optional: [] },
   BackupMakeRequest: { required: [], optional: ["wait"] },
@@ -18969,14 +19118,14 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   ControlClientChanged: { required: [], optional: ["client", "removed"] },
   ControlCodeShown: { required: ["text", "expires"], optional: ["command"] },
   ControlCutOff: { required: ["why"], optional: ["provider"] },
-  ControlEligible: { required: ["ok", "reasons"], optional: ["address", "memoryBytes", "diskFreeBytes"] },
+  ControlEligible: { required: ["ok", "reasons"], optional: ["address", "memoryBytes", "diskFreeBytes", "frozenSeconds"] },
   ControlEligibleReason: { required: ["reason", "text"], optional: [] },
   ControlEligibleRequest: { required: ["machine"], optional: ["allowSleep"] },
   ControlEndpoint: { required: ["url"], optional: ["pin"] },
   ControlHello: { required: ["v", "name", "control", "nonce", "copy"], optional: ["previous"] },
   ControlInstallProgress: { required: ["name", "step"], optional: [] },
   ControlMachine: { required: ["id", "name", "platform", "version", "state", "reach"], optional: ["machineID", "signInFrom", "gitFrom", "gitAsks", "tunnel", "workspace", "implementation", "capabilities", "maturity", "missing", "owner", "capacity", "loadPerCore5", "capacityAt", "setup", "roles", "labels", "autoLabels"] },
-  ControlMove: { required: ["id", "from", "to", "toName", "phase", "startedAt", "updatedAt", "by"], optional: ["failedPhase", "address", "forwardingUntil", "error"] },
+  ControlMove: { required: ["id", "from", "to", "toName", "phase", "startedAt", "updatedAt", "by"], optional: ["failedPhase", "address", "copied", "total", "forwardingUntil", "error"] },
   ControlMoveRequest: { required: ["machine"], optional: [] },
   ControlMoveResult: { required: ["move"], optional: [] },
   ControlMoved: { required: ["url", "controlKey", "name"], optional: ["pin"] },
@@ -19127,7 +19276,8 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   FirstBuildStartRequest: { required: ["idea", "starter", "runtimeID"], optional: ["another"] },
   FleetBoard: { required: ["machines"], optional: [] },
   FleetMachine: { required: ["host", "ownerName", "bot"], optional: ["running", "heardAt"] },
-  Folder: { required: ["folder", "addedAt"], optional: ["archivedAt", "helperLimits", "diskSpace", "pinned", "prCostComment", "workingHours"] },
+  Folder: { required: ["folder", "addedAt"], optional: ["archivedAt", "helperLimits", "autopilot", "diskSpace", "pinned", "prCostComment", "workingHours"] },
+  FolderAutopilot: { required: ["mode", "setBy", "setAt"], optional: [] },
   FolderDetection: { required: ["enabled", "paths"], optional: [] },
   FolderHunk: { required: ["oldStart", "newStart", "noNewlineAtEnd", "lines"], optional: [] },
   FolderMCPServer: { required: ["name", "summary", "approval", "missingSecrets", "secretNames", "entryDigest"], optional: ["managed", "signIn", "views", "approvedFrom"] },
@@ -19839,6 +19989,7 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   SessionSecretRemoveRequest: { required: ["agentID", "name"], optional: [] },
   SessionSecretSetRequest: { required: ["agentID", "name", "value"], optional: ["needsApproval", "description"] },
   SessionSecrets: { required: ["secrets"], optional: [] },
+  SessionSummary: { required: ["text", "state"], optional: ["at", "throughTurn", "model"] },
   SessionsListRequest: { required: ["runtimeID", "cwd"], optional: [] },
   SetCeilingRequest: { required: ["agentID"], optional: ["ceiling", "tokenCeiling"] },
   SetClientPermissionRequest: { required: ["agentID"], optional: ["mode"] },
@@ -19945,7 +20096,7 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   StartingPoint: { required: ["repository", "commit"], optional: [] },
   StopBackgroundRequest: { required: ["agentID", "itemID"], optional: [] },
   StoreNotes: { required: ["notes"], optional: [] },
-  StoreSize: { required: ["id", "owner", "scope", "kind", "state"], optional: ["why", "bytes", "records", "averageRecordBytes", "maxBytes", "maxRecords", "limitPer", "percentBytes", "percentRecords", "measuredAt"] },
+  StoreSize: { required: ["id", "owner", "scope", "kind", "state"], optional: ["why", "bytes", "records", "averageRecordBytes", "maxBytes", "maxRecords", "limitPer", "percentBytes", "percentRecords", "measuredAt", "atLimit"] },
   StoreSizes: { required: ["stores", "total"], optional: ["cursor"] },
   StoreSizesQuery: { required: [], optional: ["cursor", "limit"] },
   SuggestedPrompt: { required: ["id", "label", "prompt"], optional: [] },
@@ -19974,7 +20125,7 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   TurnSummary: { required: ["id", "start", "end"], optional: ["ask", "outcome", "steps", "usage"] },
   TurnUndo: { required: ["turn", "putBack"], optional: [] },
   TurnUsage: { required: ["totalTokens", "inputTokens", "outputTokens"], optional: ["thoughtTokens", "cachedReadTokens", "cachedWriteTokens", "cost", "route", "relayTokens"] },
-  TurnsPage: { required: ["turns", "firstTurn", "openStart"], optional: ["firstPrompt"] },
+  TurnsPage: { required: ["turns", "firstTurn", "openStart"], optional: ["firstPrompt", "startRemoved"] },
   TurnsRequest: { required: ["agentID", "limit"], optional: ["before"] },
   UndoTurnRequest: { required: ["agentID", "turn"], optional: ["confirmed"] },
   UndoTurnResult: { required: ["putBack", "changedSince"], optional: [] },

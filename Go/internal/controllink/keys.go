@@ -151,6 +151,7 @@ func LoadOrMakeKey(file string) ([]byte, error) {
 	b := make([]byte, 8)
 	rand.Read(b)
 	tmp := filepath.Join(dir, fmt.Sprintf(".%s.%x.tmp", filepath.Base(file), b))
+	// store-bounds: kind=secret; count=1; size=32B; age=until-deleted; applied=on write: one key of 32 bytes made here, linked only when none is there
 	w, err := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 	if err != nil {
 		return nil, err

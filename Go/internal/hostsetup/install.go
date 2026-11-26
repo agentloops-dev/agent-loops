@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/controllink"
+	"github.com/agentloops-dev/agent-loops/Go/internal/execfile"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -62,6 +63,10 @@ type Deps struct {
 	// was signed in (step 7 itself waits for the person with no limit, #6853); SmokeWait
 	// bounds the smoke session's answer.
 	SignInWait, SmokeWait time.Duration
+	// RootFolder is where the first boot keeps root.sh and its result (RootFolder when empty);
+	// RootWait bounds the wait for that result (RootWait when zero).
+	RootFolder string
+	RootWait   time.Duration
 	// KeyWait is how long step 7 is running, for a client to write a key it has, before it
 	// says it needs the person.
 	KeyWait time.Duration
@@ -83,6 +88,12 @@ func (d *Deps) defaults() {
 	}
 	if d.SignInWait == 0 {
 		d.SignInWait = 10 * time.Minute
+	}
+	if d.RootFolder == "" {
+		d.RootFolder = RootFolder
+	}
+	if d.RootWait == 0 {
+		d.RootWait = RootWait
 	}
 	if d.KeyWait == 0 {
 		d.KeyWait = 15 * time.Second
@@ -112,7 +123,7 @@ func (l Layout) joined() bool {
 	return err == nil
 }
 
-// Run does steps 3 to 6, then 8 when o.Smoke, and says each. It returns the first step's error of those that
+// Run does steps 3 to 6, with Root set-up after 4 when the first boot runs root.sh, then 8 when o.Smoke, and says each. It returns the first step's error of those that
 // failed, or nil when all four are done. A step that failed does not stop the one beside it
 // (5 and 6 run together), but steps 5 and 6 do not start when 3 or 4 failed.
 func Run(ctx context.Context, o Options, d Deps) error {
@@ -165,6 +176,13 @@ func Run(ctx context.Context, o Options, d Deps) error {
 		}
 		say("%s", controlOnlyStep)
 		return nil
+	}
+
+	// Root set-up, when the first boot runs a root.sh (#7154): 5 and 6 wait for it, and do not
+	// start when it failed.
+	if err := rootSetup(ctx, d, l, rep); err != nil {
+		say("%s: %v", wire.MachineSetupStepIDRoot, err)
+		return fmt.Errorf("%s: %w", wire.MachineSetupStepIDRoot, err)
 	}
 
 	// 5 and 6, together.
@@ -262,6 +280,7 @@ func installAgents(ctx context.Context, o Options, d Deps, l Layout, rep *Report
 		}
 		// The host enrols with this code when it starts; a code it was refused is replaced.
 		_ = os.Remove(filepath.Join(l.Root, "control-join-ask"))
+		// store-bounds: not a store: a one-time hand-off of the join code to the host, which reads it when it starts
 		if err := os.WriteFile(filepath.Join(l.Root, "control-join-code"), []byte(strings.TrimSpace(o.Join)), 0o600); err != nil {
 			return "", err
 		}
@@ -304,7 +323,8 @@ func placeBinary(exe string, l Layout) (string, error) {
 		}
 	}
 	tmp := filepath.Join(l.Bin, target+".tmp")
-	if err := os.WriteFile(tmp, data, 0o700); err != nil {
+	// store-bounds: not a store: an install of the host's program
+	if err := execfile.Write(tmp, data, 0o700); err != nil {
 		return "", err
 	}
 	if err := os.Rename(tmp, filepath.Join(l.Bin, target)); err != nil {

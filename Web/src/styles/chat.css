@@ -227,6 +227,8 @@ a.wait-card-filters { color: var(--accent); opacity: 1; text-decoration: underli
 .quiet-line { margin: 0; font-size: 0.75rem; color: var(--paper-tertiary); font-variant-numeric: tabular-nums; }
 .more { text-align: center; }
 .load-failure { display: flex; gap: 8px; align-items: baseline; margin: 0 0 12px; opacity: 0.75; font-size: 0.9em; }
+/* The trim took the chat's start (#7405): one quiet line where it was. */
+.removed-start { margin: 0 0 12px; }
 .spinner {
   display: inline-block;
   width: 12px;

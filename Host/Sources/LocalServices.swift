@@ -228,6 +228,7 @@ struct LocalServices {
         let file = folder.appendingPathComponent("\(label(job)).plist")
         do {
             let data = try PropertyListSerialization.data(fromPropertyList: plist, format: .xml, options: 0)
+            // store-bounds: not a store: an install of a launchd job
             try data.write(to: file, options: .atomic)
         } catch {
             return .failed("Could not write \(file.lastPathComponent): \(error.localizedDescription)")

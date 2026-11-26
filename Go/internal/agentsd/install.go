@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/buildinfo"
+	"github.com/agentloops-dev/agent-loops/Go/internal/execfile"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 	"github.com/ulikunitz/xz"
 )
@@ -637,6 +638,7 @@ func download(url, file string, size int64, sha string, what string, progress fu
 		}
 		return installFailure(fmt.Sprintf("Couldn’t download %s: %s answered %d", what, host, resp.StatusCode))
 	}
+	// store-bounds: not a store: an install: a download of a runtime.
 	f, err := os.Create(file)
 	if err != nil {
 		return err
@@ -676,6 +678,7 @@ func copyFile(from, to string) error {
 	if err != nil {
 		return err
 	}
+	// store-bounds: not a store: an install: a file of a toolset.
 	return os.WriteFile(to, b, 0o644)
 }
 
@@ -684,10 +687,12 @@ func writeShim(part, name string, lines []string) error {
 	if err := os.MkdirAll(bin, 0o755); err != nil {
 		return err
 	}
-	if err := os.WriteFile(filepath.Join(bin, name), []byte(strings.Join(lines, "\n")+"\n"), 0o700); err != nil {
+	// store-bounds: not a store: an install: a shim of a toolset.
+	if err := execfile.Write(filepath.Join(bin, name), []byte(strings.Join(lines, "\n")+"\n"), 0o700); err != nil {
 		return err
 	}
 	// Last: a toolset without this is never used.
+	// store-bounds: not a store: an install: the mark that a toolset is whole.
 	return os.WriteFile(filepath.Join(part, "ok"), nil, 0o644)
 }
 
@@ -1105,6 +1110,7 @@ func untarXZFile(r *tar.Reader, h *tar.Header, target string) error {
 	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
 		return err
 	}
+	// store-bounds: not a store: an install: a file from the runtime's archive.
 	out, err := os.OpenFile(target, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, os.FileMode(h.Mode)&0o755|0o600)
 	if err != nil {
 		return err

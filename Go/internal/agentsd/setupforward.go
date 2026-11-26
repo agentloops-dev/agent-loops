@@ -62,6 +62,8 @@ func (d *Daemon) forwardSetupReports(ctx context.Context, file string, every tim
 		}
 		offset, tries, prelude = d.forwardSetupReportLines(ctx, *ask, data, offset, tries, prelude)
 		if offset != before {
+			// One number, of 20 bytes at most; it goes with its reports.
+			// store-bounds: kind=key-value; size=20B; count=1; age=until-deleted; applied=on write (#7350)
 			if err := store.WriteAtomically(file+".sent", []byte(strconv.FormatInt(offset, 10)), 0o600); err != nil {
 				log.Printf("setup: how far the reports were sent could not be kept: %v", err)
 			}

@@ -9,8 +9,8 @@ import { adminOf } from "../model/console";
 import type { Store } from "../model/store";
 import { keepWork, keptWorkRead } from "../model/workCache";
 import { averageNote, cardsOf, emptyTitle, emptyWords, everyStore, failedWords, filtered, filtersOf, firstRows, limitsOf, limitTitle, limitWords,
-  measuredWords, memberNote, moreRows, mostUsed, placesOf, planeSource, problemLines, problemWords, readAtOf, readOnlyNote, readPlace,
-  recordsWords, refreshingWords, rowsOf, showingWords, sizeWords, staleWords, statusWords, within, type PlaceStores, type Source, type StoreRow } from "../model/storeSizes";
+  measuredWords, memberNote, moreRows, mostUsed, nextMeasuredAt, nextMeasuredWords, placesOf, planeSource, problemLines, problemWords, readAtOf,
+  readOnlyNote, readPlace, recordsWords, refreshingWords, rowsOf, showingWords, sizeWords, staleWords, statusNote, statusWords, within, type PlaceStores, type Source, type StoreRow } from "../model/storeSizes";
 import { Choice } from "./Choice";
 import { DataTable, type Column } from "./DataTable";
 import { LastUpdate } from "./LastUpdate";
@@ -73,11 +73,12 @@ export function StoreSizesPage({ store, down }: { store: Store; down: boolean })
   const options = filtersOf(rows);
   const picked = options.some(([f]) => f === filter.value) ? filter.value : everyStore;
   const shown = filtered(rows, picked);
-  const update = at !== undefined && <> <LastUpdate at={at} /></>;
+  const next = nextMeasuredWords(nextMeasuredAt(rows), now.value);
+  const update = at !== undefined && <> <LastUpdate at={at} />{next && <>. {next}</>}</>;
   const empty = !reading.value && problems.length === 0 && at !== undefined && !cards.any;
   const stale = !empty && rows.some((r) => r.old);
   const refresh = (
-    <button type="button" class="prominent" disabled={reading.value || down} onClick={() => void load()}>{reading.value ? "Refreshing…" : "Refresh"}</button>
+    <button type="button" class="prominent" disabled={reading.value || down} onClick={() => void load()}>{reading.value ? "Reloading…" : "Reload"}</button>
   );
   const bar = reading.value ? at !== undefined && <MessageBanner tone="neutral" busy>{refreshingWords}{update}</MessageBanner>
     : problems.length > 0 ? (
@@ -86,7 +87,7 @@ export function StoreSizesPage({ store, down }: { store: Store; down: boolean })
         <ul class="stores-problems">{problems.map((p) => <li key={p}>{p}</li>)}</ul>
       </MessageBanner>
     ) : stale ? <MessageBanner tone="neutral">{staleWords}{update}</MessageBanner>
-    : at !== undefined && <p class="quiet small"><LastUpdate at={at} /></p>;
+    : at !== undefined && <p class="quiet small"><LastUpdate at={at} />{next && <>. {next}</>}</p>;
   return (
     <div class="reports-pane stores-page">
       <div class="reports-head">
@@ -146,6 +147,6 @@ const columns = (now: number): Column<StoreRow>[] => [
   { id: "measured", title: "Last measured", first: "desc", sort: (r) => r.measured, cell: (r) => measuredWords(r, now) },
   { id: "status", title: "Status", sort: (r) => statusWords(r), cell: (r) => (
     <><span class={`stores-status${r.status === "over" ? " stores-over" : r.status === "within" ? "" : " attention"}`}>{statusWords(r)}</span>
-      {r.store.why && <><br /><span class="quiet small">{r.store.why}</span></>}</>
+      {statusNote(r) && <><br /><span class="quiet small">{statusNote(r)}</span></>}</>
   ) },
 ];

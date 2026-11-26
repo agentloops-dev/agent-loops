@@ -145,7 +145,7 @@ struct SendSetupSheet: View {
                     let lines = MachineScriptWords.diff(script.changed ? script.approvedText : nil, script.text ?? "")
                     ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
                         Text("\(String(line.mark)) \(line.text)")
-                            .font(.system(.caption, design: .monospaced))
+                            .appText(.code)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .foregroundStyle(line.mark == " " ? AnyShapeStyle(.secondary) : AnyShapeStyle(.primary))
                             .background(Self.tint(line.mark))

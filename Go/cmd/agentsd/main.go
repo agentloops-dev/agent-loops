@@ -314,6 +314,9 @@ func detach(loc store.Locations) {
 			args = append(args, a)
 		}
 	}
+	// The supervisor's standard output and error until it opens daemon.log rolled, which puts
+	// that file in their place (openSuperviseLog), so what lands here goes round the roll too (#7348).
+	// store-bounds: kind=log; size=8MiB; age=7d; applied=by the supervisor, at its start, on write and every 30 s (#6735, #7348)
 	logf, _ := os.OpenFile(loc.Log(), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 	self, _ := os.Executable()
 	cmd := exec.Command(self, append([]string{"supervise"}, args...)...)
@@ -348,6 +351,7 @@ func running(file string, patience time.Duration) bool {
 // takeLock is DaemonLock: an exclusive flock on daemon.lock, holding this pid, so two
 // hosts never share a root. The install script stops a host by the pid in it.
 func takeLock(file string) (*os.File, error) {
+	// store-bounds: not a store: a lock file that holds the pid of this host.
 	f, err := os.OpenFile(file, os.O_CREATE|os.O_RDWR, 0o600)
 	if err != nil {
 		return nil, err
@@ -541,6 +545,7 @@ func keepUplink(ctx context.Context, cl commandLine, d *agentsd.Daemon, member *
 func askToJoin(ctx context.Context, root string, ask controllink.JoinAsk, private []byte, hello controllink.MachineHello) *controllink.Membership {
 	for {
 		member, err := controllink.AskToJoin(ctx, root, ask, private, hello, func(code string) {
+			// store-bounds: not a store: a handoff: the join code for the install script, which removes it.
 			if err := os.WriteFile(filepath.Join(root, "control-join-shown"), []byte(code+"\n"), 0o600); err != nil {
 				log.Printf("control-join-shown: %v", err)
 			}

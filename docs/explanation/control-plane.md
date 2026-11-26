@@ -75,13 +75,24 @@ these states, in this order:
   the wire. A control-only machine answers `control/receive` too.
 - **frozen:** the old copy changes no record.
 - **copying:** the store goes to the new copy over a handover session, and the new copy takes
-  over.
+  over. The records go in batches of at most 1,000 records or 4 MiB (`store/putMany`), and the
+  check reads their hashes 2,000 keys a call (`store/sums`), so the time frozen is about 2 round
+  trips for each 1,000 records, not 2 for each record (#7394): 5,000 records at 50 ms a round
+  trip are frozen for under a second, and 40,000 for about 3 s, plus the time to read and send
+  the bytes.
 - **forwarding:** when the new address is not the old one, the old copy sends each member to
   the new one, for 30 days at most. Agent Loops changes no DNS record. **done:** the same
   address.
 
-The call answers once the checks pass. `control/moveChanged` tells the admins each step, and
-`control/moves/list` gives the newest 20 moves (`v1/moves/`, kept 90 days). A step that fails
+The call answers once the checks pass. `control/moveChanged` tells the admins each step, and,
+during the copy, the records copied and the total every 2 s at most (#7395); only the admins
+hear those counts, and the store keeps the steps. `control/eligible` says about how long a move
+keeps the control plane frozen (`frozenSeconds`), from the store's size and the measures above
+on a link of 50 ms a call and 10 MiB/s, so the confirmation says it; while it is frozen it
+refuses every change. `control/moves/list` gives the newest 20 moves (`v1/moves/`, kept 90
+days). A client reads the
+list when it connects, and then each step from `control/moveChanged`. The list writes nothing;
+each write of a move deletes the moves past those bounds. A step that fails
 before the new copy takes over leaves the old copy serving, and the move says which step failed
 and why. The audit says who started the move.
 

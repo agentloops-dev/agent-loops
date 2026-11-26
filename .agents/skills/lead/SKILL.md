@@ -17,7 +17,7 @@ and it never closes. Do steps 1 to 4 as "Standing epics", below, says. Never do 
 
 ## Starting a lead
 
-Start lead in Work, Alex, or the release (for the bug lane) starts the lead with one
+Autopilot (when it is on for the folder, #5897), Start lead in Work, Alex, or the release (for the bug lane) starts the lead with one
 session in the epic's folder, with the Lead persona (`.agents/personas/lead.md`). Its
 title is `#<epic>: <epic title> lead`, its labels `#<epic>` and `lead`, no worktree, and
 its prompt is this one:
@@ -25,6 +25,11 @@ its prompt is this one:
 > #<epic>: <epic title>
 >
 > Lead this epic: <epic URL>
+
+A lead that Autopilot starts has the same title, labels and prompt. When Autopilot starts
+it again because the epic is open and the lead before it ended, stopped or was archived
+(#5901), the prompt names that lead, and this lead reads it first (`read_session`) to
+take up where it stopped.
 
 Only one lead per epic: if a session labelled `#<epic>` and `lead` is not archived, do
 not start a second one.
@@ -116,7 +121,8 @@ on hold: it sorts below every other row, and waits for Alex.
    before the issue number and title. Title `#<child>: <title>`, worktree
    `fix-github-issue-<child>` (a bug) or `work-github-issue-<child>` (anything else), no
    runtime. Add to the prompt: on a conflict with `main`, `git merge origin/main` and push
-   without running the tests again (#5712).
+   without running the tests again (#5712); lease `ci` only before the PR's first push, not
+   before a push that fixes a red check or settles a conflict (Alex, 2026-11-26, #7243).
    A lead runs on any machine; it writes no code and holds no build lease (#5877).
    **A `linux-ok` child** (AGENTS.md, "Plans", #5810) goes to a Linux machine when one is
    free: call `list_machines`, and when a Linux machine is online, pass it as `machine` to
@@ -139,12 +145,17 @@ with a form for the rest), then close it. Otherwise give it a lane as above.
 ## 3. Wait
 
 End each pass with one `wait_for_event` call: `events: ["issue.closed", "pr.merged",
-"pr.blocked"]`, `where: {"issue": [<open children>], "fixes": ["#<child>",
-…]}`, `until_minutes: 60`. Then end your turn. The wait names this epic's children (#3797):
+"pr.blocked", "issue.parented"]`, `where: {"issue": [<open children>], "fixes": ["#<child>",
+…], "parent": <epic>}`, `until_minutes: 60`. Then end your turn. The wait names this epic's children (#3797):
 `issue` for `issue.closed`, and `fixes` for the PR events, which match a PR whose body
 closes one of them, so you know the child before its lane opens the PR. Each event takes
 only the keys it has. A wait that names nothing is refused. When you start again:
 
+- **`issue.parented`** (#5945: an issue became a sub-issue of this epic; `parent` is the
+  epic's number): read the plan again (step 1) and start the new child's lane when it is
+  ready (step 2). `issue.parented` takes no `issue`, so the list of open children does not hide a new
+  child from it. An app older than #5945 refuses `issue.parented` ("No server here offers"): leave it
+  out and wait as before, reading the plan at the time limit.
 - **`issue.closed` or `pr.merged`** of a child: read the plan again (step 1) and start
   the lanes of the children that are now ready (step 2).
 - **`pr.blocked`** on a child's PR (#5321: a conflict, a failed required check, changes

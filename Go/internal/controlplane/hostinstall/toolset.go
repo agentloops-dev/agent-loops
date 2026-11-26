@@ -294,6 +294,7 @@ func toolsetInstallScript(t toolset, f *facts, dist string) string {
 // stream on stdin. node, when given, is Node unpacked to a plain tar, sent as node.tar.
 func toolsetBundle(t toolset, folder, node string) (string, error) {
 	file := filepath.Join(folder, "toolset-"+t.manifest.RuntimeID+".tar")
+	// store-bounds: not a store: a tar in a temporary folder that the caller removes
 	out, err := os.OpenFile(file, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
 	if err != nil {
 		return "", err
@@ -352,6 +353,7 @@ func fetchNode(ctx context.Context, t toolset, f *facts, dist, folder string) (s
 		return "", installFailed("couldn’t download Node.js: " + response.Status)
 	}
 	xzFile := filepath.Join(folder, "node.tar.xz")
+	// store-bounds: not a store: a download in a temporary folder that the caller removes
 	out, err := os.OpenFile(xzFile, os.O_CREATE|os.O_TRUNC|os.O_RDWR, 0o600)
 	if err != nil {
 		return "", err
@@ -373,6 +375,7 @@ func fetchNode(ctx context.Context, t toolset, f *facts, dist, folder string) (s
 		return "", installFailed("couldn’t unpack Node.js: " + err.Error())
 	}
 	plain := filepath.Join(folder, "node.tar")
+	// store-bounds: not a store: a tar in a temporary folder that the caller removes
 	tarFile, err := os.OpenFile(plain, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
 	if err != nil {
 		return "", err

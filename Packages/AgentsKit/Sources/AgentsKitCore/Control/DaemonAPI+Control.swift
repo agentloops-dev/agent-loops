@@ -267,7 +267,7 @@ public extension DaemonAPI {
         public var state: State
         public var startedAt: Date?
         public var endedAt: Date?
-        /// One line of what it is doing or did.
+        /// One line of what it is doing or did; for a failed Root set-up, root.log's last lines (#7154).
         public var detail: String?
         /// Why it failed, in the words of the provider or the machine.
         public var error: String?
@@ -275,7 +275,7 @@ public extension DaemonAPI {
         public var slower: Bool?
         /// The script that root set-up or your set-up ran (#7167, #7155): its SHA-256 in hexadecimal.
         public var hash: String?
-        /// Done with a warning in its words (#7167).
+        /// Done with a warning in its detail, such as a provider that can't run root set-up (#7154).
         public var warning: Bool?
 
         public init(id: String, state: State, startedAt: Date? = nil, endedAt: Date? = nil, detail: String? = nil,

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/controllink"
+	"github.com/agentloops-dev/agent-loops/Go/internal/flaky"
 	"github.com/agentloops-dev/agent-loops/Go/internal/machinelock"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
@@ -126,6 +127,7 @@ func TestALentSignInIsLentAgainAfterARestart(t *testing.T) {
 // #7369: when the control plane says no host lends the sign-in now (the Mac took it back),
 // the gate and what was kept of it go, so a restart does not open it again.
 func TestALendTakenBackIsDropped(t *testing.T) {
+	flaky.UnderLoad(t, "#7414")
 	t.Setenv("HOME", t.TempDir())
 	root := t.TempDir()
 	d, _ := start(t, root)

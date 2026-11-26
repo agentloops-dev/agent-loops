@@ -75,7 +75,7 @@ struct MachinePage: View {
                     if model.runsControlPlane(host) { ControlPlaneSection(host: host) }
                     // Make This the Control Plane…, on a machine that does not run it, for an admin (#6614).
                     if model.showsControlPlaneMove, let record = model.controlRecord(host),
-                       !ControlPlaneMachine.runsControl(record) {
+                       !model.runsControlCopy(record) {
                         ControlMoveSection(host: host, record: record)
                     }
                     // Offline too, so a send that stopped keeps its Retry.

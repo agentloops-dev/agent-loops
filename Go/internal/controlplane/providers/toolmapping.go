@@ -59,7 +59,7 @@ var ContractMapping = ToolMapping{
 	Stop:    Call{Tool: "workspace_stop", Arguments: map[string]any{"id": "{id}"}},
 	Options: &Call{Tool: "workspace_options"},
 	Create: &Call{Tool: "workspace_create", Arguments: map[string]any{
-		"name": "{name}", "options": "{options}", "firstBoot": "{firstBoot}"}},
+		"name": "{name}", "options": "{options}", "firstBoot": "{firstBoot}", "rootBoot": "{rootBoot}"}},
 	Delete: &Call{Tool: "workspace_delete", Arguments: map[string]any{"id": "{id}"}},
 	Listing: Listing{Items: "workspaces", ID: "id", Name: "name", State: "state", SSH: "ssh", Tunnel: "tunnel",
 		HostKeyRenews: "hostKeyRenews", Cost: "cost", IdleTimeout: "idleTimeoutMinutes", States: map[string]string{}},

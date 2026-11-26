@@ -273,7 +273,8 @@ struct MachinesListPage: View {
     }
 
     private func name(_ row: DaemonAPI.ControlMachine) -> String {
-        if model.showsControlPlaneMachine, ControlPlaneMachine.controlOnly(row) {
+        // A control-only machine that runs no copy is not the control plane yet (#7393).
+        if model.runsControlPlane(row.id), ControlPlaneMachine.controlOnly(row) {
             return ControlPlaneMachine.title(row, among: model.controlPlaneHosts ?? rows)
         }
         return row.id == .mac ? "This Mac" : row.name

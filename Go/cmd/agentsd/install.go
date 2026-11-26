@@ -183,6 +183,7 @@ WantedBy=default.target
 			if err := os.MkdirAll(filepath.Dir(unit), 0o700); err != nil {
 				return "", err
 			}
+			// store-bounds: not a store: an install: the systemd unit of this host.
 			if err := os.WriteFile(unit, []byte(text), 0o600); err != nil {
 				return "", err
 			}

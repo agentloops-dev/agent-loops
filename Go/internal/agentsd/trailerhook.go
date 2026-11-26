@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
+	"github.com/agentloops-dev/agent-loops/Go/internal/execfile"
 	"github.com/agentloops-dev/agent-loops/Go/internal/policylayers"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
@@ -175,7 +176,8 @@ func writeTrailerHooks(dir string, names map[string]bool) error {
 	script := filepath.Join(dir, trailerHookScript)
 	if old, err := os.ReadFile(script); err != nil || string(old) != trailerHookBody {
 		tmp := script + ".tmp"
-		if err := os.WriteFile(tmp, []byte(trailerHookBody), 0o755); err != nil { //nolint:gosec // G306: git runs a hook only when it is executable
+		// store-bounds: not a store: an install: the git hook.
+		if err := execfile.Write(tmp, []byte(trailerHookBody), 0o755); err != nil {
 			return err
 		}
 		if err := os.Rename(tmp, script); err != nil {
@@ -334,6 +336,7 @@ func TrailersCommand(args []string, getenv func(string) string, errOut io.Writer
 	if next == string(msg) {
 		return 0
 	}
+	// store-bounds: not a store: the commit message file that git gives the hook.
 	if err := os.WriteFile(path, []byte(next), fi.Mode().Perm()); err != nil { //nolint:gosec // G703: git names the message file to the hook; it is the file to write
 		return say(err.Error())
 	}

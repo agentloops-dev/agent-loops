@@ -19,6 +19,7 @@ const CapAttention2 = "attention/2"
 const CapAuditSinks1 = "audit.sinks/1"
 const CapAutoMachine1 = "auto-machine/1"
 const CapAuto1 = "auto/1"
+const CapAutopilot1 = "autopilot/1"
 const CapBackupsStore1 = "backups.store/1"
 const CapBackups1 = "backups/1"
 const CapBots1 = "bots/1"
@@ -233,6 +234,7 @@ const CapRuntimes1 = "runtimes/1"
 const CapSandbox1 = "sandbox/1"
 const CapSealing1 = "sealing/1"
 const CapSend1 = "send/1"
+const CapSessionSummary1 = "session-summary/1"
 const CapSessionsElsewhere1 = "sessions.elsewhere/1"
 const CapSessionsMove1 = "sessions.move/1"
 const CapSessionsMoving1 = "sessions.moving/1"
@@ -318,6 +320,7 @@ var HostCapabilities = pairs([][2]string{
 	{"agents/startNow", "agents.start-now/1"},
 	{"agents/stop", "agents/1"},
 	{"agents/stopBackground", "agents/1"},
+	{"agents/summarise", "session-summary/1"},
 	{"agents/touchedPaths", "agents/1"},
 	{"agents/transcript", "agents/1"},
 	{"agents/turns", "agents/1"},
@@ -331,6 +334,8 @@ var HostCapabilities = pairs([][2]string{
 	{"auto/preview", "auto/1"},
 	{"auto/set", "auto/1"},
 	{"auto/state", "auto/1"},
+	{"autopilot/set", "autopilot/1"},
+	{"autopilot/status", "autopilot/1"},
 	{"backups/configure", "backups/1"},
 	{"backups/make", "backups/1"},
 	{"backups/restore", "backups/1"},

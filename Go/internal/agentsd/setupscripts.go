@@ -15,7 +15,9 @@ import (
 	"sync"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
+	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/providers"
 	"github.com/agentloops-dev/agent-loops/Go/internal/machinelock"
+	"github.com/agentloops-dev/agent-loops/Go/internal/workspacecommands"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -335,4 +337,22 @@ func (d *Daemon) approvedSetupScript(name, scope string) (string, wire.LockRecor
 		return "", wire.LockRecord{}, &Error{Code: wire.FailureSetupScriptChanged, Message: file + " is not the text you approved: review it and approve it again."}
 	}
 	return now.text, r, nil
+}
+
+// rootBootForMake is the lines that run root.sh on a machine this one makes (#7154; spec of
+// #7151, section 5), with its hash: none with no root.sh. With no lock, none, and why. A root.sh
+// that is not the text a client approved for made machines stops the make (setupScriptChanged).
+func (d *Daemon) rootBootForMake() (string, *providers.RootBootSent, error) {
+	file, most, _ := setupScriptFile("root")
+	if f := d.readSetupScript(file, most); !f.present {
+		return "", nil, nil
+	}
+	if state, _ := d.heldLock(); state == nil {
+		return "", &providers.RootBootSent{Problem: "Root set-up needs your machine lock, so root.sh did not run. Set up the lock, then make a new machine."}, nil
+	}
+	text, _, err := d.approvedSetupScript("root", machinelock.ScopeMade)
+	if err != nil {
+		return "", nil, err
+	}
+	return workspacecommands.RootBoot([]byte(text)), &providers.RootBootSent{Hash: scriptHash(text)}, nil
 }

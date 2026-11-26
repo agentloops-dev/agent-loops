@@ -271,6 +271,7 @@ func setFolderConfig(folder, key string, v any) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil { //nolint:gosec // G301: the mode this folder always had; only its error is new
 		return err
 	}
+	// store-bounds: not a store: the folder's .agents/folder.json in the person's project, at most guardedMostBytes.
 	return store.WriteAtomically(path, append(b, '\n'), 0o644)
 }
 
@@ -827,6 +828,14 @@ func (d *Daemon) registerFolders() {
 	On(d, wire.CallFoldersSetPRCostComment, func(ctx context.Context, c *Client, r wire.SetPRCostCommentRequest) (wire.FolderSummary, error) {
 		r.Folder = store.FolderURL(folderOf(r.Folder))
 		return d.setPRCostComment(r)
+	})
+	On(d, wire.CallAutopilotSet, func(ctx context.Context, c *Client, r wire.AutopilotSetRequest) (wire.AutopilotStatus, error) {
+		r.Folder = store.FolderURL(folderOf(r.Folder))
+		return d.setAutopilot(c, r)
+	})
+	On(d, wire.CallAutopilotStatus, func(ctx context.Context, c *Client, r wire.AutopilotRequest) (wire.AutopilotStatus, error) {
+		r.Folder = store.FolderURL(folderOf(r.Folder))
+		return d.autopilotStatus(r)
 	})
 	On(d, wire.CallFoldersSetWorkingHours, func(ctx context.Context, c *Client, r wire.SetWorkingHoursRequest) (wire.FolderSummary, error) {
 		r.Folder = store.FolderURL(folderOf(r.Folder))

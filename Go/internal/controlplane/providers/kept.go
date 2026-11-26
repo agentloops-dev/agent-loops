@@ -18,7 +18,7 @@ import (
 )
 
 // KeptPrefix is KeptRequests.prefix.
-// store-bounds: kind=document; count=20 a machine; size=800MiB a machine (40MiB a record); age=90d; applied=on keep (refused), on delivery, and the hourly sweep deletes one not sent at 7 days and any at 90
+// store-bounds: kind=document; count=20 a machine; size=800MiB a machine (40MiB a record); age=90d; applied=on keep (refused), on delivery, and the hourly sweep shows one that waited 83 days as not sent (expired), deletes one not sent at 7 days and any at 90
 const KeptPrefix = "v1/kept/"
 
 // KeptLimit is KeptRequests.limit: at most this many per host, waiting or not sent.
@@ -44,6 +44,18 @@ const KeptWaitingFor = 90 * 24 * time.Hour
 // KeptFailedFor is how long a request that was not sent is kept, to try again or drop by
 // hand (#3647): its attachments are in it.
 const KeptFailedFor = 7 * 24 * time.Hour
+
+// keptExpiresAfter is how long a request waits before it expires (#7406). It is then shown
+// not sent, with why, for KeptFailedFor, so its sender sees that it will not run, and it goes
+// at KeptWaitingFor.
+const keptExpiresAfter = KeptWaitingFor - KeptFailedFor
+
+// keptExpired is why an expired request was not sent: the line under it says "Not sent: …".
+var keptExpired = fmt.Sprintf("It waited %d days and its machine did not start, so it expired. Try Again to keep it %[1]d days more. If not, it goes in %d days.",
+	int(keptExpiresAfter.Hours()/24), int(KeptFailedFor.Hours()/24))
+
+// keptGone is the refusal of an action on a request that is not kept any more.
+const keptGone = "That request is not kept any more: it was sent, dropped or it expired. If it did not run, send it again."
 
 // KeptRequest is DaemonAPI.KeptRequest: a kept request, as clients draw it, never its
 // attachments or options. Kind is prompt (to an agent there, AgentID) or start (a new
@@ -354,7 +366,7 @@ func (k *Kept) Answer(method string, params json.RawMessage, person string) (any
 			return nil, err
 		}
 		if k.hooks.OwnerOf(string(which.Host)) != person {
-			return nil, invalid("That was sent or dropped already.")
+			return nil, invalid(keptGone)
 		}
 		k.remove(string(which.Host), string(which.ID))
 		k.log("workspace: dropped kept request for " + string(which.Host))
@@ -367,7 +379,7 @@ func (k *Kept) Answer(method string, params json.RawMessage, person string) (any
 		}
 		host := string(which.Host)
 		if k.hooks.OwnerOf(host) != person {
-			return nil, invalid("That was sent or dropped already.")
+			return nil, invalid(keptGone)
 		}
 		k.mu.Lock()
 		index := -1
@@ -378,9 +390,13 @@ func (k *Kept) Answer(method string, params json.RawMessage, person string) (any
 		}
 		if index < 0 {
 			k.mu.Unlock()
-			return nil, invalid("That was sent or dropped already.")
+			return nil, invalid(keptGone)
 		}
 		entry := &k.kept[host][index]
+		if entry.record.At.Before(time.Now().Add(-keptExpiresAfter)) {
+			// Kept again by its sender after it expired: it waits as a new one does.
+			entry.record.At = records.Now()
+		}
 		entry.record.Failed, entry.record.FailedAt = "", nil
 		key, record := entry.key, entry.record
 		k.mu.Unlock()
@@ -425,12 +441,17 @@ func (k *Kept) fail(host, only, reason string) {
 	if len(reason) > keptFailedText {
 		reason = strings.ToValidUTF8(reason[:keptFailedText-len("…")], "") + "…"
 	}
-	now := records.Now()
+	k.markNotSent(host, reason, records.Now(), func(r keptRecord) bool { return only == "" || r.ID == only })
+}
+
+// markNotSent marks each request of host that waits and that pick takes as not sent, for
+// reason, at now, and says how many.
+func (k *Kept) markNotSent(host, reason string, now records.Stamp, pick func(keptRecord) bool) int {
 	k.mu.Lock()
 	var writes []keptEntry
 	for i := range k.kept[host] {
 		e := &k.kept[host][i]
-		if e.record.Failed == "" && (only == "" || e.record.ID == only) {
+		if e.record.Failed == "" && pick(e.record) {
 			e.record.Failed, e.record.FailedAt = reason, &now
 			writes = append(writes, *e)
 		}
@@ -443,19 +464,31 @@ func (k *Kept) fail(host, only, reason string) {
 			}
 		}
 	}
+	return len(writes)
 }
 
-// Expire drops failed requests after KeptFailedFor and all other requests after
-// KeptWaitingFor, with their attachments, then refreshes the owning person's list. One that
-// this copy does not hold (it could not be read) goes by the time in its key.
+// Expire shows a request that waited keptExpiresAfter as not sent, with why (#7406), drops
+// failed requests after KeptFailedFor and any other after KeptWaitingFor, with their
+// attachments, then refreshes the owning person's list. One that this copy does not hold
+// (it could not be read) goes by the time in its key.
 func (k *Kept) Expire(now time.Time) int {
 	k.Load()
 	k.mu.Lock()
 	hosts := make([]string, 0, len(k.kept))
-	for h := range k.kept {
+	held := map[string]bool{}
+	for h, entries := range k.kept {
 		hosts = append(hosts, h)
+		for _, e := range entries {
+			held[e.key] = true
+		}
 	}
 	k.mu.Unlock()
+	expired := 0
+	for _, h := range hosts {
+		cutoff := now.Add(-keptExpiresAfter)
+		expired += k.markNotSent(h, keptExpired, records.Stamp{Time: now.UTC().Truncate(time.Millisecond)},
+			func(r keptRecord) bool { return r.At.Before(cutoff) })
+	}
 	dropped := 0
 	for _, h := range hosts {
 		dropped += k.dropExpired(h, func(r keptRecord) bool {
@@ -464,7 +497,8 @@ func (k *Kept) Expire(now time.Time) int {
 				if r.FailedAt != nil {
 					at = *r.FailedAt
 				}
-				return at.Before(now.Add(-KeptFailedFor))
+				// Never past the age of the store, also one that failed late.
+				return at.Before(now.Add(-KeptFailedFor)) || r.At.Before(now.Add(-KeptWaitingFor))
 			}
 			return r.At.Before(now.Add(-KeptWaitingFor))
 		})
@@ -473,13 +507,19 @@ func (k *Kept) Expire(now time.Time) int {
 		k.log("kept requests not listed: " + err.Error())
 	} else {
 		for _, key := range keys {
-			if at, ok := keptAt(key.Key); ok && at.Before(now.Add(-KeptWaitingFor)) {
+			// One kept again after it expired keeps its first key: it goes by its record.
+			if at, ok := keptAt(key.Key); ok && !held[key.Key] && at.Before(now.Add(-KeptWaitingFor)) {
 				k.forget(key.Key)
 			}
 		}
 	}
+	if expired > 0 {
+		k.log(fmt.Sprintf("workspace: %d kept requests expired and are shown not sent", expired))
+	}
 	if dropped > 0 {
-		k.log(fmt.Sprintf("workspace: expired %d kept requests after their retention limit", dropped))
+		k.log(fmt.Sprintf("workspace: dropped %d kept requests after their retention limit", dropped))
+	}
+	if expired+dropped > 0 {
 		k.changed()
 	}
 	return dropped
