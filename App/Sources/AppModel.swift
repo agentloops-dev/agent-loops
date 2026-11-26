@@ -5197,6 +5197,22 @@ final class AppModel {
         }
     }
 
+    /// Asks the session's host to write its summary again (#7322, `agents/summarise`): only
+    /// while the summary is shown (Alex on #7318), and the host writes only when a turn ended
+    /// since it last read. It answers at once; `agents/changed` brings the new text. Nothing
+    /// on a host without `session-summary/1`.
+    func summarise(_ agentID: UUID) async {
+        guard agent(agentID, has: Capability.sessionSummary1) else { return }
+        do {
+            _ = try await client(forAgent: agentID).call(DaemonAPI.Method.agentsSummarise,
+                                                         DaemonAPI.AgentRequest(agentID: agentID),
+                                                         returning: SessionSummary.self)
+        } catch {
+            // The page keeps the summary it has, with its time (gate 2, #7320).
+            Self.chatLog.info("agent \(agentID, privacy: .public): no summary asked: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
     /// Whether Start now is offered on this session: queued by an agent, on a host that has it.
     func canStartNow(_ agent: Agent) -> Bool {
         HelperLimit.canStartNow(agent) && self.agent(agent.id, has: Capability.agentsStartNow1)

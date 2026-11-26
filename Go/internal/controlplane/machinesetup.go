@@ -241,8 +241,8 @@ func (st *storedSetup) allDone() bool {
 	return !slices.ContainsFunc(st.Steps, func(s storedSetupStep) bool { return s.State != wire.MachineSetupStateDone })
 }
 
-// firstFailed is the first step that failed, or nil.
-func (st *storedSetup) firstFailed() *storedSetupStep {
+// failedStep is the first step that failed, or nil.
+func (st *storedSetup) failedStep() *storedSetupStep {
 	for i := range st.Steps {
 		if st.Steps[i].State == wire.MachineSetupStateFailed {
 			return &st.Steps[i]
@@ -733,11 +733,14 @@ func (s *Service) madeAndCompared(ctx context.Context, host string) bool {
 
 // retrySetup is machines/retrySetup.
 func (s *Service) retrySetup(ctx context.Context, host string) error {
-	retried := false
+	retried, root := false, false
 	stored, err := s.changeMachineSetup(ctx, host, false, func(st *storedSetup) error {
-		if failed := st.firstFailed(); failed != nil && failed.ID == wire.MachineSetupStepIDUser {
-			// Your set-up runs on the machine (#7155): its client runs it again there, with setup/run.
-			return fail(invalidParams, "Your set-up runs on the machine: run it again with Run Again on its page.")
+		if failed := st.failedStep(); failed != nil {
+			if failed.ID == wire.MachineSetupStepIDUser {
+				// Your set-up runs on the machine (#7155): its client runs it again there, with setup/run.
+				return fail(invalidParams, "Your set-up runs on the machine: run it again with Run Again on its page.")
+			}
+			root = failed.ID == wire.MachineSetupStepIDRoot
 		}
 		retried = st.retry()
 		if !retried {
@@ -754,8 +757,46 @@ func (s *Service) retrySetup(ctx context.Context, host string) error {
 	if stored == nil {
 		return fail(noSuchHost, "This machine has no set-up.")
 	}
+	if root {
+		// The machine reads root.sh's result again (#7159): the person may have run the copied
+		// root command there. Then it runs the steps after it, which never began.
+		s.rootAgain(ctx, host)
+	}
 	s.setupChanged(ctx, host)
 	return nil
+}
+
+// rootAgainPatience is how long Try Again waits for a machine to take setup/rootAgain: it answers
+// at once, and reports the step as it reads it.
+const rootAgainPatience = 10 * time.Second
+
+// rootAgain asks host to read root.sh's result again and run the steps after it (#7159). A
+// machine that does not take it keeps its Root set-up failed, and says why.
+func (s *Service) rootAgain(ctx context.Context, host string) {
+	answer := s.router.Ask(host, wire.CallSetupRootAgain.Name, wire.SetupRootAgain{Rest: true}, rootAgainPatience)
+	problem := ""
+	switch {
+	case answer == nil:
+		problem = "The machine did not answer, so root.sh’s result was not read again. Try again when it is online."
+	case len(answer.Error) > 0:
+		var refused struct {
+			Message string `json:"message"`
+		}
+		_ = json.Unmarshal(answer.Error, &refused)
+		problem = refused.Message
+		if problem == "" {
+			problem = "The machine did not read root.sh’s result again."
+		}
+	default:
+		return
+	}
+	_, _ = s.changeMachineSetup(ctx, host, false, func(st *storedSetup) error {
+		if step := st.step(wire.MachineSetupStepIDRoot); step != nil && step.State == wire.MachineSetupStateWaiting {
+			now := time.Now()
+			step.State, step.Error, step.Ended = wire.MachineSetupStateFailed, problem, &now
+		}
+		return nil
+	})
 }
 
 // machineSetup is a machine's set-up for its row, or none.

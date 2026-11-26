@@ -20,6 +20,9 @@ struct MachinePage: View {
     @State private var failure: String?
     /// When the last `machine/usage` read worked (#5146): a read that fails then says how old the page is.
     @State private var readAt: Date?
+    /// Root set-up by hand, and root.log (#7159).
+    @State private var rootSheet: RootSheet?
+    @AppStorage(FeatureFlag.machineScripts.key, store: WindowDefaults.store) private var scriptsOn = false
 
     private var name: String { model.hosts.label(host) }
     private var offline: Bool { model.hosts.isOffline(host) }
@@ -59,13 +62,20 @@ struct MachinePage: View {
                     if let row = model.hosts.controlRows[host], let setup = row.setup {
                         MachineSetupSection(row: row, setup: setup,
                                             onRetry: { Task { await retry(setup) } },
-                                            onDelete: { Task { await model.deleteMachine(host) } }) {
+                                            onDelete: { Task { await model.deleteMachine(host) } },
+                                            onRootCommand: { rootSheet = .command(failed: true) },
+                                            onRootLog: { rootSheet = .log }) {
                             MachineSignInCards(host: host)
                         }
                         // From a warm pool, or a claim that found it empty (#5366, board 4).
                         if let note = model.machinePoolNotes[row.name], !MachineSetupWords.foldedAway(setup) {
                             Section { Text(note).appText(.supporting).foregroundStyle(.secondary) }
                         }
+                    }
+                    // A Linux machine no provider made: root.sh by hand (#7159).
+                    if scriptsOn, host != .mac, !offline, let row = model.hosts.controlRows[host],
+                       row.workspace == nil, row.platform.lowercased().hasPrefix("linux"), model.host(host, has: Capability.machineRootSetup1) {
+                        OwnServerRootSection(name: name) { rootSheet = .command(failed: false) }
                     }
                     // The person's setup.sh: what it ran, Send Set-up… and Run Again (#7155).
                     if let row = model.hosts.controlRows[host], model.showsMachineScripts(host) {
@@ -120,6 +130,12 @@ struct MachinePage: View {
             }
         }
         .navigationTitle(name)
+        .sheet(item: $rootSheet) { shown in
+            switch shown {
+            case .command(let failed): RootCommandSheet(host: host, name: name, failed: failed).paperSheet()
+            case .log: RootLogSheet(host: host, name: name).paperSheet()
+            }
+        }
         .task(id: offline ? nil : host) {
             guard !offline else { return }
             await MachineResourcesSection.read(model, on: host)
