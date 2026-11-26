@@ -152,6 +152,7 @@ type Daemon struct {
 	elsewhere *store.JSONFile[elsewhereEntry]
 	idleBook
 	turnBook
+	summaryBook
 	findBook
 	optionBook
 	timeBook

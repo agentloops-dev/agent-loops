@@ -229,6 +229,7 @@ public enum Capability {
     public static let sandbox1 = "sandbox/1"
     public static let sealing1 = "sealing/1"
     public static let send1 = "send/1"
+    public static let sessionSummary1 = "session-summary/1"
     public static let sessionsElsewhere1 = "sessions.elsewhere/1"
     public static let sessionsMove1 = "sessions.move/1"
     public static let sessionsMoving1 = "sessions.moving/1"
@@ -314,6 +315,7 @@ public enum Capability {
         "agents/startNow": "agents.start-now/1",
         "agents/stop": "agents/1",
         "agents/stopBackground": "agents/1",
+        "agents/summarise": "session-summary/1",
         "agents/touchedPaths": "agents/1",
         "agents/transcript": "agents/1",
         "agents/turns": "agents/1",
