@@ -1204,11 +1204,6 @@ func (r *Router) channelZero(msg, host string, gen int64, calls *hostCalls) {
 		return
 	}
 	call := hostCall{id: m.ID, method: m.Method, params: m.Params}
-	if m.Method == "git/credential" {
-		// A git command waits on a person's answer (#1122): it holds no lane.
-		go r.answerHost(host, gen, call)
-		return
-	}
 	if calls.take(call) {
 		calls.noteTaken()
 	} else {

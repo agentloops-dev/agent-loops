@@ -59,7 +59,7 @@ func TestRefuseAgentWork(t *testing.T) {
 func TestAskedControlOnlyLeavesAgentWorkUnanswered(t *testing.T) {
 	t.Parallel()
 	d := &Daemon{}
-	for _, method := range []string{wire.CallWorkflowsFire.Name, wire.CallGitFill.Name, wire.CallRuntimesList.Name,
+	for _, method := range []string{wire.CallWorkflowsFire.Name, wire.CallRuntimesList.Name,
 		wire.CallMachineOrgRouteCheck.Name, "providers/start"} {
 		if _, ok := d.AskedControlOnly(method, json.RawMessage(`{}`)); ok {
 			t.Errorf("%s was answered", method)

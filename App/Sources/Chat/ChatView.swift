@@ -29,6 +29,10 @@ struct ChatView: View {
     @State private var formHeight: CGFloat = 0
     /// The open chat's views (#187), torn down when another chat opens.
     @State private var views = AppViewStore()
+    /// Whether the person turned the Session summary flag on (`FeatureFlag`, #7322).
+    @AppStorage(FeatureFlag.sessionSummary.key, store: WindowDefaults.store) private var summaryOn = false
+    /// The whole chat chosen over the summary; each session opens on its summary again.
+    @State private var showsChat = false
 
     private var agent: Agent? { popped.map { model.work.agent($0.id) } ?? model.selectedAgent }
 
@@ -36,7 +40,7 @@ struct ChatView: View {
         Group {
             if let agent {
                 ZStack(alignment: .bottom) {
-                    Transcript(agent: agent, bottomInset: formHeight, cards: cards)
+                    page(for: agent)
                         // What was exchanged, a swipe away, as on the phone.
                         .swipeToShowPane(show: {
                             // A session's own window has no inspector (#826).
@@ -59,8 +63,11 @@ struct ChatView: View {
                                                 close: { finding = false })
                                 }
                                 // What it works towards: the goal (#2742) and the plan
-                                // (#341), one Now card with two rows (#5033).
-                                NowTopCard(agent: agent)
+                                // (#341), one Now card with two rows (#5033). The summary
+                                // draws it under its paragraph (#7322).
+                                if !showsSummary(agent) {
+                                    NowTopCard(agent: agent)
+                                }
                             }
                             // On the page's own paper, across the whole pane: the
                             // transcript scrolls under this strip, and without a ground
@@ -102,12 +109,20 @@ struct ChatView: View {
                 AppViewFullscreen(host: host)
             }
         }
-        .onChange(of: agent?.id) { views.tearDownAll() }
+        .onChange(of: agent?.id) {
+            views.tearDownAll()
+            // A session opens on its summary (#7322).
+            showsChat = false
+        }
         .onChange(of: requests.wantsChatFind) {
             guard requests.wantsChatFind, popped == nil else { return }
             requests.wantsChatFind = false
             finding = true
+            // A match is a place in the chat.
+            showsChat = true
         }
+        // A message asked for (the artifacts pane, the Prompts list) is a place in the chat.
+        .onChange(of: model.focusedEntry) { if popped == nil, model.focusedEntry != nil { showsChat = true } }
         .onChange(of: requests.wantsPrompts) {
             guard requests.wantsPrompts, popped == nil else { return }
             requests.wantsPrompts = false
@@ -384,26 +399,81 @@ struct ChatView: View {
         .padding(.top, kinds.isEmpty ? 0 : 8)
     }
 
+    /// Whether this session can open on its summary (#7322): the flag is on and its host
+    /// writes summaries (`session-summary/1`).
+    private func offersSummary(_ agent: Agent) -> Bool {
+        summaryOn && model.agent(agent.id, has: Capability.sessionSummary1)
+    }
+
+    private func showsSummary(_ agent: Agent) -> Bool { offersSummary(agent) && !showsChat }
+
+    /// The summary in the transcript's place (#7322), or the transcript.
+    @ViewBuilder
+    private func page(for agent: Agent) -> some View {
+        if showsSummary(agent) {
+            let work = popped?.work ?? model.work
+            SessionSummaryPage(agent: agent,
+                               firstPrompt: Self.firstPrompt(work),
+                               turnCount: work.hasMoreOfTheConversation ? nil : work.turns.count,
+                               isComingBack: model.isComingBack(agent),
+                               cards: cards,
+                               bottomInset: formHeight,
+                               openChat: { showsChat = true })
+                // Written only while it is shown (Alex on #7318): when it opens, and again
+                // when a turn ends; the host reads only the turns since it last wrote.
+                .task(id: SummaryAsk(agent: agent)) { await model.summarise(agent.id) }
+        } else {
+            Transcript(agent: agent, bottomInset: formHeight, cards: cards)
+        }
+    }
+
+    /// The person's first prompt, under a summary not written yet: the first turn's ask, else
+    /// the first message the person sent, never a note of the app's or the runtime's.
+    private static func firstPrompt(_ work: AgentsModel) -> String? {
+        if let ask = work.turns.first?.ask, case .userMessage(let text, _, _) = ask.kind { return text }
+        for entry in work.entries {
+            if case .userMessage(let text, _, _) = entry.kind { return text }
+        }
+        return nil
+    }
+
     /// What can be done to the chat as a whole, at the right-hand edge of its column.
     @ViewBuilder
     private func actions(for agent: Agent) -> some View {
-        if agent.state == .archived {
-            // Matching the phone: an archived chat's own page is where Unarchive lives,
-            // not only on the row you left it from.
+        if agent.state == .archived || offersSummary(agent) {
             HStack(spacing: 8) {
                 Spacer(minLength: 0)
-                Button {
-                    Task { await model.unarchive(agent.id) }
-                } label: {
-                    Label("Unarchive", icon: "tray.and.arrow.up")
+                if offersSummary(agent) {
+                    // The summary or the whole chat (#7322).
+                    Picker(SessionSummaryWords.pickerHelp, selection: $showsChat) {
+                        Text(SessionSummaryWords.summary).tag(false)
+                        Text(SessionSummaryWords.chat).tag(true)
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                    .fixedSize()
+                    .help(SessionSummaryWords.pickerHelp)
                 }
-                .buttonStyle(.paper)
-                .appText(.fine)
-                .help("Unarchive this session (⌥⌘⌫)")
+                // Matching the phone: an archived chat's own page is where Unarchive lives,
+                // not only on the row you left it from.
+                if agent.state == .archived {
+                    unarchive(agent)
+                }
             }
             .chatColumn()
             .padding(.vertical, 8)
         }
+    }
+
+    private func unarchive(_ agent: Agent) -> some View {
+        Button {
+            Task { await model.unarchive(agent.id) }
+        } label: {
+            Label("Unarchive", icon: "tray.and.arrow.up")
+        }
+        .buttonStyle(.paper)
+        .appText(.fine)
+        .help("Unarchive this session (⌥⌘⌫)")
     }
 
     private var selectedHostOffline: Bool {
@@ -555,5 +625,18 @@ struct ChatView: View {
             .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { formHeight = $0 }
             // The window's toasts float above the bar (#4737).
             .liftsToasts()
+    }
+}
+
+/// When the summary asks its host again (#7322): when it opens, and when a turn ends.
+private struct SummaryAsk: Hashable {
+    let id: UUID
+    let state: AgentState
+    let reportAt: Date?
+
+    init(agent: Agent) {
+        id = agent.id
+        state = agent.state
+        reportAt = agent.report?.at
     }
 }

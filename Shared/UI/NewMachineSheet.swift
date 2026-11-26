@@ -289,7 +289,7 @@ struct NewMachineSheet: View {
                 Text(problem).appText(.supporting).tinted(.failure).fixedSize(horizontal: false, vertical: true)
             }
             Text(showsClones
-                 ? "It joins as a machine by itself once it has started, and is linked to it. Then it clones the folders you list, one a line, with this Mac’s git access when you allow it."
+                 ? "It joins as a machine by itself once it has started, and is linked to it. Then it clones the folders you list, one a line. A private repository needs git access on that machine."
                  : "It joins as a machine by itself once it has started. The provider charges for it from when it is made.")
                 .appText(.supporting).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             #if os(iOS)

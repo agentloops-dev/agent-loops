@@ -29,13 +29,14 @@ tighter, a longer wait after a burst of notices is tighter, and **Off** is tight
 name that one layer leaves out is not allowed.
 
 **Commit trailers** (#6365) have two directions, by the kind of trailer. For a record trailer
-(`Made-by`, `Session`, `Fixes`, `Epic`, `Requested-by`, `Approved-by`,
-`Co-authored-by`), **On** is tighter: a folder or your organisation can make a record of agent
+(`Managed-by`, `Runtime`, `Model`, `Session`, `Fixes`, `Epic`, `Requested-by`,
+`Approved-by`), **On** is tighter: a folder or your organisation can make a record of agent
 work required, and you cannot remove it. For a spend trailer (`Cost`, `Tokens`, `Duration`),
 **Off** is tighter: a folder or your organisation can keep spend out of git history, and you
 cannot add it there. A layer above caps a trailer only at its tight value, so the 🔒 line says
-**This folder (agent-loops): Made-by is required** or **Your organisation: Tokens is kept out
-of commits**.
+**This folder (agent-loops): Runtime is required** or **Your organisation: Tokens is kept out
+of commits**. `Co-authored-by` has no switch (#7174): it is the runtime's own line, and a
+person turns it off in the runtime's own settings.
 
 ## A capped value is kept
 

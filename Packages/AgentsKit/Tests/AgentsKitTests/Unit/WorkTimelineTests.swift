@@ -360,6 +360,42 @@ struct WorkTimelineTests {
         #expect((0..<11).contains(WorkTimeline.colour("autonomy", of: 12)))
     }
 
+    /// #7335: with the On hold toggle, an open epic on hold is drawn dimmed, below the rest, with no forecast; one with no work
+    /// yet is a mark at Now; a closed one is not drawn.
+    @Test func theOnHoldToggleDrawsTheEpicsOnHoldBelowTheRest() throws {
+        let forecast = DaemonAPI.WorkTimelineForecast(low: Self.h(2), mid: Self.h(5), high: Self.h(11))
+        let timeline = DaemonAPI.WorkTimeline(epics: [
+            Self.epic(40, [Self.child(60, started: -10), Self.child(61)], forecast: forecast),
+            Self.with(Self.epic(41, [Self.child(62, started: -6, closed: -4), Self.child(63)], forecast: forecast), priority: "low", onHold: true),
+            Self.with(Self.epic(42, []), priority: "high", onHold: true),
+            Self.with(Self.epic(43, [Self.child(64, started: -6, closed: -4)]), onHold: true),
+        ])
+        #expect(WorkTimeline.lines(timeline, now: Self.now).map(\.number) == ["#40"])
+        let lines = WorkTimeline.layout(WorkTimeline.lines(timeline, now: Self.now, held: true))
+        let by = Dictionary(uniqueKeysWithValues: lines.map { ($0.number, $0) })
+        #expect(Set(by.keys) == ["#40", "#41", "#42"])
+        let held = try #require(by["#41"]), mark = try #require(by["#42"])
+        #expect(held.how == .held && held.ghost == nil && held.band == nil)
+        #expect(held.work == DateInterval(start: Self.h(-6), end: Self.h(-4)))
+        #expect(mark.how == .held && mark.work == nil && mark.from == Self.now && mark.end == Self.now)
+        #expect(mark.markWidth == WorkTimeline.heldMarkWidth && held.markWidth == 0)
+        // Below the rest, a row each, in the order of forge/next: High before Low.
+        #expect([by["#40"]?.row, mark.row, held.row] == [0, 1, 2])
+        #expect(WorkTimeline.bands(lines).map { "\($0.words)@\($0.row)x\($0.rows)" } == ["None@0x1", "On hold@1x2"])
+        // The words: after the block, in the hover card, for VoiceOver and in the list.
+        let measure: (String) -> Double = { Double($0.count) * 6 }
+        let words = WorkTimeline.blockWords(mark, axis: Self.axis, measure: measure)
+        #expect(words.outside?.hasSuffix("On hold") == true)
+        #expect(words.outsideX == Self.axis.x(Self.now) + WorkTimeline.heldMarkWidth + 6)
+        #expect(WorkTimeline.lineLine(held, now: Self.now).hasSuffix("· On hold"))
+        #expect(WorkTimeline.spoken(lines, now: Self.now).last?.words.contains("On hold") == true)
+        let rows = WorkTimeline.epicRows(lines, window: DateInterval(start: Self.h(-48), end: Self.h(48)), now: Self.now)
+        #expect(rows.first { $0.line.number == "#42" }?.line2 == "On hold")
+        // A click on the mark opens the epic.
+        #expect(WorkTimeline.hit((Self.axis.x(Self.now) + WorkTimeline.heldMarkWidth, WorkTimeline.rowTop(mark.row) + 4),
+                                 lines: lines, axis: Self.axis)?.number == "#42")
+    }
+
     @Test func theHitIsTheBlock() {
         let timeline = DaemonAPI.WorkTimeline(epics: [Self.epic(21, [Self.child(80, started: -10, closed: -2)])])
         let lines = WorkTimeline.layout(WorkTimeline.lines(timeline, now: Self.now))

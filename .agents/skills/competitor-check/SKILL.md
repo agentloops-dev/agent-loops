@@ -12,11 +12,21 @@ at the keyboard, that is true only of a run of the workflow.
 
 ## Who to watch
 
-Tools that run several coding agents at once: Conductor, the OpenAI Codex app, Sculptor
-(Imbue), Superset, Parallel Code, Pragma, Codeg, Acepe, Nimbalyst, Claude Code's own
-desktop, web and mobile apps, Cursor background agents and GitHub Copilot's agent
-sessions. Add any new tool of this kind you come across, and say in the report that you
-added it.
+Two groups. Add any new tool of either kind you come across, and say in the report that
+you added it.
+
+1. **Tools that run several coding agents at once:** Conductor, the OpenAI Codex app,
+   Sculptor (Imbue), Superset, Parallel Code, Pragma, Codeg, Acepe, Nimbalyst, Claude
+   Code's own desktop, web and mobile apps, Cursor background agents and GitHub Copilot's
+   agent sessions.
+2. **Agentic software delivery platforms (#6827):** platforms that take software through
+   more of the lifecycle than the coding step, with agents: idea to epic, epic to merged
+   PR, deployment and rollback (Alex, 2026-11-22). Start with **8090** (8090 Solutions,
+   https://www.8090.ai; its Software Factory is a governed workspace where people write
+   natural-language documents and third-party agents turn them into code, for regulated
+   enterprises), Factory (factory.ai), Devin (Cognition), the Harness Software Delivery
+   Agent, the GitLab Duo Agent Platform, Port (an "agentic engineering platform") and
+   GitHub Agent HQ.
 
 ## Steps
 
@@ -38,6 +48,10 @@ added it.
    comment to it instead.
 6. Write the report to `~/.agents/reviews/competitors/<YYYY-MM-DD>.md`. It lists each
    tool, what it shipped, whether Agent Loops has it, the issues you filed, and the sources.
+   The report gives the platforms of the second group their own table, one row per
+   platform, with the lifecycle steps as columns: specify, plan, dispatch, build, land
+   (merge), deploy, roll back and verify. Fill each cell with ●, ◐, ○ or ?⃝ as in
+   `docs/reference/feature-matrix.md`, and the source for it.
 
 ## Rules
 

@@ -691,6 +691,10 @@ func (s *Service) takeUp(ctx context.Context) error {
 	if err := s.records.Migrate(ctx); err != nil {
 		return err
 	}
+	// Git lending is removed (#7286): the lends a machine's record still holds are deleted.
+	if err := s.records.DropGitLends(ctx); err != nil {
+		s.log("the machines' git lends: " + err.Error())
+	}
 	if err := s.ensureControlMachine(ctx); err != nil {
 		s.log("the control plane's own machine record: " + err.Error())
 	}

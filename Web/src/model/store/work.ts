@@ -8,7 +8,6 @@ import { folderKey, type FolderView } from "../groups";
 import { decideMacHostNotice, steadyNotice, type MacHostNotice } from "../macHostNotice";
 import { DisplayBuilder, keepingTurns, turns, type ChatTurn, type Item } from "../turns";
 import { shownItems } from "../thoughts";
-import { firstAsk, type GitLendAsk } from "../gitLending";
 import type { ChartHint } from "../chart";
 import { PendingWrites } from "../pendingWrites";
 import { type Sending } from "../sending";
@@ -544,12 +543,6 @@ export class Work {
    * macDownSince). Kept while it stays down, dropped once it is back.
    */
   readonly downSince = signal<Record<string, number>>({});
-
-  /** Git asks answered on this page, until the control plane's list drops them (#1122). */
-  readonly gitAsksAnswered = signal<ReadonlySet<string>>(new Set());
-
-  /** A host's git asking to use a Mac's git access (#1122), not answered here yet. */
-  get gitLendAsk(): GitLendAsk | null { return firstAsk(this.hosts.value, this.gitAsksAnswered.value); }
 
   /** The hosts whose `machines/start` is out now, so the strip's Start waits for it (#691). */
   readonly hostsBeingStarted = signal<readonly string[]>([]);

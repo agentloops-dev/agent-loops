@@ -1946,27 +1946,6 @@
       }
     },
     {
-      "name": "git/fill",
-      "x-capability": "git/1",
-      "description": "Asked by the control plane on the lending host's channel 0, for a lend a person allowed (#1122).",
-      "paramStructure": "by-name",
-      "params": [
-        {
-          "name": "params",
-          "required": true,
-          "schema": {
-            "$ref": "schema/org.schema.json#/definitions/GitCredentialRequest"
-          }
-        }
-      ],
-      "result": {
-        "name": "result",
-        "schema": {
-          "$ref": "schema/org.schema.json#/definitions/GitCredential"
-        }
-      }
-    },
-    {
       "name": "git/trailers",
       "x-capability": "host.commit-trailers/1",
       "description": "The trailer lines for a commit by this session's agent, or for its pull request's squash message (#6365), by the effective commitTrailers rule of the session's folder. The worktree's commit-msg hook and the agents' tool commit_trailers ask it; an agent types no trailer by hand.",

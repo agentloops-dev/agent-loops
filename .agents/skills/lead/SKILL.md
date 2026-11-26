@@ -121,7 +121,8 @@ on hold: it sorts below every other row, and waits for Alex.
    before the issue number and title. Title `#<child>: <title>`, worktree
    `fix-github-issue-<child>` (a bug) or `work-github-issue-<child>` (anything else), no
    runtime. Add to the prompt: on a conflict with `main`, `git merge origin/main` and push
-   without running the tests again (#5712).
+   without running the tests again (#5712); lease `ci` only before the PR's first push, not
+   before a push that fixes a red check or settles a conflict (Alex, 2026-11-26, #7243).
    A lead runs on any machine; it writes no code and holds no build lease (#5877).
    **A `linux-ok` child** (AGENTS.md, "Plans", #5810) goes to a Linux machine when one is
    free: call `list_machines`, and when a Linux machine is online, pass it as `machine` to

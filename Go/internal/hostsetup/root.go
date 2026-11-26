@@ -135,3 +135,40 @@ func rootSetup(ctx context.Context, d Deps, l Layout, rep *Reporter) error {
 	rep.Say(step, wire.MachineSetupStateDone, "root.sh · exit 0", "")
 	return nil
 }
+
+// RootLogMost is the most of root.log that Show Log reads (#7159): its end.
+const RootLogMost = 64 << 10
+
+// RootLog is the end of root.log in folder, at most most bytes, and whether it is longer (#7159):
+// what Show Log shows. Empty when root.sh never ran here.
+func RootLog(folder string, most int64) (string, bool) {
+	f, err := os.Open(filepath.Join(folder, "root.log"))
+	if err != nil {
+		return "", false
+	}
+	defer f.Close()
+	cut := false
+	if info, err := f.Stat(); err == nil && info.Size() > most {
+		_, _ = f.Seek(info.Size()-most, io.SeekStart)
+		cut = true
+	}
+	data, _ := io.ReadAll(io.LimitReader(f, most))
+	if cut {
+		// From the first whole line.
+		if i := strings.IndexByte(string(data), '\n'); i >= 0 {
+			data = data[i+1:]
+		}
+	}
+	return strings.ToValidUTF8(string(data), "\uFFFD"), cut
+}
+
+// RootAgain is the Root set-up step alone, read again inside the host (#7159): Check, after the
+// person ran the copied root command on a machine whose other steps are done. root is the host's
+// root. With no root.sh in d.RootFolder it says nothing.
+func RootAgain(ctx context.Context, d Deps, root string) error {
+	d.defaults()
+	if d.Running == nil {
+		d.Running = func(string) bool { return true }
+	}
+	return rootSetup(ctx, d, Layout{Root: root}, moreReports(ctx, root))
+}

@@ -316,6 +316,8 @@ public extension DaemonAPI {
                 Row(Method.forgeDiff, params: ForgeNodeRequest.self, result: ForgeDiff.self, kind: .hostRequest),
                 Row(Method.forgePlan, params: ForgePlanRequest.self, result: ForgePlan.self, kind: .hostRequest),
                 Row(Method.forgeNext, params: ForgeNextRequest.self, result: ForgeNext.self, kind: .hostRequest),
+                Row(Method.autopilotStatus, params: AutopilotRequest.self, result: AutopilotStatus.self, kind: .hostRequest),
+                Row(Method.autopilotResume, params: AutopilotResumeRequest.self, result: AutopilotStatus.self, kind: .hostRequest),
                 Row(Method.forgeBoards, params: ForgeBoardsRequest.self, result: ForgeBoards.self, kind: .hostRequest),
                 Row(Method.forgeImage, params: ForgeImageRequest.self, result: ForgeImage.self, kind: .hostRequest),
                 Row(Method.imageHostsList, params: Empty.self, result: ImageHosts.self, kind: .hostRequest),
@@ -546,8 +548,6 @@ public extension DaemonAPI {
                 // Web Push to this browser (#1486): the control plane's key, and the page's subscription.
                 Row(Method.clientsWebPushKey, params: Empty.self, result: JSONValue.self, kind: .controlRequest),
                 Row(Method.clientsSetWebPush, params: JSONValue.self, result: Empty.self, kind: .controlRequest),
-                // A host using a Mac's git access (#1122): Approve, Deny and Revoke.
-                Row(Method.hostsLendGit, params: LendGit.self, result: Empty.self, kind: .controlRequest),
                 // A linked host's workspace (#691): Start on the offline strip.
                 Row(Method.hostsStart, params: MachineRequest.self, result: ControlMachine.self, kind: .controlRequest),
                 Row(Method.hostsStop, params: MachineStop.self, result: ControlMachine.self, kind: .controlRequest),

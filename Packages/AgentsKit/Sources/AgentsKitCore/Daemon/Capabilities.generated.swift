@@ -103,7 +103,6 @@ public enum Capability {
     public static let forgeReady1 = "forge.ready/1"
     public static let forgeReleases1 = "forge.releases/1"
     public static let forge1 = "forge/1"
-    public static let git1 = "git/1"
     public static let governance1 = "governance/1"
     public static let groups1 = "groups/1"
     public static let handover1 = "handover/1"
@@ -159,6 +158,7 @@ public enum Capability {
     public static let machineAccounts1 = "machine.accounts/1"
     public static let machineAccounts2 = "machine.accounts/2"
     public static let machineAgentSecrets1 = "machine.agent-secrets/1"
+    public static let machineRootSetup1 = "machine.root-setup/1"
     public static let machineSetup1 = "machine.setup/1"
     public static let machineUsage1 = "machine.usage/1"
     public static let machine1 = "machine/1"
@@ -488,7 +488,6 @@ public enum Capability {
         "forge/request-changes": "forge-write/1",
         "forge/rerun": "forge-write/1",
         "forge/sources": "forge-sync/1",
-        "git/fill": "git/1",
         "git/trailers": "host.commit-trailers/1",
         "imageHosts/allow": "image-hosts/1",
         "imageHosts/list": "image-hosts/1",
@@ -645,6 +644,9 @@ public enum Capability {
         "settings/userPart": "host.user-settings/4",
         "setup/approve": "host.machine-setup/1",
         "setup/projects": "machine.setup/1",
+        "setup/rootAgain": "machine.root-setup/1",
+        "setup/rootCommand": "machine.root-setup/1",
+        "setup/rootLog": "machine.root-setup/1",
         "setup/scripts": "host.machine-setup/1",
         "shell/attach": "shell/1",
         "shell/close": "shell/1",
@@ -830,7 +832,6 @@ public enum Capability {
         "events/listAll": "machines.all/1",
         "forge/boardsAll": "machines.all/1",
         "forge/listAll": "machines.all/1",
-        "git/credential": "git/1",
         "governance/approvals": "governance/1",
         "governance/decide": "governance/1",
         "governance/report": "governance/1",
@@ -898,7 +899,6 @@ public enum Capability {
         "machines/joinRequests": "hosts.join/1",
         "machines/keep": "machines/1",
         "machines/lastHeard": "machines/1",
-        "machines/lendGit": "machines/1",
         "machines/lendSignIn": "machines/1",
         "machines/link": "machines/1",
         "machines/list": "machines/2",
