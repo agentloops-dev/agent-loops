@@ -318,6 +318,8 @@ func (rf *releaseFiles) download(ctx context.Context, url, dest string, limit in
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("%s answered %s", url, resp.Status)
 	}
+	// A release's file, renamed into place when it is whole; prune keeps this release and the one before.
+	// store-bounds: kind=blob; count=2 releases; size=1GiB a file; age=until-deleted; applied=on download (prune, a larger file is refused) (#7352)
 	tmp, err := os.CreateTemp(filepath.Dir(dest), ".fetch-")
 	if err != nil {
 		return "", err
@@ -401,6 +403,8 @@ func (rf *releaseFiles) linux(ctx context.Context, arch string) (string, error) 
 	if !fileExists(filepath.Join(out, "agentsd-linux-"+arch)) {
 		return "", fmt.Errorf("release %s has no host for %s", rf.version, arch)
 	}
+	// The unpacked release's version, in the release's folder that prune keeps.
+	// store-bounds: kind=blob; count=2 releases; size=1GiB a file; age=until-deleted; applied=on download (prune, a larger file is refused) (#7352)
 	if err := os.WriteFile(filepath.Join(out, "VERSION"), []byte(rf.version+"\n"), 0o644); err != nil { //nolint:gosec // G306: public file
 		return "", err
 	}

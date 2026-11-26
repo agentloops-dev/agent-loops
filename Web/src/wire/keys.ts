@@ -74,6 +74,8 @@ export function codeKey(secret: Uint8Array): Promise<CryptoKey> {
  */
 export function openAgentsDatabase(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
+    // Store `key` (the stores `copy` and `work` are declared in localCopy.ts and workCache.ts):
+    // store-bounds: kind=secret; count=2 (the paired key `self`, the lock's `lockSigning`); age=until-deleted; applied=on write, which replaces it, and a forget deletes the database
     const request = indexedDB.open("agents", 3);
     request.onupgradeneeded = () => {
       const db = request.result;

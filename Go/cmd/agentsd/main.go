@@ -314,6 +314,9 @@ func detach(loc store.Locations) {
 			args = append(args, a)
 		}
 	}
+	// The supervisor's standard output and error until it opens daemon.log rolled, which puts
+	// that file in their place (openSuperviseLog), so what lands here goes round the roll too (#7348).
+	// store-bounds: kind=log; size=8MiB; age=7d; applied=by the supervisor, at its start, on write and every 30 s (#6735, #7348)
 	logf, _ := os.OpenFile(loc.Log(), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 	self, _ := os.Executable()
 	cmd := exec.Command(self, append([]string{"supervise"}, args...)...)

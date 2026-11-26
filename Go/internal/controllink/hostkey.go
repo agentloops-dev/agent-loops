@@ -54,7 +54,14 @@ func (f HostKeyFile) Load() ([]byte, bool, error) {
 	return b, true, nil
 }
 
-func (f HostKeyFile) Save(key []byte) error { return os.WriteFile(f.path(), key, 0o600) }
+// Save keeps key, the store's one key of 32 bytes; a longer one is refused and the key before stays.
+func (f HostKeyFile) Save(key []byte) error {
+	if err := fits("A machine key", key, 32); err != nil {
+		return err
+	}
+	// store-bounds: kind=secret; count=1; size=32B; age=until-deleted; applied=on write (refused), made once, and kept while the machine is
+	return os.WriteFile(f.path(), key, 0o600)
+}
 
 // HostKeyService is the root's own Keychain service for its key: the first four bytes of
 // the root path's SHA-256, as connections.KeychainService, so a scratch root never reads or

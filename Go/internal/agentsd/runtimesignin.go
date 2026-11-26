@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"fmt"
 	"io"
 	"io/fs"
 	"os"
@@ -14,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 	"github.com/creack/pty"
 )
@@ -519,12 +521,22 @@ func (d *Daemon) claudeSignInFile() string {
 	return filepath.Join(d.Store.Loc.Root, "runtimes", "claude-sign-in")
 }
 
+// claudeSignInMost bounds claudeSignInFile (#7350): Claude's token or key is about 100 bytes. A
+// longer line is refused, and the sign-in kept before stays. Neither the error nor the log has
+// the value.
+const claudeSignInMost = 16 << 10
+
 func (d *Daemon) keepClaudeSignIn(variable, value string) error {
+	line := variable + "=" + value + "\n"
+	if len(line) > claudeSignInMost {
+		return fmt.Errorf("the sign-in is %d bytes, at most %d: %w", len(line), claudeSignInMost, store.ErrLimit)
+	}
 	file := d.claudeSignInFile()
 	if err := os.MkdirAll(filepath.Dir(file), 0o700); err != nil {
 		return err
 	}
-	return os.WriteFile(file, []byte(variable+"="+value+"\n"), 0o600)
+	// store-bounds: kind=secret; size=16KiB; count=1; age=until-deleted; applied=on write (a longer one is refused) (#7350)
+	return os.WriteFile(file, []byte(line), 0o600)
 }
 
 // storedClaudeSignIn is the VARIABLE=value a sign-in made here kept, or "".
