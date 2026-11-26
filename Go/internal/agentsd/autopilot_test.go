@@ -126,3 +126,39 @@ func TestAutopilotHear(t *testing.T) {
 		t.Fatal("one wake")
 	}
 }
+
+// A lane's request (#5900): Auto, the forge's prompt, the labels #<n> and lane, the Software
+// Engineer persona, no worktree; with no forge prompt, the issue's title.
+func TestAutopilotLaneRequest(t *testing.T) {
+	t.Parallel()
+	issue := wire.ForgeItem{Node: wire.LineageNode{Kind: "issue", Ref: "github:o/r#7"}, Title: "Fix it"}
+	r := autopilotLaneRequest("/x", issue, &wire.ForgeStart{Prompt: "Work on this."})
+	if r.Worktree != nil || r.RuntimeID != autoRuntimeID || r.Prompt != "Work on this." || r.Persona == nil || *r.Persona != "software-engineer" {
+		t.Fatalf("%+v", r)
+	}
+	if len(r.Labels) != 2 || r.Labels[0] != "#7" || r.Labels[1] != "lane" {
+		t.Fatalf("%q", r.Labels)
+	}
+	if r = autopilotLaneRequest("/x", issue, nil); r.Prompt != "#7: Fix it" {
+		t.Fatalf("%q", r.Prompt)
+	}
+}
+
+// The room says why it has no place, in the lead's words (#5899, #5900).
+func TestAutopilotRoomWait(t *testing.T) {
+	t.Parallel()
+	for _, c := range []struct {
+		room autopilotRoom
+		want string
+	}{
+		{autopilotRoom{}, ""},
+		{autopilotRoom{limit: true}, "limit running"},
+		{autopilotRoom{openPRs: 5, prLimit: 5}, "limit open-prs"},
+		{autopilotRoom{capacity: wire.CapacityLevelNear}, "capacity near"},
+		{autopilotRoom{capacity: wire.CapacityLevelFull}, "capacity full"},
+	} {
+		if got := c.room.wait(); got != c.want {
+			t.Fatalf("%+v: %q, want %q", c.room, got, c.want)
+		}
+	}
+}

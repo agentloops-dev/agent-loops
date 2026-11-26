@@ -79,7 +79,9 @@ func (d *Daemon) autopilotRun(ctx context.Context) {
 		if mode == wire.AutopilotModeOff || ctx.Err() != nil {
 			continue
 		}
-		d.autopilotLeads(ctx, store.FolderPath(p.Folder), mode)
+		folder := store.FolderPath(p.Folder)
+		d.autopilotLeads(ctx, folder, mode)
+		d.autopilotLanes(ctx, folder, mode)
 	}
 }
 
@@ -162,6 +164,22 @@ type autopilotRoom struct {
 	capacity wire.CapacityLevel
 }
 
+// wait is why the room has no place for a start: the helper limits, the open-PR limit or the
+// machine's capacity; "" when it has one.
+func (r autopilotRoom) wait() string {
+	switch {
+	case r.limit:
+		return autopilotLimitRunning
+	case r.prLimit > 0 && r.openPRs >= r.prLimit:
+		return autopilotLimitPRs
+	case r.capacity == wire.CapacityLevelNear:
+		return "capacity near"
+	case r.capacity == wire.CapacityLevelFull:
+		return "capacity full"
+	}
+	return ""
+}
+
 // autopilotOutcome is what a run does for one epic: start it, or wait with a reason.
 type autopilotOutcome struct {
 	epic  wire.ForgeItem
@@ -201,14 +219,8 @@ func autopilotLeadPlan(epics []autopilotEpic, mode wire.AutopilotMode, room auto
 			o.why = autopilotModeHigh
 		case started:
 			o.why = "one lead a run"
-		case room.limit:
-			o.why = autopilotLimitRunning
-		case room.prLimit > 0 && room.openPRs >= room.prLimit:
-			o.why = autopilotLimitPRs
-		case room.capacity == wire.CapacityLevelNear:
-			o.why = "capacity near"
-		case room.capacity == wire.CapacityLevelFull:
-			o.why = "capacity full"
+		case room.wait() != "":
+			o.why = room.wait()
 		default:
 			o.start, started = true, true
 		}
