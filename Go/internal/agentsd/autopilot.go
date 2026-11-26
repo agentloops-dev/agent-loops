@@ -31,7 +31,9 @@ const (
 type autopilotRecord struct {
 	LastRunAt *wire.Date          `json:"lastRunAt,omitzero"`
 	Rows      []wire.AutopilotRow `json:"rows"`
-	Updated   wire.Date           `json:"updated"`
+	// Restarts is when Autopilot started a lead again, by epic ref, for the last day (#5901).
+	Restarts map[string][]wire.Date `json:"restarts,omitzero"`
+	Updated  wire.Date              `json:"updated"`
 }
 
 func (d *Daemon) autopilotPath() string {
@@ -236,7 +238,7 @@ func (d *Daemon) autopilotNote(folder string, row wire.AutopilotRow) error {
 		if len(rows) > autopilotMostRows {
 			rows = rows[:autopilotMostRows]
 		}
-		m[folder] = autopilotRecord{LastRunAt: &at, Rows: rows, Updated: at}
+		m[folder] = autopilotRecord{LastRunAt: &at, Rows: rows, Restarts: e.Restarts, Updated: at}
 		return nil
 	})
 	if err != nil {
