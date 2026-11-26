@@ -8300,6 +8300,31 @@ export interface LockJoinStarted {
 }
 
 /**
+ * A record that a client of a person's machine lock signed, for one or more of the person's
+ * machines (#7167). v is 1. person and root name the lock (root is the SHA-256 of its root entry's
+ * body). kind and subject say what the value is: setup.script is the approval of a set-up script
+ * (SetupScriptApproval), with the subject root or setup. scope says which machines take it:
+ * "m:<machine id>" (that one) or "made" (a machine as it is made). seq is at least 1 and goes up
+ * with each record of one kind and subject that one machine can take. content is the value's exact
+ * bytes, at most 256 KiB; empty content says that the value is removed. key is the signing key
+ * (X9.63) of a client of the lock. sig is ECDSA P-256 (r then s) with SHA-256 over
+ * "agents-lock-record/1", person, root in lower-case hex, kind, subject, scope, seq in decimal and
+ * the lower-case hex SHA-256 of content, each ended by a newline.
+ */
+export interface LockRecord {
+  v: number;
+  person: string;
+  root: Base64;
+  kind: string;
+  subject: string;
+  scope: string;
+  seq: number;
+  content: Base64;
+  key: Base64;
+  sig: Base64;
+}
+
+/**
  * A request signed by its sender's own key (#3492, D6, D7): a client's kept request for a machine
  * that is not there, or a machine's call to another of its person's machines. It goes as the
  * request's "lock" member. sig is ECDSA P-256 (r then s) with SHA-256 over
@@ -14745,6 +14770,15 @@ export interface SettleUntrustedYourPolicyRequest {
   sign: boolean;
 }
 
+/**
+ * The content of a setup.script record (#7167): the script's SHA-256 in lower-case hexadecimal, and
+ * its length in bytes (at least 1).
+ */
+export interface SetupScriptApproval {
+  hash: string;
+  size: number;
+}
+
 export interface SharedInstructions {
   path: string;
   exists: boolean;
@@ -19092,6 +19126,7 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   LockJoinNonce: { required: ["request", "nonce"], optional: [] },
   LockJoinRequest: { required: ["request", "client", "name", "kind", "key", "commitment", "expires"], optional: ["machine", "nonce", "answeredBy", "reveal", "compared"] },
   LockJoinStarted: { required: ["request", "expires"], optional: [] },
+  LockRecord: { required: ["v", "person", "root", "kind", "subject", "scope", "seq", "content", "key", "sig"], optional: [] },
   LockSignature: { required: ["at", "key", "sig"], optional: ["to"] },
   MCPAddAnswer: { required: [], optional: ["server", "error"] },
   MCPAddByHandRequest: { required: ["verifyID", "destination"], optional: [] },
@@ -19619,6 +19654,7 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   SetWorkingHoursRequest: { required: ["folder"], optional: ["hours"] },
   SetYourPolicyRequest: { required: ["rules", "revision"], optional: [] },
   SettleUntrustedYourPolicyRequest: { required: ["file", "revision", "sign"], optional: [] },
+  SetupScriptApproval: { required: ["hash", "size"], optional: [] },
   SharedInstructions: { required: ["path", "exists", "reach"], optional: [] },
   SharedLook: { required: ["kind", "page", "item", "text"], optional: [] },
   SharedMCP: { required: ["file", "servers", "app", "runtimeOnly"], optional: ["problem"] },

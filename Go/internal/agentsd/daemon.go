@@ -107,6 +107,7 @@ type Daemon struct {
 	terminalState
 	secretProxyState
 	lockState
+	lockRecords
 	selfUpdateState
 	quitState
 	processBook
