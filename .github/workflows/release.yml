@@ -14,7 +14,7 @@
 #   loops-<os>-<arch>-<version>.tar.gz    loops, the command-line client (#6448), for darwin and
 #                                          linux, arm64 and amd64; the macOS ones signed and
 #                                          notarized (scripts/build-loops.sh)
-#   SHA256SUMS
+#   SHA256SUMS, and SHA256SUMS.sig, its signature (Go/internal/releasesig)
 #
 # and the control plane's image, ghcr.io/<owner>/agents-control:<version> (#2140, #4958), signed.
 #
@@ -26,12 +26,17 @@
 # The release notes are the tag's message when it has one (the release skill writes them,
 # .agents/skills/release); otherwise GitHub makes them from the merged pull requests.
 #
-# The signing material is in the `release` environment's secrets, which only a tag on main
-# can reach (its deployment rule). How to make each is in docs/how-to/release-agents-host.md:
+# The signing material is in the secrets of two environments, release and release-sign. Their
+# deployment rule lets a run of a v* tag reach them: it looks at the tag's name, not at what
+# the tag is on. Each job checks that the tag is on main before it uses one. Who can make a
+# v* tag, and who approves release-sign, are settings of the repository. How to make each is in docs/how-to/release-agents-host.md:
 #   DEVELOPER_ID_P12, DEVELOPER_ID_P12_PASSWORD   the Developer ID Application identity
 #   ASC_KEY_P8, ASC_KEY_ID, ASC_ISSUER_ID         the App Store Connect key, for notarytool
 #                                                 and altool
-# and for the testflight job (scripts/release-secrets.sh --store sets them):
+# in release-sign, for the sign job only (scripts/release-key.sh makes it,
+# scripts/release-secrets.sh --signing-key sets it):
+#   RELEASE_SIGNING_KEY                           the private key that signs SHA256SUMS
+# and in release, for the testflight job (scripts/release-secrets.sh --store sets them):
 #   APPLE_DISTRIBUTION_P12, APPLE_DISTRIBUTION_P12_PASSWORD   the Apple Distribution identity
 #   PROFILE_REMOTE          "Agents Remote App Store"
 #   PROFILE_REMOTE_NOTIFY   "Agents Remote Notify App Store"
@@ -45,7 +50,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: An existing v* tag to release again
+        description: The v* tag to release again, which the run starts from (--ref) too
         required: true
 
 permissions:
@@ -58,11 +63,46 @@ env:
   TAG: ${{ github.event.inputs.tag || github.ref_name }}
 
 jobs:
+  # Nothing is built, pushed or uploaded unless the run is the tag's own, the tag is on main,
+  # and its public keys are the release's. It has no environment and no secret.
+  keys:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: The run is the tag's own
+        run: |
+          [[ "$GITHUB_REF_TYPE" == tag && "$TAG" == "$GITHUB_REF_NAME" ]] || {
+            echo "::error::Run it from the tag: gh workflow run release.yml --ref $TAG -f tag=$TAG"; exit 1; }
+
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ env.TAG }}
+          persist-credentials: false
+
+      - name: The tag is on main
+        run: |
+          git fetch --quiet origin main
+          git merge-base --is-ancestor HEAD origin/main || {
+            echo "::error::$TAG is not on main"; exit 1; }
+
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: Go/go.mod
+          cache: false
+
+      - name: The release's public keys are there
+        run: Go/scripts/go.sh run ./cmd/release-sign check
+
   # The Linux agentsd (Go, #1136) and the MCP servers beside it, with Go/go.mod's Go. The
   # Swift one, and the Static Linux SDK it was built with, went in #1314.
   linux:
+    needs: keys
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    outputs:
+      servers: ${{ steps.servers.outputs.digest }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -87,6 +127,13 @@ jobs:
               echo "::error::agentsd was not built for $arch"; exit 1; }
           done
 
+      - name: Digest of the files
+        id: servers
+        run: |
+          cd App/Resources/servers
+          digest=$(LC_ALL=C; sha256sum * | sha256sum | cut -d' ' -f1)
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+
       - uses: actions/upload-artifact@v5
         with:
           name: servers
@@ -101,6 +148,7 @@ jobs:
   # <owner> is the repo's owner (#4958): a package belongs to its owner, and a release can
   # push only to its own owner's packages, so after a transfer the new owner gets the image.
   image:
+    needs: keys
     runs-on: ubuntu-latest
     timeout-minutes: 45
     permissions:
@@ -165,7 +213,9 @@ jobs:
     timeout-minutes: 75
     environment: release
     permissions:
-      contents: write
+      contents: read
+    outputs:
+      sums: ${{ steps.sums.outputs.digest }}
     env:
       DEVELOPER_DIR: /Applications/Xcode_27.2.app/Contents/Developer
     steps:
@@ -183,6 +233,15 @@ jobs:
         with:
           name: servers
           path: App/Resources/servers
+
+      - name: They are the linux job's files
+        env:
+          DIGEST: ${{ needs.linux.outputs.servers }}
+        run: |
+          cd App/Resources/servers
+          got=$(LC_ALL=C; shasum -a 256 * | shasum -a 256 | cut -d' ' -f1)
+          [[ -n "$DIGEST" && "$got" == "$DIGEST" ]] || {
+            echo "::error::the servers artifact is not what the linux job built"; exit 1; }
 
       - uses: actions/setup-node@v5
         with:
@@ -239,6 +298,119 @@ jobs:
           name: release-logs
           path: build/release/*.log
 
+      - name: Digest of SHA256SUMS
+        id: sums
+        run: echo "digest=$(shasum -a 256 build/release/SHA256SUMS | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@v5
+        with:
+          name: release-files
+          path: |
+            build/release/*.dmg
+            build/release/*.zip
+            build/release/*.tar.gz
+            build/release/SHA256SUMS
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 3
+
+  # Signs SHA256SUMS, on a runner that built nothing. The environment release-sign has only
+  # the signing key, and this is its only job: a reviewer it requires is asked here, once.
+  # The signature goes to the publish job as an output, so the key is beside no write token.
+  sign:
+    needs: mac
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: release-sign
+    permissions:
+      contents: read
+    outputs:
+      signature: ${{ steps.sign.outputs.signature }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ env.TAG }}
+          persist-credentials: false
+
+      - name: The tag is on main
+        run: |
+          git fetch --quiet origin main
+          git merge-base --is-ancestor HEAD origin/main || {
+            echo "::error::$TAG is not on main"; exit 1; }
+
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: Go/go.mod
+          cache: false
+
+      - uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6
+        with:
+          name: release-files
+          path: build/release
+
+      # SHA256SUMS is the one the mac job wrote (its output, which no other job can change),
+      # and the files are those it lists and no other.
+      - name: They are the mac job's files
+        env:
+          DIGEST: ${{ needs.mac.outputs.sums }}
+        run: Go/scripts/go.sh run ./cmd/release-sign files "$DIGEST" "${TAG#v}" "$PWD/build/release/SHA256SUMS"
+
+      - name: The release's public keys are there
+        run: Go/scripts/go.sh run ./cmd/release-sign check
+
+      # It fails when the private key is not that of one of the two public keys in the
+      # tag's Go/internal/releasesig/keys.go.
+      - name: Sign SHA256SUMS
+        env:
+          RELEASE_SIGNING_KEY: ${{ secrets.RELEASE_SIGNING_KEY }}
+        run: Go/scripts/go.sh run ./cmd/release-sign sign "${TAG#v}" "$PWD/build/release/SHA256SUMS"
+
+      - name: Hand the signature on
+        id: sign
+        run: echo "signature=$(cat build/release/SHA256SUMS.sig)" >> "$GITHUB_OUTPUT"
+
+  publish:
+    needs: [mac, sign]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: release
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ env.TAG }}
+
+      - name: The tag is on main
+        run: |
+          git fetch --quiet origin main
+          git merge-base --is-ancestor HEAD origin/main || {
+            echo "::error::$TAG is not on main"; exit 1; }
+
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: Go/go.mod
+          cache: false
+
+      - uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6
+        with:
+          name: release-files
+          path: build/release
+
+      # SHA256SUMS is the one the mac job wrote (its output, which no other job can change),
+      # and the files are those it lists and no other.
+      - name: They are the mac job's files
+        env:
+          DIGEST: ${{ needs.mac.outputs.sums }}
+        run: Go/scripts/go.sh run ./cmd/release-sign files "$DIGEST" "${TAG#v}" "$PWD/build/release/SHA256SUMS"
+
+      - name: The signature is good
+        env:
+          SIGNATURE: ${{ needs.sign.outputs.signature }}
+        run: |
+          echo "$SIGNATURE" > build/release/SHA256SUMS.sig
+          Go/scripts/go.sh run ./cmd/release-sign verify "$PWD/build/release/SHA256SUMS"
+
       # The tag's message is the notes when it has one: checkout leaves the tag lightweight,
       # so it is fetched again as the annotated tag it is.
       - name: Publish the release
@@ -252,9 +424,9 @@ jobs:
             notes=(--notes-file "$RUNNER_TEMP/notes.md")
           cd build/release
           if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" *.dmg *.zip *.tar.gz SHA256SUMS --clobber
+            gh release upload "$TAG" *.dmg *.zip *.tar.gz SHA256SUMS SHA256SUMS.sig --clobber
           else
-            gh release create "$TAG" *.dmg *.zip *.tar.gz SHA256SUMS --title "Agent Loops ${TAG#v}" \
+            gh release create "$TAG" *.dmg *.zip *.tar.gz SHA256SUMS SHA256SUMS.sig --title "Agent Loops ${TAG#v}" \
               "${notes[@]}" --verify-tag
           fi
 
@@ -273,15 +445,16 @@ jobs:
           fi
           cd build/release
           if gh release view "$TAG" --repo "$PUBLIC_REPO" >/dev/null 2>&1; then
-            gh release upload "$TAG" *.dmg *.zip *.tar.gz SHA256SUMS --clobber --repo "$PUBLIC_REPO"
+            gh release upload "$TAG" *.dmg *.zip *.tar.gz SHA256SUMS SHA256SUMS.sig --clobber --repo "$PUBLIC_REPO"
           else
-            gh release create "$TAG" *.dmg *.zip *.tar.gz SHA256SUMS --repo "$PUBLIC_REPO" \
+            gh release create "$TAG" *.dmg *.zip *.tar.gz SHA256SUMS SHA256SUMS.sig --repo "$PUBLIC_REPO" \
               --title "Agent Loops ${TAG#v}" --notes-file "$RUNNER_TEMP/notes.md"
           fi
 
   # The Remote on TestFlight (#914). It needs nothing from the other jobs, and a
   # failure here leaves the GitHub release as it is.
   testflight:
+    needs: keys
     runs-on: xcode-27
     timeout-minutes: 90
     environment: release
