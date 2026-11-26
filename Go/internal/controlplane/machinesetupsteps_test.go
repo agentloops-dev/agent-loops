@@ -231,3 +231,33 @@ func TestAPoolMachineNeedsRootSetUpAndItsClaimKeepsIt(t *testing.T) {
 		t.Fatalf("%v %v", ids, stored.Ready)
 	}
 }
+
+// #7154: a Root set-up that the make says with a warning (a provider that can't run root.sh, or
+// no lock) is done once Compare digits is, with its words; one the provider runs waits for the
+// machine to say it.
+func TestAWarnedRootSetUpIsDoneOnceCompareDigitsIs(t *testing.T) {
+	t.Parallel()
+	now := time.Now()
+	for _, warned := range []bool{true, false} {
+		st := newStoredSetup(now)
+		runSteps(t, st, now, wire.MachineSetupStepIDCreate)
+		words := "Codespaces can’t run root set-up. Put it in the image."
+		root := wire.MachineSetupReport{Step: wire.MachineSetupStepIDRoot, State: wire.MachineSetupStateWaiting, Detail: &words}
+		if warned {
+			root.Warning = &warned
+		}
+		if _, _, err := st.report(root, now); err != nil {
+			t.Fatal(err)
+		}
+		runSteps(t, st, now, wire.MachineSetupStepIDJoin, wire.MachineSetupStepIDInstall)
+		if got := st.step(wire.MachineSetupStepIDRoot).State; got != wire.MachineSetupStateWaiting {
+			t.Fatalf("warned %v: root set-up is %s before Compare digits", warned, got)
+		}
+		runSteps(t, st, now, wire.MachineSetupStepIDCompare)
+		got := st.step(wire.MachineSetupStepIDRoot)
+		if warned && (got.State != wire.MachineSetupStateDone || got.Detail != words || !got.Warning) ||
+			!warned && got.State != wire.MachineSetupStateWaiting {
+			t.Errorf("warned %v: %+v", warned, got)
+		}
+	}
+}

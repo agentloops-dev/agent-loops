@@ -231,25 +231,39 @@ func (c *Connection) Create(name string, options any, firstBoot *string) (*Machi
 
 // CreateSaying is Create, with the words the server said for each step (its said, #6073).
 func (c *Connection) CreateSaying(name string, options any, firstBoot *string) (*MachineInfo, bool, []string, error) {
+	made, err := c.CreateRooted(name, options, firstBoot, "")
+	return made.Made, made.Runs, made.Said, err
+}
+
+// CreateRooted is CreateSaying with rootBoot (#7154): the lines that run the person's root.sh,
+// which only the machine that carries the provider fills in. None ("") is left out of the call,
+// so a provider that does not declare it is called as before. The answer says whether the
+// server runs it (rootBootRuns; false from one that does not say).
+func (c *Connection) CreateRooted(name string, options any, firstBoot *string, rootBoot string) (CarriedCreate, error) {
 	if c.mapping.Create == nil {
-		return nil, false, nil, providerFailure("It can’t make workspaces.")
+		return CarriedCreate{}, providerFailure("It can’t make workspaces.")
 	}
 	values := map[string]any{"name": name, "options": options}
 	if firstBoot != nil {
 		values["firstBoot"] = *firstBoot
 	}
+	if rootBoot != "" {
+		values["rootBoot"] = rootBoot
+	}
 	if o, ok := obj(options); ok {
 		for k, v := range o {
-			if _, taken := values[k]; !taken {
+			// A choice is never what the first boot runs: those are the make's own.
+			if _, taken := values[k]; !taken && k != "firstBoot" && k != "rootBoot" {
 				values[k] = v
 			}
 		}
 	}
 	content, err := c.call(*c.mapping.Create, values, c.timing.Long)
 	if err != nil {
-		return nil, false, nil, err
+		return CarriedCreate{}, err
 	}
 	runs, _ := boolean(get(content, "firstBootRuns"))
+	rootRuns, _ := boolean(get(content, "rootBootRuns"))
 	var said []string
 	if lines, ok := get(content, "said").([]any); ok {
 		for _, line := range lines {
@@ -258,10 +272,11 @@ func (c *Connection) CreateSaying(name string, options any, firstBoot *string) (
 			}
 		}
 	}
+	made := CarriedCreate{Runs: runs, Said: said, RootRuns: rootBoot != "" && rootRuns}
 	if w := get(content, "workspace"); w != nil {
-		return c.mapping.Workspace(w), runs, said, nil
+		made.Made = c.mapping.Workspace(w)
 	}
-	return nil, runs, said, nil
+	return made, nil
 }
 
 func (c *Connection) Delete(id string) error {

@@ -211,6 +211,8 @@ var digitalOceanStates = map[string]State{"active": Running, "new": Starting, "o
 // digitalOceanFirstBoot is a new droplet's user data. It runs as root, once, so it makes a
 // user, agents, with root's ssh keys, and installs Agents as that user (a host never runs as
 // root). Linger starts the agents user's systemd at boot, so the host starts with the droplet.
+// The person's root.sh (${rootBoot}, #7154) starts beside the install; when it gave the user
+// a group, the user's manager restarts after it, so the host comes back with that group.
 const digitalOceanFirstBoot = `#!/bin/sh
 id -u agents >/dev/null 2>&1 || useradd -m -s /bin/bash agents
 mkdir -p /home/agents/.ssh
@@ -221,12 +223,21 @@ loginctl enable-linger agents
 uid=$(id -u agents)
 i=0
 while [ ! -S "/run/user/$uid/bus" ] && [ $i -lt 30 ]; do sleep 1; i=$((i + 1)); done
+groups=$(id -G agents)
+agents_root_done() {
+  [ "$(id -G agents)" = "$groups" ] && return 0
+  i=0
+  while [ ! -e /home/agents/.agents-server/root/setup-root-ready ] && [ $i -lt 600 ]; do sleep 1; i=$((i + 1)); done
+  systemctl restart "user@$uid.service"
+}
+${rootBoot}
 cat > /home/agents/first-boot.sh <<'FIRSTBOOT'
 ${firstBoot}
 FIRSTBOOT
 chown agents:agents /home/agents/first-boot.sh
 su - agents -c "XDG_RUNTIME_DIR=/run/user/$uid sh ~/first-boot.sh"
 rm -f /home/agents/first-boot.sh
+wait
 `
 
 // digitalOceanAPI is DigitalOcean droplets with a tag, through DigitalOcean's API with a
@@ -444,7 +455,8 @@ func gcpName(value, what string) error {
 // agents-ssh-keys metadata, and installs Agents as that user (a host never runs as root).
 // The keys are not in Google's ssh-keys metadata, whose user the guest agent puts in
 // google-sudoers. Linger starts the agents user's systemd at boot, so the host starts with
-// the VM.
+// the VM. The person's root.sh (${rootBoot}, #7154) starts beside the install, once; when it
+// gave the user a group, the user's manager restarts after it, so the host has that group.
 const gcpStartup = `#!/bin/sh
 [ -f /var/lib/agents-first-boot-done ] && exit 0
 touch /var/lib/agents-first-boot-done
@@ -460,12 +472,21 @@ loginctl enable-linger agents
 uid=$(id -u agents)
 i=0
 while [ ! -S "/run/user/$uid/bus" ] && [ $i -lt 30 ]; do sleep 1; i=$((i + 1)); done
+groups=$(id -G agents)
+agents_root_done() {
+  [ "$(id -G agents)" = "$groups" ] && return 0
+  i=0
+  while [ ! -e /home/agents/.agents-server/root/setup-root-ready ] && [ $i -lt 600 ]; do sleep 1; i=$((i + 1)); done
+  systemctl restart "user@$uid.service"
+}
+${rootBoot}
 cat > /home/agents/first-boot.sh <<'FIRSTBOOT'
 ${firstBoot}
 FIRSTBOOT
 chown agents:agents /home/agents/first-boot.sh
 su - agents -c "XDG_RUNTIME_DIR=/run/user/$uid sh ~/first-boot.sh"
 rm -f /home/agents/first-boot.sh
+wait
 `
 
 // gcpComputeAPI is Compute Engine VMs with a label, in one project and zone, through the
