@@ -52,6 +52,7 @@ var CallAgentsStart = Method[StartRequest, UUID]{"agents/start"}
 var CallAgentsStartNow = Method[AgentRequest, Empty]{"agents/startNow"}
 var CallAgentsStop = Method[AgentStopRequest, Empty]{"agents/stop"}
 var CallAgentsStopBackground = Method[StopBackgroundRequest, JSONValue]{"agents/stopBackground"}
+var CallAgentsSummarise = Method[AgentRequest, SessionSummary]{"agents/summarise"}
 var CallAgentsTouchedPaths = Method[AgentRequest, []string]{"agents/touchedPaths"}
 var CallAgentsTranscript = Method[TranscriptRequest, TranscriptPage]{"agents/transcript"}
 var CallAgentsTurns = Method[TurnsRequest, TurnsPage]{"agents/turns"}

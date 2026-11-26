@@ -353,6 +353,9 @@ type Agent struct {
 
 	// The project its folder is in (#3276), as the folder's .agents/folder.json names it now. Absent for a folder in no project.
 	Project *string `json:"project,omitzero"`
+
+	// What is going on in the session, in a few sentences, written by a short call to the runtime's fastest model when a client opens the session in summary mode (#7321, epic #7318), not by the agent. Absent until one is written.
+	Summary *SessionSummary `json:"summary,omitzero"`
 }
 
 type AgentArchivedReason string
@@ -15446,6 +15449,30 @@ type SessionSecretSetRequest struct {
 type SessionSecrets struct {
 	Secrets []SessionSecret `json:"secrets"`
 }
+
+// A session's summary (#7321): at most 600 characters of text, when it was written, the last turn it read, and the model that wrote it.
+type SessionSummary struct {
+	// What is going on: two to four sentences, at most 600 characters. Empty until the first is written.
+	Text string `json:"text"`
+
+	// When the text was written: the view's Last update.
+	At *Date `json:"at,omitzero"`
+
+	// The TurnSummary.id of the last turn the text read, so a turn is not read twice.
+	ThroughTurn *UUID `json:"throughTurn,omitzero"`
+
+	State SessionSummaryState `json:"state"`
+
+	// The model that wrote the text.
+	Model *string `json:"model,omitzero"`
+}
+
+// Where a session's summary is: being written; written; or the last try failed, and the text of the one before it stays.
+type SessionSummaryState string
+
+const SessionSummaryStateWriting SessionSummaryState = "writing"
+const SessionSummaryStateWritten SessionSummaryState = "written"
+const SessionSummaryStateFailed SessionSummaryState = "failed"
 
 type SessionsListRequest struct {
 	RuntimeID string `json:"runtimeID"`

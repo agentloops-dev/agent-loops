@@ -433,6 +433,12 @@ export interface Agent {
    * for a folder in no project.
    */
   project?: string;
+  /**
+   * What is going on in the session, in a few sentences, written by a short call to the runtime's
+   * fastest model when a client opens the session in summary mode (#7321, epic #7318), not by the
+   * agent. Absent until one is written.
+   */
+  summary?: SessionSummary;
 }
 
 export type AgentArchivedReason =
@@ -14804,6 +14810,34 @@ export interface SessionSecrets {
   secrets: SessionSecret[];
 }
 
+/**
+ * A session's summary (#7321): at most 600 characters of text, when it was written, the last turn
+ * it read, and the model that wrote it.
+ */
+export interface SessionSummary {
+  /**
+   * What is going on: two to four sentences, at most 600 characters. Empty until the first is
+   * written.
+   */
+  text: string;
+  /** When the text was written: the view's Last update. */
+  at?: WireDate;
+  /** The TurnSummary.id of the last turn the text read, so a turn is not read twice. */
+  throughTurn?: UUID;
+  state: SessionSummaryState;
+  /** The model that wrote the text. */
+  model?: string;
+}
+
+/**
+ * Where a session's summary is: being written; written; or the last try failed, and the text of the
+ * one before it stays.
+ */
+export type SessionSummaryState =
+  | "writing"
+  | "written"
+  | "failed";
+
 export interface SessionsListRequest {
   runtimeID: string;
   cwd: URLString;
@@ -18761,7 +18795,7 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   AddFolderRequest: { required: ["folder"], optional: ["project"] },
   Admitted: { required: [], optional: ["client", "host"] },
   AdoptRequest: { required: ["runtimeID", "sessionID", "cwd"], optional: [] },
-  Agent: { required: ["id", "runtimeID", "cwd", "state", "startOptions", "advertisedOptions", "availableCommands", "createdAt", "lastActivityAt"], optional: ["revision", "title", "labels", "priority", "prioritySet", "prioritySource", "runtimeSessionID", "runtimeKeepsCopy", "browserUsedAt", "isUnread", "isMuted", "reportSeenAt", "endedReason", "archivedReason", "usage", "lastTurnUsage", "costToDate", "costCeiling", "tokensToDate", "tokenCeiling", "plans", "background", "additionalDirectories", "mcpServers", "queuedPrompts", "suggestedPrompts", "startedByWorkflow", "purpose", "startedByRun", "startedByAgent", "chainDepth", "eventWait", "worktree", "pendingMove", "startingPoint", "startRequestID", "persona", "restartPickUps", "report", "outcomeAsked", "archiveRequest", "afterTurn", "archivedAt", "archiveWhy", "sandboxOverride", "effectiveSandbox", "pendingSandboxFailure", "desktopControlPause", "missingFolder", "listsLeftOut", "titleIsPersons", "runtimeTitle", "madeInRoot", "queuedStart", "branchedFrom", "movedFrom", "fileToSee", "continueWhenBack", "runningTool", "accountID", "auto", "clientPermission", "levels", "voiceHungUpAt", "goal", "project"] },
+  Agent: { required: ["id", "runtimeID", "cwd", "state", "startOptions", "advertisedOptions", "availableCommands", "createdAt", "lastActivityAt"], optional: ["revision", "title", "labels", "priority", "prioritySet", "prioritySource", "runtimeSessionID", "runtimeKeepsCopy", "browserUsedAt", "isUnread", "isMuted", "reportSeenAt", "endedReason", "archivedReason", "usage", "lastTurnUsage", "costToDate", "costCeiling", "tokensToDate", "tokenCeiling", "plans", "background", "additionalDirectories", "mcpServers", "queuedPrompts", "suggestedPrompts", "startedByWorkflow", "purpose", "startedByRun", "startedByAgent", "chainDepth", "eventWait", "worktree", "pendingMove", "startingPoint", "startRequestID", "persona", "restartPickUps", "report", "outcomeAsked", "archiveRequest", "afterTurn", "archivedAt", "archiveWhy", "sandboxOverride", "effectiveSandbox", "pendingSandboxFailure", "desktopControlPause", "missingFolder", "listsLeftOut", "titleIsPersons", "runtimeTitle", "madeInRoot", "queuedStart", "branchedFrom", "movedFrom", "fileToSee", "continueWhenBack", "runningTool", "accountID", "auto", "clientPermission", "levels", "voiceHungUpAt", "goal", "project", "summary"] },
   AgentChanges: { required: ["epoch", "revision", "removed", "all"], optional: [] },
   AgentConfigEditorFile: { required: ["path", "content"], optional: [] },
   AgentConfigEditorRequest: { required: ["kind"], optional: ["folder"] },
@@ -19869,6 +19903,7 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   SessionSecretRemoveRequest: { required: ["agentID", "name"], optional: [] },
   SessionSecretSetRequest: { required: ["agentID", "name", "value"], optional: ["needsApproval", "description"] },
   SessionSecrets: { required: ["secrets"], optional: [] },
+  SessionSummary: { required: ["text", "state"], optional: ["at", "throughTurn", "model"] },
   SessionsListRequest: { required: ["runtimeID", "cwd"], optional: [] },
   SetCeilingRequest: { required: ["agentID"], optional: ["ceiling", "tokenCeiling"] },
   SetClientPermissionRequest: { required: ["agentID"], optional: ["mode"] },

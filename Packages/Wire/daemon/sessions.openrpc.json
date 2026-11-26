@@ -1368,6 +1368,28 @@
       }
     },
     {
+      "name": "agents/summarise",
+      "x-capability": "session-summary/1",
+      "tags": [],
+      "description": "A client opened the session in summary mode (#7321): when a turn has ended since the summary last read, write it again from the last text and the turns since, by one short call to the session's own runtime with its fastest model and no tools. It answers at once with the summary as it is (state writing while a write runs); agents/changed brings the new text. A session with no ended turn has no summary yet: the text is empty.",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "schema/sessions.schema.json#/definitions/AgentRequest"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema/sessions.schema.json#/definitions/SessionSummary"
+        }
+      }
+    },
+    {
       "name": "agents/touchedPaths",
       "x-capability": "agents/1",
       "tags": [
