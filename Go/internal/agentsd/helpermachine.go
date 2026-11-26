@@ -119,11 +119,15 @@ const previewStartMethod = "machines/previewStart"
 // the runtime, as the New Session form does: its name and Auto's reason, or Auto's own
 // words when no machine fits.
 func (d *Daemon) autoMachine(me *wire.Agent, runtime string) (name, why string, err error) {
-	project := projectOfFolder(folderPath(me))
+	return d.autoMachineIn(projectOfFolder(folderPath(me)), me.ID, runtime)
+}
+
+// autoMachineIn is autoMachine for a project, asked as the agent, or as the person with "".
+func (d *Daemon) autoMachineIn(project string, agent wire.UUID, runtime string) (name, why string, err error) {
 	if project == "" {
 		return "", "", Invalid("Nothing was started: this folder is in no project, so Auto has no machines to choose from. Name a machine and a folder.")
 	}
-	out, err := d.askWorkspaces(me.ID, previewStartMethod, wire.AutoMachineRequest{Project: project, RuntimeID: runtime})
+	out, err := d.askWorkspaces(agent, previewStartMethod, wire.AutoMachineRequest{Project: project, RuntimeID: runtime})
 	if err != nil {
 		_, msg := errMessage(err)
 		return "", "", Invalid("Nothing was started: Auto could not pick a machine (%s).", strings.TrimSuffix(msg, "."))
