@@ -17652,8 +17652,6 @@ export interface Methods {
   "auto/preview": { params: AutoPreviewRequest; result: AutoPreview };
   "auto/set": { params: AutoSettings; result: AutoSettings };
   "auto/state": { params: Empty; result: AutoSettings };
-  "autopilot/set": { params: AutopilotSetRequest; result: AutopilotStatus };
-  "autopilot/status": { params: AutopilotRequest; result: AutopilotStatus };
   "backups/configure": { params: BackupSettings; result: BackupState };
   "backups/make": { params: BackupMakeRequest; result: BackupState };
   "backups/restore": { params: BackupRestoreRequest; result: BackupRestoreResult };
@@ -18151,8 +18149,6 @@ export const MethodTarget = {
   "auto/preview": "host",
   "auto/set": "host",
   "auto/state": "host",
-  "autopilot/set": "host",
-  "autopilot/status": "host",
   "backups/configure": "host",
   "backups/make": "host",
   "backups/restore": "host",

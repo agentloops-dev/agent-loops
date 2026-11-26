@@ -35,11 +35,6 @@
     {
       "name": "autopilot/set",
       "x-capability": "autopilot/1",
-      "tags": [
-        {
-          "name": "web"
-        }
-      ],
       "paramStructure": "by-name",
       "params": [
         {
@@ -61,11 +56,6 @@
     {
       "name": "autopilot/status",
       "x-capability": "autopilot/1",
-      "tags": [
-        {
-          "name": "web"
-        }
-      ],
       "paramStructure": "by-name",
       "params": [
         {
