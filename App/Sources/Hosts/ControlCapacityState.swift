@@ -20,6 +20,10 @@ final class ControlCapacityState {
 
     var looks: [DaemonAPI.ControlCapacityCopy] { Array(copies.values) }
 
+    /// The copies once a read has worked; nil before (#7393): which machine runs the control plane
+    /// then falls back to the role.
+    var readLooks: [DaemonAPI.ControlCapacityCopy]? { readAt == nil ? nil : looks }
+
     /// The latest look of the copy that runs on `machine`.
     func look(for machine: MachineRef, controlMachines: Int) -> DaemonAPI.ControlCapacityCopy? {
         ControlPlaneMachine.look(for: machine, in: looks, controlMachines: controlMachines)

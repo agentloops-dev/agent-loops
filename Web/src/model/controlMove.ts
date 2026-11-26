@@ -3,7 +3,7 @@
 // control/moves/list as it connects, each step from control/moveChanged. For an admin with the flag
 // control-plane-move; the control plane answers admins only.
 import { signal } from "@preact/signals";
-import type { ControlEligible, ControlMove, ControlMovePhase } from "../protocol/generated";
+import type { ControlCapacityCopy, ControlEligible, ControlMachine, ControlMove, ControlMovePhase } from "../protocol/generated";
 import { fromWireDate } from "../protocol/dates";
 
 export const flagName = "control-plane-move";
@@ -102,6 +102,20 @@ export function meetsLine(eligible: ControlEligible): string {
   if (eligible.memoryBytes !== undefined) parts.push(`${bytesWords(eligible.memoryBytes)} memory`);
   if (eligible.diskFreeBytes !== undefined) parts.push(`${bytesWords(eligible.diskFreeBytes)} free disk`);
   return `It meets the checks: ${parts.join(", ")}.`;
+}
+
+/** The machine has the control role: it runs the control plane, or can take it (#6609). */
+export const controlRole = (machine: ControlMachine): boolean => machine.roles?.includes("control") === true;
+
+/** The machine runs the control plane now, as the window's ControlPlaneMachine.runsControl: a copy names it
+ * (#7393), not its role, since a team moves only to a control-only machine, which runs no copy until then. A
+ * copy from before #6591 names no machine: when it is the only copy, it runs on the only machine with the
+ * control role. Before the copies are read (null), the role says it, so nothing offers a move to the copy
+ * that runs. */
+export function runsControl(machine: ControlMachine, copies: readonly ControlCapacityCopy[] | null, controlMachines: number): boolean {
+  if (copies === null) return controlRole(machine);
+  if (copies.some((c) => c.machine === machine.id)) return true;
+  return controlRole(machine) && controlMachines === 1 && copies.length === 1 && copies[0]?.machine === undefined;
 }
 
 export const question = (name: string) => `Make ${name} the control plane?`;
