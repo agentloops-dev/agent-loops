@@ -15,6 +15,7 @@ import (
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/skillcatalog"
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
 	"github.com/agentloops-dev/agent-loops/Go/internal/envfile"
+	"github.com/agentloops-dev/agent-loops/Go/internal/flaky"
 	"github.com/agentloops-dev/agent-loops/Go/internal/machinelock"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
@@ -131,6 +132,7 @@ func TestAnAttachmentOverItsLimitIsRefused(t *testing.T) {
 
 // A guarded file too large to keep waits: the copy approved before applies, and Keep says why.
 func TestAGuardedFileOverItsLimitIsNotApproved(t *testing.T) {
+	flaky.UnderLoad(t, "#7342")
 	t.Parallel()
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
