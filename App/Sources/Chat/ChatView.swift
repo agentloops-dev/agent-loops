@@ -413,7 +413,7 @@ struct ChatView: View {
         if showsSummary(agent) {
             let work = popped?.work ?? model.work
             SessionSummaryPage(agent: agent,
-                               firstPrompt: work.turns.first?.ask?.text ?? work.entries.first?.text,
+                               firstPrompt: Self.firstPrompt(work),
                                turnCount: work.hasMoreOfTheConversation ? nil : work.turns.count,
                                isComingBack: model.isComingBack(agent),
                                cards: cards,
@@ -425,6 +425,16 @@ struct ChatView: View {
         } else {
             Transcript(agent: agent, bottomInset: formHeight, cards: cards)
         }
+    }
+
+    /// The person's first prompt, under a summary not written yet: the first turn's ask, else
+    /// the first message the person sent, never a note of the app's or the runtime's.
+    private static func firstPrompt(_ work: AgentsModel) -> String? {
+        if let ask = work.turns.first?.ask, case .userMessage(let text, _, _) = ask.kind { return text }
+        for entry in work.entries {
+            if case .userMessage(let text, _, _) = entry.kind { return text }
+        }
+        return nil
     }
 
     /// What can be done to the chat as a whole, at the right-hand edge of its column.

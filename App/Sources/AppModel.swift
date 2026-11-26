@@ -5201,8 +5201,9 @@ final class AppModel {
     func summarise(_ agentID: UUID) async {
         guard agent(agentID, has: Capability.sessionSummary1) else { return }
         do {
-            let _: SessionSummary = try await client(forAgent: agentID)
-                .call(DaemonAPI.Method.agentsSummarise, DaemonAPI.AgentRequest(agentID: agentID))
+            _ = try await client(forAgent: agentID).call(DaemonAPI.Method.agentsSummarise,
+                                                         DaemonAPI.AgentRequest(agentID: agentID),
+                                                         returning: SessionSummary.self)
         } catch {
             // The page keeps the summary it has, with its time (gate 2, #7320).
             Self.chatLog.info("agent \(agentID, privacy: .public): no summary asked: \(error.localizedDescription, privacy: .public)")
