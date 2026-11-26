@@ -19,10 +19,10 @@ import (
 )
 
 const installUsage = `usage: agentsd install --join <host code> [--name NAME] [--runtime ID]... [--project DIR]... [--from-pool]
-       agentsd install --control [--no-agents] [--domain NAME [--acme-email ADDR]] [--port N] [--name NAME] [--runtime ID]...
-       agentsd install --control --no-agents --join <host code> [--domain NAME [--acme-email ADDR]] [--port N] [--name NAME]
+       agentsd install --control [--no-agents] [--domain NAME [--acme-email ADDR] | --address HOST] [--port N] [--name NAME] [--runtime ID]...
+       agentsd install --control --no-agents --join <host code> [--domain NAME [--acme-email ADDR] | --address HOST] [--port N] [--name NAME]
 
---control also runs the control plane (agents-control) as a systemd user unit beside this host (#6610): no root, no container. Alone with --no-agents, the machine only runs the control plane. With both roles the host joins that control plane by itself, so no --join: this is for one person's machine only, never a team's (an agent there could read the control key). With --no-agents and --join, the machine also joins the current control plane with the control role alone (#7314), so a team's control plane can move to it: it takes no sessions, folders or providers. --domain makes a publicly trusted certificate (ACME) in the unit; without it the certificate is its own, pinned in every code.
+--control also runs the control plane (agents-control) as a systemd user unit beside this host (#6610): no root, no container. Alone with --no-agents, the machine only runs the control plane. With both roles the host joins that control plane by itself, so no --join: this is for one person's machine only, never a team's (an agent there could read the control key). With --no-agents and --join, the machine also joins the current control plane with the control role alone (#7314), so a team's control plane can move to it: it takes no sessions, folders or providers. --domain makes a publicly trusted certificate (ACME) in the unit; without it the certificate is its own, pinned in every code, and the address in each code is --address (a name or IP address other machines reach this one at), else this machine's own IP address, never its hostname (#7467).
 
 Sets this machine up (#5356): installs this host, joins the control plane, installs the
 runtimes, runs each project's .agents/setup.sh, and starts one short session to check the machine answers (step 8; --no-smoke leaves it out). Each step is reported to the control plane
@@ -60,6 +60,8 @@ func installCommand(args []string) int {
 			noAgents = true
 		case a == "--domain":
 			c.Domain = next()
+		case a == "--address":
+			c.Address = next()
 		case a == "--acme-email":
 			c.ACMEEmail = next()
 		case a == "--port":
@@ -72,7 +74,7 @@ func installCommand(args []string) int {
 		}
 	}
 	o.Smoke = !noSmoke
-	if noAgents && !control || control && !noAgents && o.Join != "" || (c.Domain != "" || c.Port != 0 || c.ACMEEmail != "") && !control ||
+	if noAgents && !control || control && !noAgents && o.Join != "" || (c.Domain != "" || c.Port != 0 || c.ACMEEmail != "" || c.Address != "") && !control || c.Domain != "" && c.Address != "" ||
 		noAgents && (len(o.Runtimes) > 0 || len(o.Projects) > 0 || o.FromPool) ||
 		o.Join == "" && !control {
 		fmt.Fprintln(os.Stderr, installUsage)

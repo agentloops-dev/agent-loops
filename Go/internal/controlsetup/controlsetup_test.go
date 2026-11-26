@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"strings"
@@ -247,5 +248,99 @@ func TestAddressIsWhatTheUnitServes(t *testing.T) {
 	}
 	if a := Address(home); a == nil || a.Port != 9001 || a.Domain != nil {
 		t.Errorf("Address = %+v, want port 9001", a)
+	}
+}
+
+// With no domain, the address in each code is one another machine can reach (#7467): the
+// machine's own IP address, or --address, never its hostname.
+func TestNoDomainGivesAnAddressAnotherMachineReaches(t *testing.T) {
+	public := netip.MustParseAddr("203.0.113.7")
+	for _, c := range []struct {
+		name    string
+		o       Options
+		ip      netip.Addr
+		public  bool
+		wantURL string
+		wantOut string
+	}{
+		{"public", Options{}, public, true, "https://203.0.113.7:8791", "reach this control plane at https://203.0.113.7:8791."},
+		{"private", Options{}, netip.MustParseAddr("10.0.0.4"), false, "https://10.0.0.4:8791", "private address"},
+		{"given", Options{Address: "plane.tail1234.ts.net", Port: 9001}, public, true, "https://plane.tail1234.ts.net:9001", "plane.tail1234.ts.net:9001"},
+		{"ipv6", Options{}, netip.MustParseAddr("2001:db8::7"), true, "https://[2001:db8::7]:8791", "[2001:db8::7]"},
+		{"none", Options{}, netip.Addr{}, false, "", "Install again with --address"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			home, exe := setup(t)
+			var out bytes.Buffer
+			d := Deps{Systemd: func() bool { return true }, Run: (&fake{}).run, Out: &out,
+				Address: func() (netip.Addr, bool) { return c.ip, c.public }}
+			c.o.Home, c.o.Executable = home, exe
+			if err := Install(context.Background(), c.o, d); err != nil {
+				t.Fatal(err)
+			}
+			unit, err := os.ReadFile(LayoutOf(home).Unit)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := urlHost(string(unit)); c.wantURL == "" && got != "" || c.wantURL != "" && !strings.Contains(string(unit), "Environment=AGENTS_CONTROL_URL="+c.wantURL+"\n") {
+				t.Errorf("unit's address, want %q:\n%s", c.wantURL, unit)
+			}
+			if !strings.Contains(out.String(), c.wantOut) {
+				t.Errorf("output lacks %q:\n%s", c.wantOut, out.String())
+			}
+		})
+	}
+}
+
+// An install again keeps the address it gave before, so codes already given stay good.
+func TestInstallAgainKeepsTheAddress(t *testing.T) {
+	home, exe := setup(t)
+	d := Deps{Systemd: func() bool { return true }, Run: (&fake{}).run,
+		Address: func() (netip.Addr, bool) { return netip.MustParseAddr("203.0.113.7"), true }}
+	if err := Install(context.Background(), Options{Home: home, Executable: exe}, d); err != nil {
+		t.Fatal(err)
+	}
+	d.Address = func() (netip.Addr, bool) { return netip.MustParseAddr("198.51.100.9"), true }
+	if err := Install(context.Background(), Options{Home: home, Executable: exe}, d); err != nil {
+		t.Fatal(err)
+	}
+	unit, _ := os.ReadFile(LayoutOf(home).Unit)
+	if !strings.Contains(string(unit), "AGENTS_CONTROL_URL=https://203.0.113.7:8791\n") {
+		t.Errorf("the address moved:\n%s", unit)
+	}
+}
+
+func TestInstallRefusesAnAddressThatIsAURL(t *testing.T) {
+	home, exe := setup(t)
+	d := Deps{Systemd: func() bool { return true }, Run: (&fake{}).run}
+	for _, a := range []string{"https://plane.example.com", "plane.example.com:8791", "plane example"} {
+		if err := Install(context.Background(), Options{Home: home, Executable: exe, Address: a}, d); err == nil {
+			t.Errorf("--address %q: no error", a)
+		}
+	}
+}
+
+func TestPickAddress(t *testing.T) {
+	ip := netip.MustParseAddr
+	for _, c := range []struct {
+		addrs    []netip.Addr
+		outbound netip.Addr
+		want     netip.Addr
+		public   bool
+	}{
+		// A droplet: its public IPv4 on eth0, beside a private one and a container bridge.
+		{[]netip.Addr{ip("127.0.0.1"), ip("172.17.0.1"), ip("10.0.0.4"), ip("203.0.113.7"), ip("2001:db8::7")}, ip("203.0.113.7"), ip("203.0.113.7"), true},
+		// Only IPv6 is public.
+		{[]netip.Addr{ip("10.0.0.4"), ip("fe80::1"), ip("2001:db8::7")}, ip("10.0.0.4"), ip("2001:db8::7"), true},
+		// Behind NAT: the default route's source, not the bridge's.
+		{[]netip.Addr{ip("127.0.0.1"), ip("172.17.0.1"), ip("192.168.1.20")}, ip("192.168.1.20"), ip("192.168.1.20"), false},
+		// No route out: a private IPv4 on an interface.
+		{[]netip.Addr{ip("127.0.0.1"), ip("192.168.1.20")}, netip.Addr{}, ip("192.168.1.20"), false},
+		{[]netip.Addr{ip("127.0.0.1"), ip("fe80::1")}, netip.Addr{}, netip.Addr{}, false},
+	} {
+		got, public := pickAddress(c.addrs, c.outbound)
+		if got != c.want || public != c.public {
+			t.Errorf("pickAddress(%v, %v) = %v %v, want %v %v", c.addrs, c.outbound, got, public, c.want, c.public)
+		}
 	}
 }
