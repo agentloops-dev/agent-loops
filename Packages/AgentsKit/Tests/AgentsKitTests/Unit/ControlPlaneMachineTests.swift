@@ -25,9 +25,30 @@ struct ControlPlaneMachineTests {
         let agents = try row("box", roles: ["agents"])
         let older = try row("old", roles: nil)
         #expect(ControlPlaneMachine.controlOnly(control))
-        #expect(!ControlPlaneMachine.controlOnly(both) && ControlPlaneMachine.runsControl(both))
-        #expect(!ControlPlaneMachine.runsControl(agents) && !ControlPlaneMachine.runsControl(older))
+        #expect(!ControlPlaneMachine.controlOnly(both) && ControlPlaneMachine.controlRole(both))
+        #expect(!ControlPlaneMachine.controlRole(agents) && !ControlPlaneMachine.controlRole(older))
         #expect(ControlPlaneMachine.first([agents, older, control]).map(\.id.rawValue) == ["control", "box", "old"])
+    }
+
+    /// #7393: a control-only machine that runs no copy is the one a team moves to, so a copy, not
+    /// the role, says which machine runs the control plane.
+    @Test func aCopyNotTheRoleSaysWhichMachineRunsTheControlPlane() throws {
+        let running = try row("vm-1", roles: ["control"])
+        let target = try row("vm-2", roles: ["control"])
+        let agents = try row("box", roles: ["agents"])
+        let copies = [look("a", machine: "vm-1")]
+        #expect(ControlPlaneMachine.runsControl(running, copies: copies, controlMachines: 2))
+        #expect(!ControlPlaneMachine.runsControl(target, copies: copies, controlMachines: 2))
+        #expect(!ControlPlaneMachine.runsControl(agents, copies: copies, controlMachines: 2))
+        // Before the first read, the role says it: nothing offers a move to the running copy.
+        #expect(ControlPlaneMachine.runsControl(target, copies: nil, controlMachines: 2))
+        #expect(!ControlPlaneMachine.runsControl(agents, copies: nil, controlMachines: 2))
+        // A copy from before #6591 names no machine: the only control machine runs it.
+        let unnamed = [look("b", machine: nil)]
+        #expect(ControlPlaneMachine.runsControl(running, copies: unnamed, controlMachines: 1))
+        #expect(!ControlPlaneMachine.runsControl(agents, copies: unnamed, controlMachines: 1))
+        #expect(!ControlPlaneMachine.runsControl(running, copies: unnamed, controlMachines: 2))
+        #expect(!ControlPlaneMachine.runsControl(nil, copies: copies, controlMachines: 1))
     }
 
     @Test func theLookIsTheCopyThatNamesTheMachine() {

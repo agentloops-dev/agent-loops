@@ -58,3 +58,24 @@ test("the checks and the confirmation say what happens", () => {
   assert.ok(same.includes("The address stays control.example.dev."));
   assert.equal(same.length, 4);
 });
+
+// #7393: a control-only machine that runs no copy is the one a team moves to, so a copy says which runs it.
+test("a copy, not the role, says which machine runs the control plane", () => {
+  const machine = (id, roles) => ({ id, name: id, roles });
+  const running = machine("vm-1", ["control"]);
+  const target = machine("vm-2", ["control"]);
+  const agents = machine("box", ["agents"]);
+  const copies = [{ copy: "a", machine: "vm-1" }];
+  assert.equal(m.runsControl(running, copies, 2), true);
+  assert.equal(m.runsControl(target, copies, 2), false);
+  assert.equal(m.runsControl(agents, copies, 2), false);
+  // Before the copies are read, the role says it: nothing offers a move to the copy that runs.
+  assert.equal(m.runsControl(target, null, 2), true);
+  assert.equal(m.runsControl(agents, null, 2), false);
+  // A copy from before #6591 names no machine: the only control machine runs it.
+  const unnamed = [{ copy: "b" }];
+  assert.equal(m.runsControl(running, unnamed, 1), true);
+  assert.equal(m.runsControl(agents, unnamed, 1), false);
+  assert.equal(m.runsControl(running, unnamed, 2), false);
+  assert.equal(m.controlRole(machine("old", undefined)), false);
+});

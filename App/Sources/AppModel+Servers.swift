@@ -113,7 +113,10 @@ extension AppModel {
                     await self?.people.connected(control)
                     await self?.signIn.connected(control)
                     // The control plane's own level, for an admin's Machines (#6591).
-                    if self?.showsControlPlaneMachine == true { await self?.controlCapacity.read(control) }
+                    // Its copies say which machine runs it, for Make This the Control Plane… too (#7393).
+                    if self?.showsControlPlaneMachine == true || self?.showsControlPlaneMove == true {
+                        await self?.controlCapacity.read(control)
+                    }
                     // A move of the control plane under way, or just ended (#6614).
                     if self?.showsControlPlaneMove == true { await self?.controlMove.read(control) }
                     // A change of this Mac's zone is the person's, while connected (#4818).
