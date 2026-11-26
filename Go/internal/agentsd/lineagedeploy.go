@@ -80,8 +80,10 @@ type bringsEntry struct {
 type lineageDeployBook struct {
 	deployBookMu sync.Mutex
 	deployStore  *store.JSONFile[deployRecord]
-	deployFile   *deploysFile
-	brings       map[string]bringsEntry
+	// autopilotFile is the status of Autopilot in each folder (autopilot.go, #5898).
+	autopilotFile *store.JSONFile[autopilotRecord]
+	deployFile    *deploysFile
+	brings        map[string]bringsEntry
 	// bringsAsking is the deploys being worked out now; bringsSlots bounds them.
 	bringsAsking map[string]bool
 	bringsSlots  chan struct{}

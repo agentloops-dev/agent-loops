@@ -33,6 +33,58 @@
       "description": "Write a file an agent may read, whole (#415). With `base`, refused with fileChanged when the file changed on disk since the edit began (#1858), so nobody's change is written over unseen."
     },
     {
+      "name": "autopilot/set",
+      "x-capability": "autopilot/1",
+      "tags": [
+        {
+          "name": "web"
+        }
+      ],
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "schema/files.schema.json#/definitions/AutopilotSetRequest"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema/files.schema.json#/definitions/AutopilotStatus"
+        }
+      },
+      "description": "Choose what Autopilot starts in a folder (#5898). Turning it on, or to high, for one folder of a project turns it off for the project's other folders on this machine; the control plane does the same across machines."
+    },
+    {
+      "name": "autopilot/status",
+      "x-capability": "autopilot/1",
+      "tags": [
+        {
+          "name": "web"
+        }
+      ],
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "schema/files.schema.json#/definitions/AutopilotRequest"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema/files.schema.json#/definitions/AutopilotStatus"
+        }
+      },
+      "description": "What Autopilot did in a folder and why each item waits (#5898): at most 100 rows. With the mode off it has no rows."
+    },
+    {
       "name": "backups/changed",
       "x-capability": "backups/1",
       "tags": [

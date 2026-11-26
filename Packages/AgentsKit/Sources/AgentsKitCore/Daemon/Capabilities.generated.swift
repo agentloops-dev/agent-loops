@@ -20,6 +20,7 @@ public enum Capability {
     public static let auditSinks1 = "audit.sinks/1"
     public static let autoMachine1 = "auto-machine/1"
     public static let auto1 = "auto/1"
+    public static let autopilot1 = "autopilot/1"
     public static let backupsStore1 = "backups.store/1"
     public static let backups1 = "backups/1"
     public static let bots1 = "bots/1"
@@ -327,6 +328,8 @@ public enum Capability {
         "auto/preview": "auto/1",
         "auto/set": "auto/1",
         "auto/state": "auto/1",
+        "autopilot/set": "autopilot/1",
+        "autopilot/status": "autopilot/1",
         "backups/configure": "backups/1",
         "backups/make": "backups/1",
         "backups/restore": "backups/1",
