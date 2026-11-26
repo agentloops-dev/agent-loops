@@ -116,6 +116,7 @@ const CapHostLock1 = "host.lock/1"
 const CapHostLock2 = "host.lock/2"
 const CapHostLock3 = "host.lock/3"
 const CapHostLock4 = "host.lock/4"
+const CapHostMachineSetup1 = "host.machine-setup/1"
 const CapHostOrgRoutes1 = "host.org-routes/1"
 const CapHostOrgRoutes2 = "host.org-routes/2"
 const CapHostPolicyLayers1 = "host.policy-layers/1"
@@ -638,7 +639,9 @@ var HostCapabilities = pairs([][2]string{
 	{"sessions/list", "sessions/1"},
 	{"settings/passThrough", "host.policy/1"},
 	{"settings/userPart", "host.user-settings/4"},
+	{"setup/approve", "host.machine-setup/1"},
 	{"setup/projects", "machine.setup/1"},
+	{"setup/scripts", "host.machine-setup/1"},
 	{"shell/attach", "shell/1"},
 	{"shell/close", "shell/1"},
 	{"shell/detach", "shell/1"},

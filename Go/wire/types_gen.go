@@ -9988,6 +9988,12 @@ type MachineSetupReport struct {
 
 	// The digits the host shows for its join token (controllink.TokenCode), said with the compare step: the control plane compares them with the ones it made (#5359).
 	Code *string `json:"code,omitzero"`
+
+	// The SHA-256, in lower-case hexadecimal, of the script that the root or user step runs (#7167).
+	Hash *string `json:"hash,omitzero"`
+
+	// The step is done with a warning in its detail, such as a provider that cannot run root set-up (#7167).
+	Warning *bool `json:"warning,omitzero"`
 }
 
 type MachineSetupSource struct {
@@ -10023,9 +10029,15 @@ type MachineSetupStep struct {
 	FromPool *bool `json:"fromPool,omitzero"`
 
 	Slower *bool `json:"slower,omitzero"`
+
+	// The SHA-256, in lower-case hexadecimal, of the script that the root or user step runs (#7167).
+	Hash *string `json:"hash,omitzero"`
+
+	// The step is done with a warning in its detail, such as a provider that cannot run root set-up (#7167).
+	Warning *bool `json:"warning,omitzero"`
 }
 
-// The eight steps, in order: create machine, join machine, install Agents, compare digits, install runtimes, send projects, sign in to runtimes, smoke session.
+// The steps: create machine, join machine, install Agents, compare digits, install runtimes, send projects, sign in to runtimes, smoke session (#5353), and root set-up and your set-up, each only when its script was sent (#7167). The control plane reads a set-up by step id: a client that does not know an id shows it as its name.
 type MachineSetupStepID string
 
 const MachineSetupStepIDCreate MachineSetupStepID = "create"
@@ -10036,6 +10048,8 @@ const MachineSetupStepIDRuntimes MachineSetupStepID = "runtimes"
 const MachineSetupStepIDProjects MachineSetupStepID = "projects"
 const MachineSetupStepIDSignIn MachineSetupStepID = "signIn"
 const MachineSetupStepIDSmoke MachineSetupStepID = "smoke"
+const MachineSetupStepIDRoot MachineSetupStepID = "root"
+const MachineSetupStepIDUser MachineSetupStepID = "user"
 
 // machine/setupWork: what the set-up of the machine that asks has left (#6890, #6896). pool: a warm pool made it. claimed: a person claimed it, and from is the first of steps 6 to 8 that waits to run (absent: none does now). done: nothing is left to ask for. projects: the project folders to get, at their last commit. An unclaimed machine does step 6 and stops.
 type MachineSetupWork struct {
@@ -15570,11 +15584,48 @@ type SettleUntrustedYourPolicyRequest struct {
 	Sign bool `json:"sign"`
 }
 
+// setup/approve (#7167): a client of the person's lock approves the text of one of this machine's set-up scripts as it is now, for machines as they are made (scope made) or for one machine (m:<id>). approval is a setup.script record whose subject is script and whose content is the script's hash and size; empty content takes the approval of that scope away. The machine keeps the text and the approval only when the record checks against its lock, its number is not lower than the last of its scope, and the file is that text.
+type SetupApprove struct {
+	Script string `json:"script"`
+
+	Approval LockRecord `json:"approval"`
+}
+
+// One set-up script on this machine (#7167): root (root.sh) or setup (setup.sh) in ~/.agents/machine-setup/. present: the file is there. text, hash and size are the file as it is now (hash: SHA-256 in lower-case hexadecimal); problem says why they are absent from a file that is there (over its limit, or unreadable). approvedText and approvedHash are the text a client approved last, and approvals the records in force for it, one a scope. changed: the file is not the approved text, so it is not used until a client approves it. nextSeq is the number to sign the next approval with.
+type SetupScript struct {
+	Name string `json:"name"`
+
+	Present bool `json:"present"`
+
+	Text *string `json:"text,omitzero"`
+
+	Hash *string `json:"hash,omitzero"`
+
+	Size *int64 `json:"size,omitzero"`
+
+	Problem *string `json:"problem,omitzero"`
+
+	ApprovedText *string `json:"approvedText,omitzero"`
+
+	ApprovedHash *string `json:"approvedHash,omitzero"`
+
+	Approvals []LockRecord `json:"approvals"`
+
+	Changed bool `json:"changed"`
+
+	NextSeq int64 `json:"nextSeq"`
+}
+
 // The content of a setup.script record (#7167): the script's SHA-256 in lower-case hexadecimal, and its length in bytes (at least 1).
 type SetupScriptApproval struct {
 	Hash string `json:"hash"`
 
 	Size int64 `json:"size"`
+}
+
+// setup/scripts (#7167): this machine's two set-up scripts, root then setup, as a client reads them to approve one.
+type SetupScripts struct {
+	Scripts []SetupScript `json:"scripts"`
 }
 
 type SharedInstructions struct {

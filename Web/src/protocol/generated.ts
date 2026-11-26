@@ -97,6 +97,7 @@ export const Failure = {
   sandboxWillNotStart: -32061,
   sessionGone: -32003,
   sessionLiveElsewhere: -32097,
+  setupScriptChanged: -32111,
   shellNotLive: -32011,
   shellWillNotStart: -32010,
   signInWanted: -32070,
@@ -9532,6 +9533,15 @@ export interface MachineSetupReport {
    * step: the control plane compares them with the ones it made (#5359).
    */
   code?: string;
+  /**
+   * The SHA-256, in lower-case hexadecimal, of the script that the root or user step runs (#7167).
+   */
+  hash?: string;
+  /**
+   * The step is done with a warning in its detail, such as a provider that cannot run root set-up
+   * (#7167).
+   */
+  warning?: boolean;
 }
 
 export interface MachineSetupSource {
@@ -9561,11 +9571,22 @@ export interface MachineSetupStep {
   error?: string;
   fromPool?: boolean;
   slower?: boolean;
+  /**
+   * The SHA-256, in lower-case hexadecimal, of the script that the root or user step runs (#7167).
+   */
+  hash?: string;
+  /**
+   * The step is done with a warning in its detail, such as a provider that cannot run root set-up
+   * (#7167).
+   */
+  warning?: boolean;
 }
 
 /**
- * The eight steps, in order: create machine, join machine, install Agents, compare digits, install
- * runtimes, send projects, sign in to runtimes, smoke session.
+ * The steps: create machine, join machine, install Agents, compare digits, install runtimes, send
+ * projects, sign in to runtimes, smoke session (#5353), and root set-up and your set-up, each only
+ * when its script was sent (#7167). The control plane reads a set-up by step id: a client that does
+ * not know an id shows it as its name.
  */
 export type MachineSetupStepID =
   | "create"
@@ -9575,7 +9596,9 @@ export type MachineSetupStepID =
   | "runtimes"
   | "projects"
   | "signIn"
-  | "smoke";
+  | "smoke"
+  | "root"
+  | "user";
 
 /**
  * machine/setupWork: what the set-up of the machine that asks has left (#6890, #6896). pool: a warm
@@ -14912,12 +14935,56 @@ export interface SettleUntrustedYourPolicyRequest {
 }
 
 /**
+ * setup/approve (#7167): a client of the person's lock approves the text of one of this machine's
+ * set-up scripts as it is now, for machines as they are made (scope made) or for one machine
+ * (m:<id>). approval is a setup.script record whose subject is script and whose content is the
+ * script's hash and size; empty content takes the approval of that scope away. The machine keeps
+ * the text and the approval only when the record checks against its lock, its number is not lower
+ * than the last of its scope, and the file is that text.
+ */
+export interface SetupApprove {
+  script: "root" | "setup";
+  approval: LockRecord;
+}
+
+/**
+ * One set-up script on this machine (#7167): root (root.sh) or setup (setup.sh) in
+ * ~/.agents/machine-setup/. present: the file is there. text, hash and size are the file as it is
+ * now (hash: SHA-256 in lower-case hexadecimal); problem says why they are absent from a file that
+ * is there (over its limit, or unreadable). approvedText and approvedHash are the text a client
+ * approved last, and approvals the records in force for it, one a scope. changed: the file is not
+ * the approved text, so it is not used until a client approves it. nextSeq is the number to sign
+ * the next approval with.
+ */
+export interface SetupScript {
+  name: "root" | "setup";
+  present: boolean;
+  text?: string;
+  hash?: string;
+  size?: number;
+  problem?: string;
+  approvedText?: string;
+  approvedHash?: string;
+  approvals: LockRecord[];
+  changed: boolean;
+  nextSeq: number;
+}
+
+/**
  * The content of a setup.script record (#7167): the script's SHA-256 in lower-case hexadecimal, and
  * its length in bytes (at least 1).
  */
 export interface SetupScriptApproval {
   hash: string;
   size: number;
+}
+
+/**
+ * setup/scripts (#7167): this machine's two set-up scripts, root then setup, as a client reads them
+ * to approve one.
+ */
+export interface SetupScripts {
+  scripts: SetupScript[];
 }
 
 export interface SharedInstructions {
@@ -17709,6 +17776,8 @@ export interface Methods {
   "control/capacity": { params: Empty; result: ControlCapacityBoard };
   "control/connectAnother": { params: ConnectAnotherRequest; result: Empty };
   "control/eligible": { params: ControlEligibleRequest; result: ControlEligible };
+  "control/move": { params: ControlMoveRequest; result: ControlMoveResult };
+  "control/moves/list": { params: Empty; result: ControlMoves };
   "control/planeMove": { params: PlaneMoveAsk; result: Empty };
   "control/restart": { params: Empty; result: Empty };
   "control/retryWeb": { params: Empty; result: WebRemoteStatus };
@@ -18206,6 +18275,8 @@ export const MethodTarget = {
   "control/capacity": "control",
   "control/connectAnother": "control",
   "control/eligible": "control",
+  "control/move": "control",
+  "control/moves/list": "control",
   "control/planeMove": "control",
   "control/restart": "control",
   "control/retryWeb": "control",
@@ -18620,6 +18691,7 @@ export interface Notifications {
   "control/lockChanged": LockHead;
   "control/lockJoinDecided": LockJoinDecided;
   "control/lockJoinRequested": LockJoinRequest;
+  "control/moveChanged": ControlMove;
   "control/orgRoutesChanged": Empty;
   "control/peopleChanged": PeopleChanged;
   "control/planeMoveReported": PlaneMoveReport;
@@ -19376,9 +19448,9 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   MachineSetup: { required: ["steps", "startedAt"], optional: ["readyAt"] },
   MachineSetupProject: { required: ["path", "sources"], optional: ["project"] },
   MachineSetupProjects: { required: ["pool", "finished", "folders"], optional: ["detail", "problem"] },
-  MachineSetupReport: { required: ["step", "state"], optional: ["detail", "error", "fromPool", "code"] },
+  MachineSetupReport: { required: ["step", "state"], optional: ["detail", "error", "fromPool", "code", "hash", "warning"] },
   MachineSetupSource: { required: ["machine", "name", "online"], optional: [] },
-  MachineSetupStep: { required: ["id", "state"], optional: ["startedAt", "endedAt", "detail", "error", "fromPool", "slower"] },
+  MachineSetupStep: { required: ["id", "state"], optional: ["startedAt", "endedAt", "detail", "error", "fromPool", "slower", "hash", "warning"] },
   MachineSetupWork: { required: ["pool", "claimed", "done", "projects"], optional: ["from"] },
   MachineStatus: { required: ["idle", "running"], optional: ["schedule"] },
   MachineStop: { required: ["host"], optional: ["confirmRunning"] },
@@ -19806,7 +19878,10 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   SetWorkingHoursRequest: { required: ["folder"], optional: ["hours"] },
   SetYourPolicyRequest: { required: ["rules", "revision"], optional: [] },
   SettleUntrustedYourPolicyRequest: { required: ["file", "revision", "sign"], optional: [] },
+  SetupApprove: { required: ["script", "approval"], optional: [] },
+  SetupScript: { required: ["name", "present", "approvals", "changed", "nextSeq"], optional: ["text", "hash", "size", "problem", "approvedText", "approvedHash"] },
   SetupScriptApproval: { required: ["hash", "size"], optional: [] },
+  SetupScripts: { required: ["scripts"], optional: [] },
   SharedInstructions: { required: ["path", "exists", "reach"], optional: [] },
   SharedLook: { required: ["kind", "page", "item", "text"], optional: [] },
   SharedMCP: { required: ["file", "servers", "app", "runtimeOnly"], optional: ["problem"] },

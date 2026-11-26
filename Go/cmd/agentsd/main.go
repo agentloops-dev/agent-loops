@@ -492,7 +492,7 @@ func keepUplink(ctx context.Context, cl commandLine, d *agentsd.Daemon, member *
 		// The control role alone (#7314): the link is for the store copy and the handover.
 		up.Accept, up.Lend = agentsd.RefuseAgentWork, nil
 	}
-	d.Tunneler = up
+	d.SetTunneler(up)
 	// The needs it shows nowhere go to the control plane, offered again on each return (#1367).
 	up.OnChange = func(connected bool, problem string) {
 		writeJoinStatus(loc.Root, connected, problem)

@@ -863,7 +863,8 @@ func (c *channel) end(tell bool) {
 
 // OpenTunnel asks the control plane for a tunnel to the host that lends runtime's sign-in
 // (T091): tunnel/open on channel 0, then an open frame with the same ref. Its lines are
-// bytes, base64 in a JSON string.
+// bytes, base64 in a JSON string. The control plane's refusal is an *AskError (#7369): a
+// notPermitted one says that no host lends this one runtime's sign-in now.
 func (u *Uplink) OpenTunnel(ctx context.Context, runtime string) (Conn, error) {
 	ref := strings.ToLower(newRef())
 	wait := make(chan *channel, 1)
@@ -874,14 +875,27 @@ func (u *Uplink) OpenTunnel(ctx context.Context, runtime string) (Conn, error) {
 	u.tunnels[ref] = wait
 	u.mu.Unlock()
 	defer func() { u.mu.Lock(); delete(u.tunnels, ref); u.mu.Unlock() }()
-	u.Tell("tunnel/open", map[string]string{"runtime": runtime, "ref": ref})
-	select {
-	case c := <-wait:
-		return c, nil
-	case <-time.After(15 * time.Second):
-		return nil, errors.New("the control plane did not open the tunnel")
-	case <-ctx.Done():
-		return nil, ctx.Err()
+	id, answer, err := u.request("tunnel/open", map[string]string{"runtime": runtime, "ref": ref})
+	if err != nil {
+		return nil, err
+	}
+	defer u.forget(id)
+	timeout := time.After(15 * time.Second)
+	for {
+		select {
+		case c := <-wait:
+			return c, nil
+		case r := <-answer:
+			if r.err != nil {
+				return nil, r.err
+			}
+			// Opened: the channel's open frame comes on wait.
+			answer = nil
+		case <-timeout:
+			return nil, errors.New("the control plane did not open the tunnel")
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
 	}
 }
 
