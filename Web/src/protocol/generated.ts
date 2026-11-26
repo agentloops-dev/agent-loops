@@ -1372,6 +1372,23 @@ export type BackupTarget =
   | "folder"
   | "control";
 
+/** A blob in the artifact store (#5715, epic #5713): bytes at a sha256 digest. */
+export interface BlobInfo {
+  /** The blob's id, "sha256:" and 64 lower-case hex digits. */
+  digest: string;
+  /** The blob's length in bytes. */
+  size: number;
+  /** When the blob was first written, in RFC 3339. */
+  stored: string;
+}
+
+/** One page of a blob listing, in digest order, at most 1000 blobs (#5715). */
+export interface BlobPage {
+  blobs: BlobInfo[];
+  /** Pass as the next listing's after to get the next page; absent on the last page. */
+  next?: string;
+}
+
 export interface Block {
   waits: Wait[];
   /** When the wait ends if its sessions have not (#5152; was checkAgainAt). */
@@ -18545,6 +18562,8 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   BackupStoreList: { required: ["backups"], optional: [] },
   BackupStorePart: { required: ["name", "part", "data"], optional: [] },
   BackupStorePartRequest: { required: ["id", "part"], optional: [] },
+  BlobInfo: { required: ["digest", "size", "stored"], optional: [] },
+  BlobPage: { required: ["blobs"], optional: ["next"] },
   Block: { required: ["waits"], optional: ["deadline", "wakeOn", "clearedAt", "clearedBy"] },
   BotCaps: { required: ["user", "caps"], optional: ["group"] },
   BotMade: { required: ["user"], optional: [] },
