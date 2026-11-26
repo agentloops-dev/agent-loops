@@ -25,9 +25,6 @@ import { Telling } from "./Telling";
 import { commandQuery, completeCommand, completeMention, fileName, fileURL, matchingCommands, mentionQuery } from "../model/completions";
 import { Icon } from "./Icon";
 
-/** A send usually lands before anyone could read a word; words only for one still going after this. */
-const slowSend = 400;
-
 /** A word typed quickly is one question to the host, not six, as the Remote's. */
 const mentionPause = 150;
 
@@ -83,7 +80,6 @@ export function Prompt({ store, draftKey, placeholder, capabilities, runtimeName
   const attachments = useSignal<Attachment[]>(kept?.attachments ?? []);
   const said = useSignal<string | null>(null);
   const sending = useSignal(false);
-  const slow = useSignal(false);
   const picker = useRef<HTMLInputElement>(null);
   const field = useRef<HTMLTextAreaElement>(null);
   // Escape puts the suggestion away until the agent offers another.
@@ -219,13 +215,6 @@ export function Prompt({ store, draftKey, placeholder, capabilities, runtimeName
   useEffect(() => { onAttachments?.(attachments.value); }, [attachments.value]);
   const canSend = !disabled && !sending.value && text.value.trim() !== "" && !tooMuch && !refused;
 
-  useEffect(() => {
-    slow.value = false;
-    if (!sending.value) return;
-    const timer = setTimeout(() => (slow.value = true), slowSend);
-    return () => clearTimeout(timer);
-  }, [sending.value]);
-
   /**
    * A prompt to an agent leaves the field at once, so sending feels immediate, and is given back
    * if it did not go and nothing new was typed. A new session has no chat to show it in, so its
@@ -264,9 +253,8 @@ export function Prompt({ store, draftKey, placeholder, capabilities, runtimeName
           {runtime && <div class="bar-runtime">{runtime}</div>}
         </div>
       )}
-      {sending.value && (starting || slow.value) && (
-        <Telling recipient={recipient} doing={starting ? "Starting" : "Sending"} />
-      )}
+      {/* A start can take seconds; a send has only the spinner in the button, whose label says it (#5856). */}
+      {sending.value && starting && <Telling recipient={recipient} doing="Starting" />}
       <div class={`prompt${disabled ? " off" : ""}`}
         onDragOver={(e) => { e.preventDefault(); }}
         onDrop={(e) => {

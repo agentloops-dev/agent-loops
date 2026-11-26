@@ -59,7 +59,6 @@ struct PromptBar: View {
     /// Prompts this bar has sent that the host has not yet taken (#87). The send button
     /// spins meanwhile; past a beat, the bar says so in words too.
     @State private var sending = 0
-    @State private var sendingIsSlow = false
 
     private var agent: Agent? {
         // The background window's bar is never the main window's session's (#5798).
@@ -169,23 +168,13 @@ struct PromptBar: View {
                     autoRefusal(reasons)
                 }
                 // On its way (#87): a start can take seconds, making a worktree and a
-                // runtime, and a send to a slow host as long.
+                // runtime. A send has only the spinner in the button (#5856).
                 if agent == nil, model.isStarting {
                     Telling(host: recipient, doing: AgentState.startingLabel)
-                } else if agent != nil, sending > 0, sendingIsSlow {
-                    Telling(host: recipient, doing: "Sending")
                 }
                 field
                 options
             }
-        }
-        // A send is usually back before anyone could read a word; the spinner in the
-        // button is enough for that. Words only for one still going after a beat.
-        .task(id: sending > 0) {
-            sendingIsSlow = false
-            guard sending > 0 else { return }
-            try? await Task.sleep(for: .milliseconds(400))
-            if !Task.isCancelled { sendingIsSlow = true }
         }
         // The same column the transcript draws in, so the bar's edges track its edges
         // at every width (FR-021).
@@ -685,6 +674,8 @@ struct PromptBar: View {
                           : targetSettingUp ? MachineSetupWords.noSessionYet(model.hosts.label(targetHost))
                           : PromptWords.sendHelp(willQueue: willQueue))
                     .accessibilityLabel(PromptWords.sendLabel(willQueue: willQueue))
+                    // The spinner, in words (#5856).
+                    .accessibilityValue(isGoing ? Telling.words(doing: isNew ? AgentState.startingLabel : "Sending", host: recipient) : "")
                 }
             }
         }
