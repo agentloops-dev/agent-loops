@@ -72,9 +72,10 @@ func (d *Daemon) summarise(r wire.AgentRequest) (wire.SessionSummary, error) {
 	d.summaryMu.Unlock()
 	through := fresh[len(fresh)-1].ID
 	prompt := summaryPrompt(have.Text, fresh)
-	d.goJob("session summary", func() { d.writeSummary(*a, through, prompt) })
+	// Saved before the job starts: a fast one must not be overwritten by "writing".
 	have.State = wire.SessionSummaryStateWriting
 	d.keepSummary(r.AgentID, have)
+	d.goJob("session summary", func() { d.writeSummary(*a, through, prompt) })
 	return have, nil
 }
 
