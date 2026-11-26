@@ -88,4 +88,18 @@ struct MachineSetupWordsTests {
         let step = try JSONDecoder().decode(DaemonAPI.MachineSetupStep.self, from: Data(json.utf8))
         #expect(step.warning == true && step.hash == "ab12")
     }
+
+    /// #7159: the root command sheet's words, and what its calls answer.
+    @Test func rootByHand() throws {
+        #expect(MachineSetupWords.rootFailedAdvice("dev-3").contains("Or copy a command that you run as root there, then press Try Again."))
+        #expect(MachineSetupWords.rootCommandLead("nas", failed: false).hasPrefix("No provider makes nas, so Agent Loops can’t be root there."))
+        #expect(MachineSetupWords.rootCommandLead("dev-3", failed: true) == "Run this as root, or with sudo, on dev-3:")
+        #expect(MachineSetupWords.rootSudoWarning("nas").contains("agents there can become root"))
+        let log = try JSONDecoder().decode(DaemonAPI.SetupRootLog.self, from: Data(#"{"text":"E: x\n","cut":true}"#.utf8))
+        #expect(log.cut && log.text == "E: x\n")
+        let command = try JSONDecoder().decode(DaemonAPI.SetupRootCommand.self, from: Data(#"{"command":"printf %s YQ== | base64 -d | sudo sh","hash":"ab"}"#.utf8))
+        #expect(command.command.hasSuffix("| sudo sh"))
+        let again = String(decoding: try JSONEncoder().encode(DaemonAPI.SetupRootAgain(rest: true)), as: UTF8.self)
+        #expect(again == #"{"rest":true}"#)
+    }
 }

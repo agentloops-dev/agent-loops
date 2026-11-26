@@ -165,31 +165,6 @@ func TestAPersonMovesAndDoesNotCancelTheAgentsOwnMove(t *testing.T) {
 	}
 }
 
-func TestGitFillStaysOffTheWindowAndAnswersTheControlPlane(t *testing.T) {
-	d, c := start(t, t.TempDir())
-	defer d.Shutdown()
-	if e := c.callError(t, 1, "git/fill", map[string]any{"protocol": "https", "host": "github.com"}); e.Code != -32601 {
-		t.Fatalf("a window could read the password: %+v", e)
-	}
-	setFor(t, &fillGitCredential, func(attributes string) (string, error) {
-		if attributes != "protocol=https\nhost=github.com\n\n" {
-			t.Errorf("asked git for %q", attributes)
-		}
-		return "username=alex\npassword=s3cret\n", nil
-	})
-	cred := d.fillGit(mustJSON(wire.GitCredentialRequest{Protocol: "https", Host: "github.com"}))
-	if cred.Username != "alex" || cred.Password != "s3cret" {
-		t.Fatal("credential mismatch")
-	}
-	if got := d.fillGit(mustJSON(wire.GitCredentialRequest{Protocol: "http", Host: "github.com"})); got.Password != "" {
-		t.Fatal("http was filled")
-	}
-	out, ok := d.Asked("git/fill", mustJSON(wire.GitCredentialRequest{Protocol: "https", Host: "github.com"}))
-	if !ok || out.(wire.GitCredential).Username != "alex" {
-		t.Fatal("the control plane was not answered")
-	}
-}
-
 // The app's own tools are allowed with no card, under Claude's name and Antigravity's
 // (agents_<tool>, #1361); a runtime's own tool with a look-alike name still asks.
 func TestAppToolTitlesAllowedWithNoCard(t *testing.T) {

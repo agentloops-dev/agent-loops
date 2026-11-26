@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+
+	"github.com/agentloops-dev/agent-loops/Go/internal/sizewords"
 )
 
 // The machines' bounds (#6758, epic #6669). They are a person's data, so a write over a
@@ -120,7 +122,7 @@ func (r *Records) machineChangeWithin(ctx context.Context, before, after Machine
 		return nil
 	}
 	set := func(h MachineRecord) (int, error) {
-		return machineSize(MachineRecord{Labels: h.Labels, SignInFrom: h.SignInFrom, GitFrom: h.GitFrom})
+		return machineSize(MachineRecord{Labels: h.Labels, SignInFrom: h.SignInFrom})
 	}
 	had, err := set(before)
 	if err != nil {
@@ -142,7 +144,7 @@ func machineSize(h MachineRecord) (int, error) {
 }
 
 func machineTooLarge(size int) error {
-	return &MachineLimitError{fmt.Sprintf("What is kept of this machine is too large: %d bytes, and the most is %d.", size, MachineMostBytes)}
+	return &MachineLimitError{fmt.Sprintf("This machine's details are too large to keep: %s, and the most is %s. Remove some of its labels, or some of what is lent to it.", sizewords.Int(size), sizewords.Int(MachineMostBytes))}
 }
 
 // RemoveHostIf removes a machine that still passes still, read again if another copy wrote

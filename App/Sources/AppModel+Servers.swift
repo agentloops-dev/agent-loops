@@ -536,12 +536,6 @@ extension AppModel {
                                                    startForSchedules: startForSchedules))
     }
 
-    /// Stop Lending on a machine's page (#1122, #3975): it stops using a Mac's git access for one server.
-    func stopLendingGit(_ host: MachineRef, from: MachineRef, server: String) async {
-        await controlCall(DaemonAPI.Method.hostsLendGit,
-                          DaemonAPI.LendGit(host: host, from: from, server: server, allowed: false))
-    }
-
     /// Approve or Deny on a machine's card (#994): a refusal is the window's alert.
     func answerJoin(_ request: DaemonAPI.JoinRequest, approve: Bool) async {
         if let refused = await people.answer(request, approve: approve, on: controlRequests) {

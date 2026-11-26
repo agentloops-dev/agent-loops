@@ -690,6 +690,9 @@ func (p *Providers) forAgent(person string) AgentMachines {
 	for _, h := range hosts {
 		if p.hooks.OwnerOf(h.ID) == person {
 			host := AgentHost{Name: h.Name, State: p.router.HostState(h.ID)}
+			if h.Platform != "" {
+				host.Platform = &h.Platform
+			}
 			if p.hooks.Capacity != nil {
 				if level, load5, at, ok := p.hooks.Capacity(h.ID); ok {
 					host.Capacity, host.LoadPerCore5, host.CapacityAt = &level, load5, new(wire.DateOf(at))

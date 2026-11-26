@@ -1351,7 +1351,7 @@
     "annotations": {
       "readOnlyHint": true
     },
-    "description": "The trailer lines for a commit by this session, by the commit trailers rule of this folder's policy (Made-by, Session, Fixes, Epic, Requested-by, Approved-by, Cost, Tokens, Duration, Co-authored-by; each on or off by the policy, and one with no value is left out). With pr, the lines for that pull request's squash message: Fixes in place of Refs, its approvers, and the totals of every session on it. Write the lines as they come, as the last paragraph of the message: for a squash, in the file you give gh pr merge --auto --squash --body-file. Never type a trailer by hand.",
+    "description": "The trailer lines for a commit by this session, by the commit trailers rule of this folder's policy (Managed-by, Runtime, Model, Session, Fixes, Epic, Requested-by, Approved-by, Cost, Tokens, Duration; each on or off by the policy, and one with no value is left out; a Co-authored-by is the runtime's own, never one of these). With pr, the lines for that pull request's squash message: Fixes in place of Refs, its approvers, and the totals of every session on it. Write the lines as they come, as the last paragraph of the message: for a squash, in the file you give gh pr merge --auto --squash --body-file. Never type a trailer by hand.",
     "inputSchema": {
       "type": "object",
       "properties": {

@@ -472,6 +472,9 @@ type AgentMachinesHost struct {
 
 	// When the control plane last heard its capacity. A figure older than 2 minutes is no figure (Auto's rule).
 	CapacityAt *Date `json:"capacityAt,omitzero"`
+
+	// The machine's platform as it announced it (macOS 15, Linux), so Autopilot (#5900) sends a linux-ok issue to a Linux machine. Absent when it did not say.
+	Platform *string `json:"platform,omitzero"`
 }
 
 type AgentMachinesMachine struct {
@@ -3090,7 +3093,7 @@ type CommitTrailerValue string
 const CommitTrailerValueOn CommitTrailerValue = "on"
 const CommitTrailerValueOff CommitTrailerValue = "off"
 
-// The trailers of an agent's commits, each on or off, by the trailer's key (#6365): Made-by, Cost, Tokens, Duration, Session, Fixes, Epic, Requested-by, Approved-by, Co-authored-by. Fixes also writes Refs. A key the machine does not know is kept and has no effect; a key no layer sets has its default (every key on, Cost off). Record trailers (Made-by, Session, Fixes, Epic, Requested-by, Approved-by, Co-authored-by): on is tighter. Spend trailers (Cost, Tokens, Duration): off is tighter. Its rules in policy/effective are commitTrailers.<key>.
+// The trailers of an agent's commits, each on or off, by the trailer's key (#6365, #7174): Managed-by, Runtime, Model, Cost, Tokens, Duration, Session, Fixes, Epic, Requested-by, Approved-by. Fixes also writes Refs. Co-authored-by is not a key: it is the runtime's own line, and the app never adds, changes or removes it. A key the machine does not know (also the old Made-by and Co-authored-by) is kept and has no effect; a key no layer sets has its default (every key on, Cost off). Record trailers (Managed-by, Runtime, Model, Session, Fixes, Epic, Requested-by, Approved-by): on is tighter. Spend trailers (Cost, Tokens, Duration): off is tighter. Its rules in policy/effective are commitTrailers.<key>.
 type CommitTrailers map[string]CommitTrailerValue
 
 type ConfigChoice struct {
@@ -3834,6 +3837,9 @@ type ControlEligible struct {
 
 	// The free space on its fullest disk, as it said it (#7313). Absent when it did not say.
 	DiskFreeBytes *int64 `json:"diskFreeBytes,omitzero"`
+
+	// About how long a move to the machine keeps the control plane frozen, in seconds, from the store's size and the copy's batches (#7395). Changes are refused while it is frozen. Absent from a control plane before #7395.
+	FrozenSeconds *int64 `json:"frozenSeconds,omitzero"`
 }
 
 // One reason a machine cannot take the control role (#6611), with its words for the person.
@@ -3908,10 +3914,6 @@ type ControlMachine struct {
 
 	SignInFrom map[string]MachineRef `json:"signInFrom,omitzero"`
 
-	GitFrom map[string]MachineRef `json:"gitFrom,omitzero"`
-
-	GitAsks []GitAsk `json:"gitAsks,omitzero"`
-
 	Tunnel *MachineTunnel `json:"tunnel,omitzero"`
 
 	Workspace *MachineWorkspace `json:"workspace,omitzero"`
@@ -3971,6 +3973,12 @@ type ControlMove struct {
 
 	// Where the new copy answers, once it said so.
 	Address *string `json:"address,omitzero"`
+
+	// With copying: the records copied so far (#7395). control/moveChanged says it every few seconds during the copy.
+	Copied *int64 `json:"copied,omitzero"`
+
+	// With copying: the records the copy takes (#7395).
+	Total *int64 `json:"total,omitzero"`
 
 	// With forwarding: until when the old copy sends members to the new one (30 days at most).
 	ForwardingUntil *Date `json:"forwardingUntil,omitzero"`
@@ -7059,28 +7067,6 @@ type FoundFolder struct {
 	IsFolder bool `json:"isFolder"`
 }
 
-type GitAsk struct {
-	Server string `json:"server"`
-
-	From MachineRef `json:"from"`
-}
-
-// A credential for one git command. Never printed, logged or kept.
-type GitCredential struct {
-	Username string `json:"username"`
-
-	Password string `json:"password"`
-}
-
-// git/credential, git/fill (#1122): only https, and only the server. `path` is the Go host's, unread by Swift.
-type GitCredentialRequest struct {
-	Protocol string `json:"protocol"`
-
-	Host string `json:"host"`
-
-	Path *string `json:"path,omitzero"`
-}
-
 // The trailer block for a commit or a squash message (#6365), in order, one "Key: value" line each; empty when the rule turns every trailer off.
 type GitTrailers struct {
 	Lines []string `json:"lines"`
@@ -7547,16 +7533,6 @@ type LeaseSnapshot struct {
 
 type LeaseTokenRequest struct {
 	Token string `json:"token"`
-}
-
-type LendGit struct {
-	Host MachineRef `json:"host"`
-
-	From MachineRef `json:"from"`
-
-	Server string `json:"server"`
-
-	Allowed bool `json:"allowed"`
 }
 
 // machines/lendSignIn (T091).
@@ -12449,7 +12425,9 @@ const PolicyRuleNameMarketplacesAllowed PolicyRuleName = "marketplaces.allowed"
 const PolicyRuleNameMarketplacesCustomServers PolicyRuleName = "marketplaces.customServers"
 const PolicyRuleNameEnvironment PolicyRuleName = "environment"
 const PolicyRuleNameConnectorTools PolicyRuleName = "connectorTools"
-const PolicyRuleNameCommitTrailersMadeBy PolicyRuleName = "commitTrailers.Made-by"
+const PolicyRuleNameCommitTrailersManagedBy PolicyRuleName = "commitTrailers.Managed-by"
+const PolicyRuleNameCommitTrailersRuntime PolicyRuleName = "commitTrailers.Runtime"
+const PolicyRuleNameCommitTrailersModel PolicyRuleName = "commitTrailers.Model"
 const PolicyRuleNameCommitTrailersCost PolicyRuleName = "commitTrailers.Cost"
 const PolicyRuleNameCommitTrailersTokens PolicyRuleName = "commitTrailers.Tokens"
 const PolicyRuleNameCommitTrailersDuration PolicyRuleName = "commitTrailers.Duration"
@@ -12458,7 +12436,6 @@ const PolicyRuleNameCommitTrailersFixes PolicyRuleName = "commitTrailers.Fixes"
 const PolicyRuleNameCommitTrailersEpic PolicyRuleName = "commitTrailers.Epic"
 const PolicyRuleNameCommitTrailersRequestedBy PolicyRuleName = "commitTrailers.Requested-by"
 const PolicyRuleNameCommitTrailersApprovedBy PolicyRuleName = "commitTrailers.Approved-by"
-const PolicyRuleNameCommitTrailersCoAuthoredBy PolicyRuleName = "commitTrailers.Co-authored-by"
 
 // The rules a layer sets (#2957, data-model.md "PolicyRules"): the same shape on the organisation, your and a folder's layer (FR-002). Every field is optional: absent sets nothing.
 type PolicyRules struct {
@@ -15627,6 +15604,30 @@ type SetupApprove struct {
 	Approval LockRecord `json:"approval"`
 }
 
+// setup/rootAgain (#7159): read root.sh's result on this machine again.
+type SetupRootAgain struct {
+	// Then run the steps after Root set-up too, as Try Again does after it failed.
+	Rest bool `json:"rest"`
+}
+
+// setup/rootCommand (#7159): the command a person runs as root on a machine that cannot run root.sh by itself, such as their own server or a made machine whose root.sh failed. It runs the root.sh that a client approved for made machines, once, and leaves its result where Root set-up reads it.
+type SetupRootCommand struct {
+	// One line to paste in a terminal there: the script in base64, run with sudo.
+	Command string `json:"command"`
+
+	// The hash of the root.sh it runs.
+	Hash string `json:"hash"`
+}
+
+// setup/rootLog (#7159): this machine's root.log, from its last root.sh run, for Show Log.
+type SetupRootLog struct {
+	// The end of root.log, at most 64 KiB; empty when there is none.
+	Text string `json:"text"`
+
+	// The log is longer, and text is only its end.
+	Cut bool `json:"cut"`
+}
+
 // One set-up script on this machine (#7167): root (root.sh) or setup (setup.sh) in ~/.agents/machine-setup/. present: the file is there. text, hash and size are the file as it is now (hash: SHA-256 in lower-case hexadecimal); problem says why they are absent from a file that is there (over its limit, or unreadable). approvedText and approvedHash are the text a client approved last, and approvals the records in force for it, one a scope. changed: the file is not the approved text, so it is not used until a client approves it. nextSeq is the number to sign the next approval with.
 type SetupScript struct {
 	Name string `json:"name"`
@@ -16491,6 +16492,14 @@ type StopBackgroundRequest struct {
 	ItemID string `json:"itemID"`
 }
 
+// What happens to a store over its limit (#7408), by its declaration: refuse, a new write is refused until it is within its limit again; write, the next write removes what is past the limit; hourly or daily, the sweep removes what is past the limit each hour or each day.
+type StoreAtLimit string
+
+const StoreAtLimitRefuse StoreAtLimit = "refuse"
+const StoreAtLimitWrite StoreAtLimit = "write"
+const StoreAtLimitHourly StoreAtLimit = "hourly"
+const StoreAtLimitDaily StoreAtLimit = "daily"
+
 type StoreNotes struct {
 	Notes []string `json:"notes"`
 }
@@ -16546,6 +16555,9 @@ type StoreSize struct {
 
 	// When this store's measurement ended.
 	MeasuredAt *Date `json:"measuredAt,omitzero"`
+
+	// What happens to the store when it is over its limit (#7408). Absent from a host too old to say.
+	AtLimit *StoreAtLimit `json:"atLimit,omitzero"`
 }
 
 // over: past a limit, whatever the measurement's age. stale: older than twice the cadence (2 h on a machine, 12 h on the control plane). unavailable: not measured, or with no measure that a limit can be compared with; why says which.
@@ -17152,6 +17164,9 @@ type TurnsPage struct {
 	OpenStart int64 `json:"openStart"`
 
 	FirstPrompt *int64 `json:"firstPrompt,omitzero"`
+
+	// When the 90-day or size trim took the start of this chat (#7405): the line every client shows where its start was, once it shows the first turn kept. Absent when nothing was removed.
+	StartRemoved *string `json:"startRemoved,omitzero"`
 }
 
 type TurnsRequest struct {
@@ -18230,7 +18245,7 @@ type WorkTimelineRelease struct {
 	URL *string `json:"url,omitzero"`
 }
 
-// work/timeline (#4172): the epics of a project (its id, from a folder's .agents/folder.json) that overlap from to to. With first, the answer can be partial (#7027): ask again without it for all of it.
+// work/timeline (#4172): the epics of a project (its id, from a folder's .agents/folder.json) that overlap from to to. With first, the answer can be partial (#7027): ask again without it for all of it. With onHold (#7335), the open epics on hold come too, each with its children and with no forecast, after the others in the order of forge/next; with none, an epic on hold is left out and its children are not read. Either way they are not in the forecast's history.
 type WorkTimelineRequest struct {
 	Project string `json:"project"`
 
@@ -18239,6 +18254,8 @@ type WorkTimelineRequest struct {
 	To Date `json:"to"`
 
 	First *bool `json:"first,omitzero"`
+
+	OnHold *bool `json:"onHold,omitzero"`
 }
 
 // A line of an epic in work/timeline (#4172): from its first child's start to its last child's close.

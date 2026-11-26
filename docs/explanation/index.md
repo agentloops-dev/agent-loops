@@ -10,6 +10,7 @@ Nothing here needs doing; it is for understanding.
 
 - [Direction](direction.md): what Agent Loops is for, the three ways to run it, how one
   organisation's data is kept apart, and where data lives and is backed up.
+- [Autopilot](autopilot.md): what starts leads on its own, within which limits, and when it pauses.
 - [Planning](planning.md): what to do next, what it will cost and when it lands, and what
   it delivered, and how estimates and forecasts earn trust.
 - [The deploy model](deploys.md): how every deploy system's artifacts, versions,

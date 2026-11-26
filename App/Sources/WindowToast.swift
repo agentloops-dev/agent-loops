@@ -7,7 +7,7 @@ import SwiftUI
 /// one replaces the last.
 ///
 /// These were the window's alert (#101) before. An alert is now only for a choice that blocks
-/// the work (`WindowAlert`).
+/// the work, as Delete archived agents now? (`heldAlert`).
 enum WindowToast: Identifiable, Equatable {
     case problem(AlertWords)
     case archived(ArchiveUndo)

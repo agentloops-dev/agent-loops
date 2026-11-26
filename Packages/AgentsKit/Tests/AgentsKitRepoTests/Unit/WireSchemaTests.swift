@@ -229,8 +229,6 @@ struct WireSchemaTests {
             "ControlAuth": Self.through(ControlAuth.Auth.self),
             "ControlOK": Self.through(ControlAuth.OK.self),
             "ChannelOpen": Self.through(ControlWire.ChannelOpen.self),
-            "GitCredentialRequest": Self.through(DaemonAPI.GitCredentialRequest.self),
-            "GitCredential": Self.through(DaemonAPI.GitCredential.self),
             // A layer keeps its commitTrailers, a key this build does not know too (#6365).
             "PolicyRules": Self.through(DaemonAPI.PolicyRules.self),
             "AttentionNeed": Self.through(DaemonAPI.AttentionNeed.self),

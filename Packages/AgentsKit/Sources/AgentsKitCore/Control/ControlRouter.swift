@@ -531,12 +531,7 @@ public actor ControlRouter {
         guard let frame = try? ControlWire.readHost(line) else { return }
         switch frame {
         case .message(0, let message):
-            // A git command waits on a person's answer (#1122): the host's other lines go on.
-            if message.contains("\"\(DaemonAPI.Method.gitCredential)\"") {
-                Task { await self.channelZero(message, from: host) }
-            } else {
-                await channelZero(message, from: host)
-            }
+            await channelZero(message, from: host)
         case .message(let channel, let message):
             guard let target = hosts[host]?.channels[channel] else { return }
             guard case .session(let sessionID) = target else {

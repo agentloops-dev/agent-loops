@@ -546,6 +546,11 @@ export interface AgentMachinesHost {
    * (Auto's rule).
    */
   capacityAt?: WireDate;
+  /**
+   * The machine's platform as it announced it (macOS 15, Linux), so Autopilot (#5900) sends a
+   * linux-ok issue to a Linux machine. Absent when it did not say.
+   */
+  platform?: string;
 }
 
 export interface AgentMachinesMachine {
@@ -2813,12 +2818,14 @@ export type CommitTrailerValue =
   | "off";
 
 /**
- * The trailers of an agent's commits, each on or off, by the trailer's key (#6365): Made-by, Cost,
- * Tokens, Duration, Session, Fixes, Epic, Requested-by, Approved-by, Co-authored-by. Fixes also
- * writes Refs. A key the machine does not know is kept and has no effect; a key no layer sets has
- * its default (every key on, Cost off). Record trailers (Made-by, Session, Fixes, Epic,
- * Requested-by, Approved-by, Co-authored-by): on is tighter. Spend trailers (Cost, Tokens,
- * Duration): off is tighter. Its rules in policy/effective are commitTrailers.<key>.
+ * The trailers of an agent's commits, each on or off, by the trailer's key (#6365, #7174):
+ * Managed-by, Runtime, Model, Cost, Tokens, Duration, Session, Fixes, Epic, Requested-by,
+ * Approved-by. Fixes also writes Refs. Co-authored-by is not a key: it is the runtime's own line,
+ * and the app never adds, changes or removes it. A key the machine does not know (also the old
+ * Made-by and Co-authored-by) is kept and has no effect; a key no layer sets has its default (every
+ * key on, Cost off). Record trailers (Managed-by, Runtime, Model, Session, Fixes, Epic,
+ * Requested-by, Approved-by): on is tighter. Spend trailers (Cost, Tokens, Duration): off is
+ * tighter. Its rules in policy/effective are commitTrailers.<key>.
  */
 export type CommitTrailers = Record<string, CommitTrailerValue>;
 
@@ -3606,6 +3613,12 @@ export interface ControlEligible {
   memoryBytes?: number;
   /** The free space on its fullest disk, as it said it (#7313). Absent when it did not say. */
   diskFreeBytes?: number;
+  /**
+   * About how long a move to the machine keeps the control plane frozen, in seconds, from the
+   * store's size and the copy's batches (#7395). Changes are refused while it is frozen. Absent
+   * from a control plane before #7395.
+   */
+  frozenSeconds?: number;
 }
 
 /** One reason a machine cannot take the control role (#6611), with its words for the person. */
@@ -3675,8 +3688,6 @@ export interface ControlMachine {
   reach: string;
   machineID?: string;
   signInFrom?: Record<string, MachineRef>;
-  gitFrom?: Record<string, MachineRef>;
-  gitAsks?: GitAsk[];
   tunnel?: MachineTunnel;
   workspace?: MachineWorkspace;
   implementation?: string;
@@ -3746,6 +3757,13 @@ export interface ControlMove {
   failedPhase?: ControlMovePhase;
   /** Where the new copy answers, once it said so. */
   address?: string;
+  /**
+   * With copying: the records copied so far (#7395). control/moveChanged says it every few seconds
+   * during the copy.
+   */
+  copied?: number;
+  /** With copying: the records the copy takes (#7395). */
+  total?: number;
   /** With forwarding: until when the old copy sends members to the new one (30 days at most). */
   forwardingUntil?: WireDate;
   startedAt: WireDate;
@@ -6743,27 +6761,6 @@ export interface FoundFolder {
   isFolder: boolean;
 }
 
-export interface GitAsk {
-  server: string;
-  from: MachineRef;
-}
-
-/** A credential for one git command. Never printed, logged or kept. */
-export interface GitCredential {
-  username: string;
-  password: string;
-}
-
-/**
- * git/credential, git/fill (#1122): only https, and only the server. `path` is the Go host's,
- * unread by Swift.
- */
-export interface GitCredentialRequest {
-  protocol: string;
-  host: string;
-  path?: string;
-}
-
 /**
  * The trailer block for a commit or a squash message (#6365), in order, one "Key: value" line each;
  * empty when the rule turns every trailer off.
@@ -7161,13 +7158,6 @@ export interface LeaseSnapshot {
 
 export interface LeaseTokenRequest {
   token: string;
-}
-
-export interface LendGit {
-  host: MachineRef;
-  from: MachineRef;
-  server: string;
-  allowed: boolean;
 }
 
 /** machines/lendSignIn (T091). */
@@ -11917,7 +11907,9 @@ export type PolicyRuleName =
   | "marketplaces.customServers"
   | "environment"
   | "connectorTools"
-  | "commitTrailers.Made-by"
+  | "commitTrailers.Managed-by"
+  | "commitTrailers.Runtime"
+  | "commitTrailers.Model"
   | "commitTrailers.Cost"
   | "commitTrailers.Tokens"
   | "commitTrailers.Duration"
@@ -11925,8 +11917,7 @@ export type PolicyRuleName =
   | "commitTrailers.Fixes"
   | "commitTrailers.Epic"
   | "commitTrailers.Requested-by"
-  | "commitTrailers.Approved-by"
-  | "commitTrailers.Co-authored-by";
+  | "commitTrailers.Approved-by";
 
 /**
  * The rules a layer sets (#2957, data-model.md "PolicyRules"): the same shape on the organisation,
@@ -14993,6 +14984,32 @@ export interface SetupApprove {
   approval: LockRecord;
 }
 
+/** setup/rootAgain (#7159): read root.sh's result on this machine again. */
+export interface SetupRootAgain {
+  /** Then run the steps after Root set-up too, as Try Again does after it failed. */
+  rest: boolean;
+}
+
+/**
+ * setup/rootCommand (#7159): the command a person runs as root on a machine that cannot run root.sh
+ * by itself, such as their own server or a made machine whose root.sh failed. It runs the root.sh
+ * that a client approved for made machines, once, and leaves its result where Root set-up reads it.
+ */
+export interface SetupRootCommand {
+  /** One line to paste in a terminal there: the script in base64, run with sudo. */
+  command: string;
+  /** The hash of the root.sh it runs. */
+  hash: string;
+}
+
+/** setup/rootLog (#7159): this machine's root.log, from its last root.sh run, for Show Log. */
+export interface SetupRootLog {
+  /** The end of root.log, at most 64 KiB; empty when there is none. */
+  text: string;
+  /** The log is longer, and text is only its end. */
+  cut: boolean;
+}
+
 /**
  * One set-up script on this machine (#7167): root (root.sh) or setup (setup.sh) in
  * ~/.agents/machine-setup/. present: the file is there. text, hash and size are the file as it is
@@ -15784,6 +15801,17 @@ export interface StopBackgroundRequest {
   itemID: string;
 }
 
+/**
+ * What happens to a store over its limit (#7408), by its declaration: refuse, a new write is
+ * refused until it is within its limit again; write, the next write removes what is past the limit;
+ * hourly or daily, the sweep removes what is past the limit each hour or each day.
+ */
+export type StoreAtLimit =
+  | "refuse"
+  | "write"
+  | "hourly"
+  | "daily";
+
 export interface StoreNotes {
   notes: string[];
 }
@@ -15831,6 +15859,10 @@ export interface StoreSize {
   percentRecords?: number;
   /** When this store's measurement ended. */
   measuredAt?: WireDate;
+  /**
+   * What happens to the store when it is over its limit (#7408). Absent from a host too old to say.
+   */
+  atLimit?: StoreAtLimit;
 }
 
 /**
@@ -16201,6 +16233,11 @@ export interface TurnsPage {
   firstTurn: number;
   openStart: number;
   firstPrompt?: number;
+  /**
+   * When the 90-day or size trim took the start of this chat (#7405): the line every client shows
+   * where its start was, once it shows the first turn kept. Absent when nothing was removed.
+   */
+  startRemoved?: string;
 }
 
 export interface TurnsRequest {
@@ -17273,13 +17310,16 @@ export interface WorkTimelineRelease {
 /**
  * work/timeline (#4172): the epics of a project (its id, from a folder's .agents/folder.json) that
  * overlap from to to. With first, the answer can be partial (#7027): ask again without it for all
- * of it.
+ * of it. With onHold (#7335), the open epics on hold come too, each with its children and with no
+ * forecast, after the others in the order of forge/next; with none, an epic on hold is left out and
+ * its children are not read. Either way they are not in the forecast's history.
  */
 export interface WorkTimelineRequest {
   project: string;
   from: WireDate;
   to: WireDate;
   first?: boolean;
+  onHold?: boolean;
 }
 
 /**
@@ -17969,7 +18009,6 @@ export interface Methods {
   "machines/install": { params: MachineInstall; result: JSONValue };
   "machines/joinRequests": { params: Empty; result: JoinRequest[] };
   "machines/lastHeard": { params: MachineRequest; result: MachineLastHeard };
-  "machines/lendGit": { params: LendGit; result: Empty };
   "machines/link": { params: MachineLink; result: ControlMachine };
   "machines/list": { params: MachineListQuery; result: ControlMachine[] | MachineList };
   "machines/listKept": { params: KeptListQuery; result: KeptList };
@@ -18470,7 +18509,6 @@ export const MethodTarget = {
   "machines/install": "control",
   "machines/joinRequests": "control",
   "machines/lastHeard": "control",
-  "machines/lendGit": "control",
   "machines/link": "control",
   "machines/list": "control",
   "machines/listKept": "control",
@@ -18808,7 +18846,7 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   AgentConfigFileRequest: { required: ["path", "time", "counter"], optional: ["contents", "deleted"] },
   AgentConfigFiles: { required: ["files"], optional: ["updated"] },
   AgentMachines: { required: ["providers"], optional: ["hosts"] },
-  AgentMachinesHost: { required: ["name", "state"], optional: ["capacity", "loadPerCore5", "capacityAt"] },
+  AgentMachinesHost: { required: ["name", "state"], optional: ["capacity", "loadPerCore5", "capacityAt", "platform"] },
   AgentMachinesMachine: { required: ["id", "name", "state"], optional: ["host", "hostState", "cost", "reason"] },
   AgentMachinesProvider: { required: ["id", "name", "canMake", "canDelete", "workspaces"], optional: ["options"] },
   AgentRemovedNotification: { required: ["agentID"], optional: [] },
@@ -19037,14 +19075,14 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   ControlClientChanged: { required: [], optional: ["client", "removed"] },
   ControlCodeShown: { required: ["text", "expires"], optional: ["command"] },
   ControlCutOff: { required: ["why"], optional: ["provider"] },
-  ControlEligible: { required: ["ok", "reasons"], optional: ["address", "memoryBytes", "diskFreeBytes"] },
+  ControlEligible: { required: ["ok", "reasons"], optional: ["address", "memoryBytes", "diskFreeBytes", "frozenSeconds"] },
   ControlEligibleReason: { required: ["reason", "text"], optional: [] },
   ControlEligibleRequest: { required: ["machine"], optional: ["allowSleep"] },
   ControlEndpoint: { required: ["url"], optional: ["pin"] },
   ControlHello: { required: ["v", "name", "control", "nonce", "copy"], optional: ["previous"] },
   ControlInstallProgress: { required: ["name", "step"], optional: [] },
-  ControlMachine: { required: ["id", "name", "platform", "version", "state", "reach"], optional: ["machineID", "signInFrom", "gitFrom", "gitAsks", "tunnel", "workspace", "implementation", "capabilities", "maturity", "missing", "owner", "capacity", "loadPerCore5", "capacityAt", "setup", "roles", "labels", "autoLabels"] },
-  ControlMove: { required: ["id", "from", "to", "toName", "phase", "startedAt", "updatedAt", "by"], optional: ["failedPhase", "address", "forwardingUntil", "error"] },
+  ControlMachine: { required: ["id", "name", "platform", "version", "state", "reach"], optional: ["machineID", "signInFrom", "tunnel", "workspace", "implementation", "capabilities", "maturity", "missing", "owner", "capacity", "loadPerCore5", "capacityAt", "setup", "roles", "labels", "autoLabels"] },
+  ControlMove: { required: ["id", "from", "to", "toName", "phase", "startedAt", "updatedAt", "by"], optional: ["failedPhase", "address", "copied", "total", "forwardingUntil", "error"] },
   ControlMoveRequest: { required: ["machine"], optional: [] },
   ControlMoveResult: { required: ["move"], optional: [] },
   ControlMoved: { required: ["url", "controlKey", "name"], optional: ["pin"] },
@@ -19276,9 +19314,6 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   ForgeStart: { required: ["prompt", "labels"], optional: ["worktree"] },
   ForgeTransition: { required: ["id", "name"], optional: ["category"] },
   FoundFolder: { required: ["folder", "exists", "isRepository", "isFolder"], optional: ["typed"] },
-  GitAsk: { required: ["server", "from"], optional: [] },
-  GitCredential: { required: ["username", "password"], optional: [] },
-  GitCredentialRequest: { required: ["protocol", "host"], optional: ["path"] },
   GitTrailers: { required: ["lines"], optional: [] },
   GitTrailersRequest: { required: ["session"], optional: ["pr"] },
   Goal: { required: ["objective", "status", "at"], optional: ["iterations", "reason", "tokensUsed", "tokenBudget", "timeUsedSeconds"] },
@@ -19322,7 +19357,6 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   LeaseRequest: { required: ["token", "name"], optional: ["minutes", "wait"] },
   LeaseSnapshot: { required: ["resources", "at"], optional: [] },
   LeaseTokenRequest: { required: ["token"], optional: [] },
-  LendGit: { required: ["host", "from", "server", "allowed"], optional: [] },
   LendSignIn: { required: ["host", "from", "runtime", "allowed"], optional: [] },
   Levels: { required: [], optional: ["model", "permission", "permissionRequests"] },
   LineMember: { required: ["agentID", "askedAt", "isCallOpen"], optional: [] },
@@ -19930,6 +19964,9 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   SetYourPolicyRequest: { required: ["rules", "revision"], optional: [] },
   SettleUntrustedYourPolicyRequest: { required: ["file", "revision", "sign"], optional: [] },
   SetupApprove: { required: ["script", "approval"], optional: [] },
+  SetupRootAgain: { required: ["rest"], optional: [] },
+  SetupRootCommand: { required: ["command", "hash"], optional: [] },
+  SetupRootLog: { required: ["text", "cut"], optional: [] },
   SetupScript: { required: ["name", "present", "approvals", "changed", "nextSeq"], optional: ["text", "hash", "size", "problem", "approvedText", "approvedHash"] },
   SetupScriptApproval: { required: ["hash", "size"], optional: [] },
   SetupScripts: { required: ["scripts"], optional: [] },
@@ -20011,7 +20048,7 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   StartingPoint: { required: ["repository", "commit"], optional: [] },
   StopBackgroundRequest: { required: ["agentID", "itemID"], optional: [] },
   StoreNotes: { required: ["notes"], optional: [] },
-  StoreSize: { required: ["id", "owner", "scope", "kind", "state"], optional: ["why", "bytes", "records", "averageRecordBytes", "maxBytes", "maxRecords", "limitPer", "percentBytes", "percentRecords", "measuredAt"] },
+  StoreSize: { required: ["id", "owner", "scope", "kind", "state"], optional: ["why", "bytes", "records", "averageRecordBytes", "maxBytes", "maxRecords", "limitPer", "percentBytes", "percentRecords", "measuredAt", "atLimit"] },
   StoreSizes: { required: ["stores", "total"], optional: ["cursor"] },
   StoreSizesQuery: { required: [], optional: ["cursor", "limit"] },
   SuggestedPrompt: { required: ["id", "label", "prompt"], optional: [] },
@@ -20040,7 +20077,7 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   TurnSummary: { required: ["id", "start", "end"], optional: ["ask", "outcome", "steps", "usage"] },
   TurnUndo: { required: ["turn", "putBack"], optional: [] },
   TurnUsage: { required: ["totalTokens", "inputTokens", "outputTokens"], optional: ["thoughtTokens", "cachedReadTokens", "cachedWriteTokens", "cost", "route", "relayTokens"] },
-  TurnsPage: { required: ["turns", "firstTurn", "openStart"], optional: ["firstPrompt"] },
+  TurnsPage: { required: ["turns", "firstTurn", "openStart"], optional: ["firstPrompt", "startRemoved"] },
   TurnsRequest: { required: ["agentID", "limit"], optional: ["before"] },
   UndoTurnRequest: { required: ["agentID", "turn"], optional: ["confirmed"] },
   UndoTurnResult: { required: ["putBack", "changedSince"], optional: [] },
@@ -20116,7 +20153,7 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   WorkTimelineEpic: { required: ["item", "createdAt", "children", "segments"], optional: ["stateReason", "closedAt", "forecast"] },
   WorkTimelineForecast: { required: ["low", "mid", "high"], optional: ["waits"] },
   WorkTimelineRelease: { required: ["tag", "at", "repo"], optional: ["url"] },
-  WorkTimelineRequest: { required: ["project", "from", "to"], optional: ["first"] },
+  WorkTimelineRequest: { required: ["project", "from", "to"], optional: ["first", "onHold"] },
   WorkTimelineSegment: { required: [], optional: ["startedAt", "closedAt"] },
   Workflow: { required: ["workflowID", "folder", "name", "triggers", "mode", "prompt", "unknownFields", "settings"], optional: ["problem", "cooldown", "hours", "enabled", "archived", "whenDone", "continueWhenBack", "muted", "runsOn"] },
   WorkflowApproval: { required: ["digest", "isNew"], optional: ["note"] },

@@ -14,7 +14,7 @@ import (
 // Autopilot's setting and its status (#5898, epic #5897). The setting is Folder.autopilot in the
 // folder's record: off, high or on, absent is off. The status is what Autopilot did in the folder
 // and why each item waits: at most autopilotMostRows rows, kept in autopilot-status.json, one
-// entry for each folder. Nothing starts anything yet: the loop (#5899) calls autopilotNote.
+// entry for each folder. The loop (autopilotrun.go, #5899) calls autopilotNote.
 // With the mode off the status has no rows.
 
 const (
@@ -31,7 +31,9 @@ const (
 type autopilotRecord struct {
 	LastRunAt *wire.Date          `json:"lastRunAt,omitzero"`
 	Rows      []wire.AutopilotRow `json:"rows"`
-	Updated   wire.Date           `json:"updated"`
+	// Restarts is when Autopilot started a lead again, by epic ref, for the last day (#5901).
+	Restarts map[string][]wire.Date `json:"restarts,omitzero"`
+	Updated  wire.Date              `json:"updated"`
 }
 
 func (d *Daemon) autopilotPath() string {
@@ -200,7 +202,7 @@ func (d *Daemon) autopilotNote(folder string, row wire.AutopilotRow) error {
 		if len(rows) > autopilotMostRows {
 			rows = rows[:autopilotMostRows]
 		}
-		m[folder] = autopilotRecord{LastRunAt: &at, Rows: rows, Updated: at}
+		m[folder] = autopilotRecord{LastRunAt: &at, Rows: rows, Restarts: e.Restarts, Updated: at}
 		return nil
 	})
 	if err != nil {

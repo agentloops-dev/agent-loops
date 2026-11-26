@@ -28,6 +28,9 @@ struct ChatTranscript: View {
     var lastEntryAt: Date? = nil
     /// Why the history did not load, or only partly, said at its top with Try Again (#400).
     var loadFailure: TranscriptLoadFailure? = nil
+    /// The host's line for a chat whose start the 90-day or size trim took, drawn where the
+    /// start was (#7405). Nil while there is more before what is in hand.
+    var removedStart: String? = nil
     /// Which conversation this is. A change settles the pane at the end again.
     let settleKey: UUID?
     let loadEarlier: () async -> Void
@@ -453,6 +456,9 @@ struct ChatTranscript: View {
             if let loadFailure {
                 LoadFailureLine(sentence: loadFailure.sentence, retry: actions.reloadTranscript)
             }
+            if let removedStart, !hasMore {
+                RecordLine(detail: removedStart)
+            }
             if hasMore {
                 // No button. Reaching the top is the ask. Said only after 300 ms (#4795).
                 DelayedProgress(controlSize: .small)
@@ -460,7 +466,7 @@ struct ChatTranscript: View {
             }
         }
         .padding(.top, 20)
-        .padding(.bottom, loadFailure == nil && !hasMore ? 0 : 14)
+        .padding(.bottom, loadFailure == nil && !hasMore && removedStart == nil ? 0 : 14)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
@@ -515,22 +521,7 @@ struct ChatTranscript: View {
     private var askCards: [WaitingCard] { cards.filter(\.asks) }
 
     private var nowCard: NowCard {
-        let agentID = agent.id
-        let stop = actions.stopBackground
-        let steps = actions.subagentSteps
-        var background = BackgroundActions(output: actions.backgroundOutput)
-        if let stop {
-            background.stop = { item in await stop(item, agentID) }
-        }
-        if let steps {
-            background.steps = { item in steps(item.id) }
-        }
-        return NowCard(agent: agent, isComingBack: isComingBack,
-                       parts: cards.filter { !$0.asks },
-                       leases: actions.leaseStatus(agentID)?.without(agent.eventWait),
-                       capacityStart: actions.capacityStart(agent),
-                       background: background,
-                       openLease: actions.openLease)
+        NowCard(agent: agent, isComingBack: isComingBack, cards: cards, actions: actions)
     }
 
     /// The turns among the rows drawn, as indices into the turns: the rows less the head

@@ -52,6 +52,8 @@ const (
 	moveReceivePatience = 2 * time.Minute
 	// moveDialPatience is how long the new copy has to answer after that.
 	moveDialPatience = 2 * time.Minute
+	// moveProgressEvery is how often, at most, the admins hear the copy's count (#7395).
+	moveProgressEvery = 2 * time.Second
 )
 
 // moveState is the move that runs, if any: one at a time.
@@ -63,6 +65,9 @@ type moveState struct {
 	// linkDelay is added to each call on the handover session; tests make a link between
 	// two machines with it (#7394).
 	linkDelay time.Duration
+	// progressEvery is the least wait between two counts of the copy (#7395); tests make it
+	// short.
+	progressEvery time.Duration
 }
 
 func (m *moveState) take(id string) bool {
@@ -206,7 +211,7 @@ func (s *Service) runMove(ctx context.Context, move wire.ControlMove, h records.
 	step(wire.ControlMovePhaseCopying)
 	forwarding := endpoint.URL != s.cfg.URL
 	until := time.Now().Add(longestForwarding)
-	if _, _, err := copyStoreLeaving(ctx, s.cfg.Store, PeerStore{Link: link}, append(slices.Clone(copySkipped), movesPrefix)); err != nil {
+	if _, _, err := copyStoreReporting(ctx, s.cfg.Store, PeerStore{Link: link}, append(slices.Clone(copySkipped), movesPrefix), s.moveCounter(&move)); err != nil {
 		s.moveFailed(ctx, &move, "The store did not copy: "+moveWords(err), true)
 		return
 	}
@@ -346,6 +351,24 @@ func (s *Service) moveChanged(ctx context.Context, move *wire.ControlMove) {
 		s.log("the move's record could not be kept: " + err.Error())
 	}
 	s.tellAdmins(wire.NotifyControlMoveChanged.Name, *move)
+}
+
+// moveCounter is the copy's progress for a move (#7395): the admins hear the records copied
+// and the total as the copy starts, every moveProgressEvery at most, and as it ends. Only the
+// admins hear it: the store keeps the move's steps, not each count.
+func (s *Service) moveCounter(move *wire.ControlMove) copyProgress {
+	every := cmp.Or(s.moving.progressEvery, moveProgressEvery)
+	var told time.Time
+	return func(copied, total int) {
+		now := time.Now()
+		if !told.IsZero() && now.Sub(told) < every && copied < total {
+			return
+		}
+		told = now
+		move.Copied, move.Total = new(int64(copied)), new(int64(total))
+		move.UpdatedAt = dateOf(now)
+		s.tellAdmins(wire.NotifyControlMoveChanged.Name, *move)
+	}
 }
 
 func moveKey(id string) string { return movesPrefix + id + ".json" }

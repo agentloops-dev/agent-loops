@@ -98,6 +98,22 @@ type secretOpBook struct {
 // secretOpsMost is how many secrets the last operations keep: the oldest go first.
 const secretOpsMost = 500
 
+// secretOpMost is the largest last operation of a secret, with its name, that secret-ops.json
+// keeps (#7350): the pending file's largest entry.
+const secretOpMost = 16 << 10
+
+// boundSecretOps drops each operation of last over secretOpMost, and says how many.
+func boundSecretOps(last map[string]wire.SecretOperation) int {
+	over := 0
+	for n, op := range last {
+		if b, err := json.Marshal(op); err != nil || len(n)+len(b) > secretOpMost {
+			delete(last, n)
+			over++
+		}
+	}
+	return over
+}
+
 // trimOldest drops the oldest entries past secretOpsMost.
 func trimOldest[V any](m map[string]V, at func(V) wire.Date) {
 	if len(m) <= secretOpsMost {
@@ -300,8 +316,12 @@ func (d *Daemon) saveSecretOpsLocked() {
 		}
 	}
 	trimOldest(last, func(op wire.SecretOperation) wire.Date { return op.At })
+	if over := boundSecretOps(last); over > 0 {
+		log.Printf("secret-ops.json: %d operations over %d bytes are not kept", over, secretOpMost)
+	}
 	raw, err := json.Marshal(last)
 	if err == nil {
+		// store-bounds: kind=key-value; count=500; size=16KiB a secret; age=until-deleted; applied=on write (the oldest go first, one over its size is not kept) (#7350)
 		err = store.WriteAtomically(path, raw, 0o600)
 	}
 	if err != nil {

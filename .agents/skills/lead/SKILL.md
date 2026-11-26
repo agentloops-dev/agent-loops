@@ -17,7 +17,7 @@ and it never closes. Do steps 1 to 4 as "Standing epics", below, says. Never do 
 
 ## Starting a lead
 
-Start lead in Work, Alex, or the release (for the bug lane) starts the lead with one
+Autopilot (when it is on for the folder, #5897), Start lead in Work, Alex, or the release (for the bug lane) starts the lead with one
 session in the epic's folder, with the Lead persona (`.agents/personas/lead.md`). Its
 title is `#<epic>: <epic title> lead`, its labels `#<epic>` and `lead`, no worktree, and
 its prompt is this one:
@@ -25,6 +25,11 @@ its prompt is this one:
 > #<epic>: <epic title>
 >
 > Lead this epic: <epic URL>
+
+A lead that Autopilot starts has the same title, labels and prompt. When Autopilot starts
+it again because the epic is open and the lead before it ended, stopped or was archived
+(#5901), the prompt names that lead, and this lead reads it first (`read_session`) to
+take up where it stopped.
 
 Only one lead per epic: if a session labelled `#<epic>` and `lead` is not archived, do
 not start a second one.
@@ -116,7 +121,8 @@ on hold: it sorts below every other row, and waits for Alex.
    before the issue number and title. Title `#<child>: <title>`, worktree
    `fix-github-issue-<child>` (a bug) or `work-github-issue-<child>` (anything else), no
    runtime. Add to the prompt: on a conflict with `main`, `git merge origin/main` and push
-   without running the tests again (#5712).
+   without running the tests again (#5712); lease `ci` only before the PR's first push, not
+   before a push that fixes a red check or settles a conflict (Alex, 2026-11-26, #7243).
    A lead runs on any machine; it writes no code and holds no build lease (#5877).
    **A `linux-ok` child** (AGENTS.md, "Plans", #5810) goes to a Linux machine when one is
    free: call `list_machines`, and when a Linux machine is online, pass it as `machine` to

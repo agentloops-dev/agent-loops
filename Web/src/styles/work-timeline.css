@@ -45,6 +45,10 @@
 .timeline-block .title.past { fill: var(--paper-on-fill); }
 .timeline-block .title.later, .timeline-block .outside { fill: var(--c-later); font-weight: 600; }
 .timeline-block.dropped .outside { fill: var(--timeline-faint); font-weight: 400; }
+/* An epic on hold (#7335): its feature's colour, dimmed, and "On hold" after it, as the On hold chip says. */
+.timeline-block.held .past { fill-opacity: 0.4; }
+.timeline-block.held .title.past { fill: var(--c-later); }
+.timeline-block.held .outside { fill: var(--timeline-faint); font-weight: 400; }
 .timeline-working circle { fill: var(--timeline-plot); stroke: var(--c-later); stroke-width: 1.5; }
 .timeline-working path { fill: var(--c-later); }
 .timeline-now { stroke: var(--timeline-now); stroke-width: 1.5; }
@@ -66,6 +70,8 @@
 .timeline-bar .work-menus { gap: 8px; }
 .timeline-trailing { display: inline-flex; gap: 8px; align-items: center; margin-left: auto; }
 .timeline-now-button { padding: 2px 10px; font-size: 0.75rem; border: 1px solid var(--paper-rule); border-radius: 999px; background: none; }
+/* The On hold toggle (#7335): filled while on. */
+.timeline-held-toggle[aria-pressed="true"] { background: var(--paper-rule); font-weight: 600; }
 /* S12: the last plot under the error strip, dimmed. */
 /* S10: grey bars where the lanes go, shimmering; still with Reduce Motion. */
 .timeline-placeholder rect { fill: var(--timeline-faint); opacity: 0.25; }

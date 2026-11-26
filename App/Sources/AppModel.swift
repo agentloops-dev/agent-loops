@@ -1549,8 +1549,6 @@ final class AppModel {
     let machineSignIn = MachineSignInDriver()
     /// The Export… or Import Agents… on its way, drawn as a busy sheet with Cancel (#2437).
     var exportImport: ExportImportProgress?
-    /// Git asks answered here, until the control plane's list drops them (#1122).
-    var gitAsksAnswered: Set<String> = []
     /// What a server with no connection answers through: nothing, at once.
     private static let unreachable = DaemonClient(link: UnreachableLink())
 
@@ -3929,8 +3927,6 @@ final class AppModel {
             KeptThisMacHost.keep(from: listed, controlKey: controlKey, in: WindowDefaults.store)
             keptHost = KeptThisMacHost.read(controlKey: controlKey, from: WindowDefaults.store)
         }
-        // An ask no longer waiting may be asked again later, once taken back (#1122).
-        gitAsksAnswered.formIntersection(GitLendAsk.waiting(in: listed))
         controlPlaneListed = true
         controlPlaneName = status.name
         controlPlaneMaturity = status.maturity
@@ -5205,6 +5201,22 @@ final class AppModel {
         await act(.startNow, on: agentID) {
             try await self.client(forAgent: agentID).call(DaemonAPI.Method.agentsStartNow,
                                        DaemonAPI.AgentRequest(agentID: agentID))
+        }
+    }
+
+    /// Asks the session's host to write its summary again (#7322, `agents/summarise`): only
+    /// while the summary is shown (Alex on #7318), and the host writes only when a turn ended
+    /// since it last read. It answers at once; `agents/changed` brings the new text. Nothing
+    /// on a host without `session-summary/1`.
+    func summarise(_ agentID: UUID) async {
+        guard agent(agentID, has: Capability.sessionSummary1) else { return }
+        do {
+            _ = try await client(forAgent: agentID).call(DaemonAPI.Method.agentsSummarise,
+                                                         DaemonAPI.AgentRequest(agentID: agentID),
+                                                         returning: SessionSummary.self)
+        } catch {
+            // The page keeps the summary it has, with its time (gate 2, #7320).
+            Self.chatLog.info("agent \(agentID, privacy: .public): no summary asked: \(error.localizedDescription, privacy: .public)")
         }
     }
 

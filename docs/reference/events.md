@@ -153,6 +153,8 @@ waits for one of `limit running`, `limit open-prs`, `capacity near`, `capacity f
 `blocked by #n` or `mode high`, or is paused for `paused: main red` or `paused: over budget`. The daemon keeps
 the rows in `autopilot-status.json`, a bounded small file (the newest 100 rows of each folder, 90 days). With the mode off there are no rows.
 
+Autopilot pauses itself when the work goes bad (#5902). Main red for more than 60 minutes (the newest `ci.yml` runs on the default branch fail) pauses the row `main`: nothing new starts in the folder until main is green. An epic whose spend is 2× its estimate (the overrun notice's point, #4529) is paused, and its lead is told to start no new lane; it resumes when the estimate is raised. Each pause posts one notice, on the epic's lead or the folder's newest session, with the reason.
+
 ## Files
 
 `file.added` and `file.removed` are about files in the folder (#3795). A wait or a trigger
@@ -762,7 +764,7 @@ It is read only.
   permission, question or sandbox card; change a setting, a cost limit or a folder's
   limits; approve, deny, run, turn on or off, or delete a workflow; approve a plugin; add,
   approve or remove an MCP server, a skill or a marketplace; add or delete a folder;
-  pair, forget or remove a client or a machine; lend a sign-in or git access; change a
+  pair, forget or remove a client or a machine; lend a sign-in; change a
   machine provider. Reads, prompts and presence are not kept. An entry is written when
   the control plane passes the call on, so a call that the host refuses is kept too.
 - **An agent's reads and changes of an outside account** (#4157): `manage_accounts` tells the

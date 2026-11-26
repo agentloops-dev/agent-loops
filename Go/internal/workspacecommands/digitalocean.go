@@ -79,10 +79,12 @@ func agentLoopsKey(folder string) (ssh.PublicKey, error) {
 		return nil, err
 	}
 	authorized := strings.TrimSpace(string(ssh.MarshalAuthorizedKey(key))) + " " + agentLoopsKeyName + "\n"
+	// store-bounds: kind=key-value; count=1; size=4KiB; age=until-deleted; applied=made once with its private half
 	if err := os.WriteFile(private+".pub", []byte(authorized), 0o600); err != nil {
 		return nil, err
 	}
 	// The private half last: a key pair is there only when both halves are.
+	// store-bounds: kind=secret; count=1; size=4KiB; age=until-deleted; applied=made once, the first time a machine is made on DigitalOcean
 	if err := os.WriteFile(private, pem.EncodeToMemory(block), 0o600); err != nil {
 		return nil, err
 	}

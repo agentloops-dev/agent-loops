@@ -2,6 +2,8 @@ package workspacecommands
 
 import (
 	"encoding/base64"
+	"errors"
+	"os"
 	"strconv"
 )
 
@@ -40,4 +42,56 @@ func RootBoot(script []byte) string {
 		"( c=0; timeout -k 10 " + strconv.Itoa(RootSetupSeconds) + " bash -e " + folder + "/root.sh >" + folder + "/root.log 2>&1 </dev/null || c=$?\n" +
 		"  chmod 644 " + folder + "/root.log; ! command -v agents_root_done >/dev/null 2>&1 || agents_root_done\n" +
 		"  echo $c >" + folder + "/root.exit.new && chmod 644 " + folder + "/root.exit.new && mv " + folder + "/root.exit.new " + folder + "/root.exit ) &"
+}
+
+// RootCommand is the one line a person runs as root, or with sudo, on a machine that cannot run
+// root.sh by itself (#7159): their own server, or a made machine whose root.sh failed. It is
+// RootBoot in base64, after it takes away the last result, so that Root set-up reads the new one,
+// and it waits for root.sh to end. The script is in base64, so the line pastes as it is.
+func RootCommand(script []byte) string {
+	if len(script) == 0 {
+		return ""
+	}
+	lines := "rm -f " + RootSetupFolder + "/root.exit\n" + RootBoot(script) + "\nwait\n" +
+		"echo \"root.sh ended with exit $(cat " + RootSetupFolder + "/root.exit). Now press Check in Agent Loops.\"\n"
+	return "printf %s " + base64.StdEncoding.EncodeToString([]byte(lines)) + " | base64 -d | sudo sh"
+}
+
+// rootBootFile is where a command's ${rootBoot} is (#7159): a file of the lines, readable only by
+// this user, because a command line can be too long for root.sh and shows in ps. None, and an
+// empty value, when there is no root.sh. The caller removes it after the create.
+func rootBootFile(rootBoot string) (string, error) {
+	if rootBoot == "" {
+		return "", nil
+	}
+	// store-bounds: not a store: one file of at most RootBootMost, removed after its create
+	f, err := os.CreateTemp("", "agents-root-boot-*.sh")
+	if err != nil {
+		return "", err
+	}
+	_, werr := f.WriteString(rootBoot + "\nwait\n")
+	cerr := f.Close()
+	if werr != nil || cerr != nil {
+		_ = os.Remove(f.Name())
+		return "", errors.Join(werr, cerr)
+	}
+	return f.Name(), nil
+}
+
+// putRootBootFile makes ${rootBoot} in a command's values the path of a file of the lines
+// (#7159), not the lines, and gives what removes it after the create. A request takes the lines.
+func putRootBootFile(making Making, values map[string]string) (func(), error) {
+	if making.CreateRequest != nil || !making.RootBootRuns() {
+		return func() {}, nil
+	}
+	file, err := rootBootFile(values["rootBoot"])
+	if err != nil {
+		return nil, Failure{Reason: "Root set-up could not be written for the create: " + err.Error()}
+	}
+	values["rootBoot"] = file
+	return func() {
+		if file != "" {
+			_ = os.Remove(file)
+		}
+	}, nil
 }

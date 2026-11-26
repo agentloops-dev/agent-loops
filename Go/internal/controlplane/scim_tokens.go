@@ -13,6 +13,7 @@ import (
 	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/records"
 	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/scim"
 	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/store"
+	"github.com/agentloops-dev/agent-loops/Go/internal/sizewords"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -259,7 +260,7 @@ func (st *scimTokens) make(ctx context.Context, r wire.SCIMTokenMake, actor wire
 		Ends: r.Ends}
 	data, err := records.Encode(t)
 	if err == nil && len(data) > tokenMostBytes {
-		return wire.SCIMTokenMade{}, fail(invalidParams, "What is kept of this token is too large: %d bytes, and the most is %d.", len(data), tokenMostBytes)
+		return wire.SCIMTokenMade{}, fail(invalidParams, "This token is too large to keep: %s, and the most is %s. Give it a shorter name.", sizewords.Int(len(data)), sizewords.Int(tokenMostBytes))
 	}
 	if err == nil {
 		_, err = st.s.cfg.Store.Put(ctx, scimTokenKey(hash), data, store.Absent)

@@ -212,3 +212,60 @@ func TestAnEntryOverTheRecordLimitIsKeptAsANotice(t *testing.T) {
 		t.Fatal("the notice was not written")
 	}
 }
+
+// #7405: a chat that lost its start says so, and why: by age, by size, both, or either for
+// a header from before the cause was kept.
+func TestATrimmedChatSaysWhyItsStartWasRemoved(t *testing.T) {
+	s, err := Open(t.TempDir())
+	must(t, err)
+	id := NewUUID()
+	now := logDay.Add(ConversationAge)
+	said := func() string {
+		lines, err := s.LineEnds(id)
+		must(t, err)
+		if r := StartRemoved(lines); r != nil {
+			return *r
+		}
+		return ""
+	}
+	add := func(at time.Time, text string) {
+		must(t, errOnly(s.Append(id, wire.TranscriptEntry{ID: NewUUID(), At: wire.DateOf(at),
+			Kind: wire.TranscriptEntryKind{AgentMessage: &wire.TranscriptEntryKindAgentMessage{Text: text}}})))
+	}
+	add(logDay.Add(-time.Hour), "old")
+	add(now, "new")
+	if got := said(); got != "" {
+		t.Fatalf("a whole chat says %q", got)
+	}
+	_, err = s.TrimConversation(context.Background(), id, now)
+	must(t, err)
+	if got := said(); got != "The start of this chat was removed because it was older than 90 days." {
+		t.Fatalf("by age: %q", got)
+	}
+	for range 11 {
+		add(now, strings.Repeat("x", 1<<20))
+	}
+	_, err = s.TrimConversation(context.Background(), id, now)
+	must(t, err)
+	if got := said(); got != "The start of this chat was removed because it was older than 90 days or the chat was more than 10 MB." {
+		t.Fatalf("by age, then size: %q", got)
+	}
+
+	sized := NewUUID()
+	for range 11 {
+		must(t, errOnly(s.Append(sized, wire.TranscriptEntry{ID: NewUUID(), At: wire.DateOf(now),
+			Kind: wire.TranscriptEntryKind{AgentMessage: &wire.TranscriptEntryKindAgentMessage{Text: strings.Repeat("x", 1<<20)}}})))
+	}
+	_, err = s.TrimConversation(context.Background(), sized, now)
+	must(t, err)
+	if lines, _ := s.LineEnds(sized); StartRemoved(lines) == nil || *StartRemoved(lines) != "The start of this chat was removed because a chat keeps only its last 10 MB." {
+		t.Fatalf("by size: %v", StartRemoved(lines))
+	}
+
+	old := NewUUID()
+	must(t, os.MkdirAll(s.Loc.Agent(string(old)), 0o700))
+	must(t, os.WriteFile(s.Loc.Transcript(string(old)), []byte(`{"trimmed":{"lines":2,"bytes":40}}`+"\n"), 0o600))
+	if lines, _ := s.LineEnds(old); StartRemoved(lines) == nil || !strings.Contains(*StartRemoved(lines), "older than 90 days or") {
+		t.Fatalf("an old header: %v", StartRemoved(lines))
+	}
+}

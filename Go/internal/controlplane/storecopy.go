@@ -83,6 +83,16 @@ const (
 // backup or a restore never refuses one. A declared store's next write and its sweep bound it.
 // Into a bulkStore it writes and checks in batches: one call per batch, not one per record.
 func copyStoreLeaving(ctx context.Context, from, to store.Store, leaving []string) (copied, skipped int, err error) {
+	return copyStoreReporting(ctx, from, to, leaving, nil)
+}
+
+// copyProgress hears how a copy stands: the records written so far, of the total it takes.
+// Into a bulkStore it is called after each batch lands; into another store, after each record.
+type copyProgress func(copied, total int)
+
+// copyStoreReporting is copyStoreLeaving, and tells progress, when not nil, how it stands
+// (#7395): a move's strip counts the records.
+func copyStoreReporting(ctx context.Context, from, to store.Store, leaving []string, progress copyProgress) (copied, skipped int, err error) {
 	if held, err := to.Get(ctx, records.SettingsKey); err != nil {
 		return 0, 0, err
 	} else if held != nil {
@@ -98,8 +108,14 @@ func copyStoreLeaving(ctx context.Context, from, to store.Store, leaving []strin
 	// Each object is held only while it is written (or while its batch is): what is kept to
 	// check the copy is a hash per key, so a backup of a large store (server backups
 	// included) does not hold the whole store in memory (#3650).
-	w := &copyWriter{to: to}
+	w := &copyWriter{to: to, progress: progress}
 	w.bulk, _ = to.(bulkStore)
+	for _, k := range keys {
+		if !leftOut(k.Key, leaving) {
+			w.total++
+		}
+	}
+	w.tell()
 	for _, k := range keys {
 		if leftOut(k.Key, leaving) {
 			skipped++
@@ -137,6 +153,16 @@ type copyWriter struct {
 	written    map[string][sha256.Size]byte
 	batch      []storeRecord
 	batchBytes int
+	// landed is the records written so far, of total; progress hears both.
+	landed, total int
+	progress      copyProgress
+}
+
+// tell says how the copy stands to progress, if any.
+func (w *copyWriter) tell() {
+	if w.progress != nil {
+		w.progress(w.landed, w.total)
+	}
 }
 
 func (w *copyWriter) write(ctx context.Context, key string, data []byte) error {
@@ -146,8 +172,12 @@ func (w *copyWriter) write(ctx context.Context, key string, data []byte) error {
 	w.written[key] = sha256.Sum256(data)
 	if w.bulk == nil {
 		// Create only: a destination written to meanwhile is a conflict, not overwritten.
-		_, err := w.to.Put(ctx, key, data, store.Absent)
-		return err
+		if _, err := w.to.Put(ctx, key, data, store.Absent); err != nil {
+			return err
+		}
+		w.landed++
+		w.tell()
+		return nil
 	}
 	if len(w.batch) > 0 && (len(w.batch) >= copyBatchRecords || w.batchBytes+len(data) > copyBatchBytes) {
 		if err := w.flush(ctx); err != nil {
@@ -165,6 +195,10 @@ func (w *copyWriter) flush(ctx context.Context) error {
 		return nil
 	}
 	err := w.bulk.createAll(ctx, w.batch)
+	if err == nil {
+		w.landed += len(w.batch)
+		w.tell()
+	}
 	w.batch, w.batchBytes = nil, 0
 	return err
 }

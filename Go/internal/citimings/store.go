@@ -629,5 +629,6 @@ func writeDay(path string, runs []Run) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
+	// store-bounds: kind=time series; count=20_000 a repository; size=4MiB a run; age=90d; applied=on the sweep, and a run over its size is kept with less (#7190, #7352)
 	return store.WriteAtomically(path, b.Bytes(), 0o644)
 }

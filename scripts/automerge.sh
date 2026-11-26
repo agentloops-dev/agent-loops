@@ -14,8 +14,10 @@
 # COMMIT_MESSAGES, so a PR of several commits would give several trailer blocks, and git reads
 # only the last paragraph. The body is each commit's message (not a merge of the base in) with
 # its own trailers taken out, then one block: the lines of TRAILERS, then each commit's
-# Co-authored-by and each commit author but the PR's own, not already in it (a person who made a commit stays a co-author on
-# GitHub's commit page, as in GitHub's own squash message).
+# Co-authored-by as its runtime wrote it (#7174), and each commit author but the PR's own, each
+# line once (a person who made a commit stays a co-author on GitHub's commit page, as in
+# GitHub's own squash message). Co-authored-by is the runtime's, not a key of the rule: a
+# TRAILERS line of it fails, as any key that is not the rule's.
 #
 # Each key must be a trailer of the rule (the commitTrailers.<key> names in
 # Packages/Wire/schema/org.schema.json), or Refs, which Fixes writes with no PR: a key that is
@@ -92,8 +94,9 @@ while IFS= read -r -d $'\x1e' rec; do
 	last=$(printf '%s\n' "$text" | awk 'BEGIN{RS=""} {p=$0} END{print p}')
 	if [[ -n $last ]] && ! grep -qvE "$trailer_re" <<<"$last"; then
 		while IFS= read -r l; do
-			if [[ $l =~ ^[Cc]o-[Aa]uthored-[Bb]y:\ (.+)$ ]]; then
-				coauthors+=("Co-authored-by: ${BASH_REMATCH[1]}")
+			# As the runtime wrote it; add() keeps one of each, whatever its case.
+			if [[ $l =~ ^[Cc][Oo]-[Aa][Uu][Tt][Hh][Oo][Rr][Ee][Dd]-[Bb][Yy]:\ (.+)$ ]]; then
+				coauthors+=("$l")
 			fi
 		done <<<"$last"
 		text=$(printf '%s\n' "$text" | awk 'BEGIN{RS=""; ORS="\n\n"} {p[NR]=$0} END{for (i=1; i<NR; i++) print p[i]}')

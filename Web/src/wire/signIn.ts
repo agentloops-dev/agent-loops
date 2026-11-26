@@ -28,6 +28,7 @@ export interface PendingStore {
 export class IndexedPendingStore implements PendingStore {
   private open(): Promise<IDBDatabase> {
     return new Promise((resolve, reject) => {
+      // store-bounds: kind=secret; count=1; age=until-deleted; applied=on write, which replaces it, the return from the provider drops it, and it signs in only for 10 minutes after it is made
       const request = indexedDB.open("agents-signin", 1);
       request.onupgradeneeded = () => request.result.createObjectStore("pending");
       request.onsuccess = () => resolve(request.result);

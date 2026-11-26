@@ -2672,6 +2672,10 @@
         },
         "firstPrompt": {
           "type": "integer"
+        },
+        "startRemoved": {
+          "type": "string",
+          "description": "When the 90-day or size trim took the start of this chat (#7405): the line every client shows where its start was, once it shows the first turn kept. Absent when nothing was removed."
         }
       },
       "required": [

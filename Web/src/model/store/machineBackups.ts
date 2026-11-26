@@ -1,9 +1,6 @@
 // Part of the Store (#5384): machineBackups.
-import type { MachineRef, BackupRestoreResult, BackupSettings, BackupState, ConnectAnotherRequest, DailyChecksSettings, DriveApproval, WakeSettings, PlaneMoveAsk } from "../../protocol/generated";
-import { CallFailed } from "../../wire/link";
+import type { BackupRestoreResult, BackupSettings, BackupState, ConnectAnotherRequest, DailyChecksSettings, DriveApproval, WakeSettings, PlaneMoveAsk } from "../../protocol/generated";
 import { describe } from "../errors";
-import { log } from "../../log";
-import { askID, type GitLendAsk } from "../gitLending";
 import type { Store } from "../store";
 
 export const machineBackupsMethods = {
@@ -12,11 +9,6 @@ export const machineBackupsMethods = {
    * once with the host's row; the start's progress comes as `control/hostChanged`, and a refusal
    * is said in `problem`.
    */
-  /** Approve or Deny: any client may answer, and the control plane takes the first. */
-  async answerGitLend(this: Store, ask: GitLendAsk, allowed: boolean): Promise<void> {
-    this.gitAsksAnswered.value = new Set([...this.gitAsksAnswered.value, askID(ask.host, ask.server)]);
-    await this.lendGit(ask.host, ask.from, ask.server, allowed);
-  },
   /** Settings ▸ Backups (#1810), asked when Settings is shown. */
   loadBackups(this: Store): void {
     void this.hostBackups(this.macHostID.value).then((state) => {
@@ -144,23 +136,6 @@ export const machineBackupsMethods = {
     } catch (error) {
       this.say(describe(error));
       return null;
-    }
-  },
-  /** Said to the control plane; Settings ▸ Git access takes one back with `allowed` false. */
-  async lendGit(this: Store, host: string, from: string, server: string, allowed: boolean): Promise<void> {
-    try {
-      await this.link.call("machines/lendGit", { host: host as MachineRef, from: from as MachineRef, server, allowed });
-      if (!allowed) {
-        this.hosts.value = this.hosts.value.map((row) => {
-          if (row.id !== host || !row.gitFrom) return row;
-          const rest = { ...row.gitFrom };
-          delete rest[server];
-          return { ...row, gitFrom: rest };
-        });
-      }
-    } catch (error) {
-      log("call.failed", error instanceof CallFailed ? error.code : undefined);
-      this.say(describe(error));
     }
   },
 };

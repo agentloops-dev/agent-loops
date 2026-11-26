@@ -852,7 +852,7 @@ func (d *Daemon) restoreArchive(archive, madeIn string, madeAt wire.Date, mine, 
 		return res, fmt.Errorf("the list of deleted agents can't be read: %w", err)
 	}
 	if cutoff := restoreCutoff(erased); !madeAt.Time().After(cutoff) {
-		return res, Invalid("It was made on %s. This machine restores only what was made after %s: it no longer knows which older agents it deleted.",
+		return res, Invalid("It was made on %s. This machine restores only what was made after %s: it no longer knows which older agents it deleted. Choose a backup made after %[2]s.",
 			madeAt.Time().UTC().Format("2 Jan 2006"), cutoff.UTC().Format("2 Jan 2006 15:04 MST"))
 	}
 	f, err := os.Open(archive)

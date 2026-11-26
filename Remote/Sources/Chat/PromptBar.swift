@@ -50,7 +50,6 @@ struct PromptBar: View {
     /// Prompts this bar has sent that the Mac has not yet taken (#87). The send button
     /// spins meanwhile; past a beat, the bar says so in words too, as the Mac's does.
     @State private var sending = 0
-    @State private var sendingIsSlow = false
     /// How wide the options row has to fill. See `optionsRow`.
     @State private var optionsWidth: CGFloat = 0
     @FocusState private var focused: Bool
@@ -84,18 +83,8 @@ struct PromptBar: View {
                 SuggestionChip(prompt: suggestion, take: take)
                     .transition(.opacity)
             }
-            if sending > 0, sendingIsSlow {
-                Telling(host: model.answerRecipient(agent.id), doing: "Sending")
-            }
             field
             if isShowingEverything { options }
-        }
-        .task(id: sending > 0) {
-            sendingIsSlow = false
-            guard sending > 0 else { return }
-            // Only a wait for the network, and only after 300 ms (specs/4777-fast).
-            try? await Task.sleep(for: .milliseconds(300))
-            if !Task.isCancelled { sendingIsSlow = true }
         }
         // The same column the transcript draws in, so the bar's edges track its edges
         // at every width, as on the Mac (FR-020, FR-021).
@@ -317,6 +306,8 @@ struct PromptBar: View {
                     // on the cards (#86); `send()` refuses an empty field.
                     .disabled(!canSend && sending == 0)
                     .accessibilityLabel(PromptWords.sendLabel(willQueue: willQueue))
+                    // No line above the field (#5856): VoiceOver still hears that it is on its way.
+                    .accessibilityValue(sending > 0 ? Telling.words(doing: "Sending", host: model.answerRecipient(agent.id)) : "")
                     .accessibilityHint(willQueue ? PromptWords.sendHelp(willQueue: true) : "")
                 }
             }

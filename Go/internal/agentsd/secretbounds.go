@@ -8,6 +8,7 @@ import (
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
 	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/usersettings"
+	"github.com/agentloops-dev/agent-loops/Go/internal/sizewords"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -26,13 +27,13 @@ const (
 	secretHintBytes        = 256
 	sessionSecretFilesMost = 1000
 	sessionExpiredMost     = 2 * secretsMost
-	removeSecretFirst      = "remove one first"
+	removeSecretFirst      = "remove a secret that is not in use, then try again"
 )
 
 // checkSecretValue refuses a value that is too large to keep.
 func checkSecretValue(value string) error {
 	if len(value) > secretValueMost {
-		return store.LimitError{Words: fmt.Sprintf("a secret's value is at most %d KiB", secretValueMost>>10)}
+		return store.LimitError{Words: fmt.Sprintf("a secret's value can be at most %s; use a shorter value", sizewords.Int(secretValueMost))}
 	}
 	return nil
 }
@@ -64,7 +65,9 @@ var sealedFile = store.SecretFile[sealedSecretsFile]{Name: "sealed.json", Parts:
 var sessionFile = store.SecretFile[sessionSecretFile]{Name: "a session's secrets", Parts: []store.SecretPart[sessionSecretFile]{
 	{What: "secrets for one session", MaxRecordBytes: secretRecordBytes, MaxCount: secretsMost, Remedy: removeSecretFirst,
 		Entries: func(f sessionSecretFile) map[string]any { return store.Entries(f.Secrets) }},
-	{What: "expired names for one session", MaxRecordBytes: secretHintBytes, MaxCount: sessionExpiredMost, Remedy: removeSecretFirst,
+	// The oldest expired names go before a write (writeSessionSecretsLocked), so the count
+	// refuses nothing; a name too long to keep is the refusal the person can see.
+	{What: "expired names for one session", MaxRecordBytes: secretHintBytes, MaxCount: sessionExpiredMost, Remedy: "start a new session for more",
 		Entries: func(f sessionSecretFile) map[string]any {
 			out := map[string]any{}
 			for _, n := range f.Expired {

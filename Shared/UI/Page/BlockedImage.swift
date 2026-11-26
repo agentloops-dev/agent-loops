@@ -152,10 +152,21 @@ struct BlockedImageView: View {
                             Text(verbatim: ImageHostsWords.menuLearns(machine: remote.machineName))
                         }
                     } label: {
-                        Image(icon: "ellipsis")
+                        // The title, not an `.accessibilityLabel`, names it: AppKit's menu button took
+                        // no label from the modifier (#7275), and a stacked label can crash the tree.
+                        Label {
+                            Text(verbatim: ImageHostsWords.more(blocked.host))
+                        } icon: {
+                            // As high as Show (#7275): AppKit sizes a menu button by its label's
+                            // image, and the ellipsis alone is 5 pt high, so the pill was 15 pt.
+                            // As text it is a line high, and the pill is Show's 27 pt.
+                            Text(Image(icon: "ellipsis"))
+                        }
+                        .labelStyle(.iconOnly)
                     }
+                    .menuStyle(.button)
                     .menuIndicator(.hidden)
-                    .accessibilityLabel(ImageHostsWords.more)
+                    .help(ImageHostsWords.more(blocked.host))
                 case .reading:
                     ProgressView().controlSize(.small)
                     Button(ImageHostsWords.reading) {}.disabled(true)

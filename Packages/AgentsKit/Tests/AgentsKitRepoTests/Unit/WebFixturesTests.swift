@@ -740,6 +740,7 @@ struct WebFixturesTests {
             ("too long", "\(String(repeating: "x", count: 25)),ok,", []),
             ("exactly 24", "\(String(repeating: "y", count: 24)),", []),
             ("no room", "a,b,c,", ["one", "two", "three", "four"]),
+            ("links have their own room", "#7,P#8,merged,x,", ["a", "b", "c", "d", "e", "#1", "#2"]),
             ("nothing", "", []),
         ]
         let cases = typed.map { name, text, existing in

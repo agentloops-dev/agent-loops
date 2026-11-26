@@ -3102,6 +3102,16 @@
       "required": [],
       "additionalProperties": false
     },
+    "StoreAtLimit": {
+      "type": "string",
+      "enum": [
+        "refuse",
+        "write",
+        "hourly",
+        "daily"
+      ],
+      "description": "What happens to a store over its limit (#7408), by its declaration: refuse, a new write is refused until it is within its limit again; write, the next write removes what is past the limit; hourly or daily, the sweep removes what is past the limit each hour or each day."
+    },
     "StoreOwner": {
       "type": "string",
       "enum": [
@@ -3172,6 +3182,10 @@
         "measuredAt": {
           "$ref": "core.schema.json#/definitions/WireDate",
           "description": "When this store's measurement ended."
+        },
+        "atLimit": {
+          "$ref": "#/definitions/StoreAtLimit",
+          "description": "What happens to the store when it is over its limit (#7408). Absent from a host too old to say."
         }
       },
       "required": [
@@ -4010,7 +4024,7 @@
     },
     "WorkTimelineRequest": {
       "type": "object",
-      "description": "work/timeline (#4172): the epics of a project (its id, from a folder's .agents/folder.json) that overlap from to to. With first, the answer can be partial (#7027): ask again without it for all of it.",
+      "description": "work/timeline (#4172): the epics of a project (its id, from a folder's .agents/folder.json) that overlap from to to. With first, the answer can be partial (#7027): ask again without it for all of it. With onHold (#7335), the open epics on hold come too, each with its children and with no forecast, after the others in the order of forge/next; with none, an epic on hold is left out and its children are not read. Either way they are not in the forecast's history.",
       "properties": {
         "project": {
           "type": "string"
@@ -4022,6 +4036,9 @@
           "$ref": "core.schema.json#/definitions/WireDate"
         },
         "first": {
+          "type": "boolean"
+        },
+        "onHold": {
           "type": "boolean"
         }
       },
