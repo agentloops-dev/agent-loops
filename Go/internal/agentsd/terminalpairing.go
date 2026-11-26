@@ -96,7 +96,7 @@ func (d *Daemon) pairTerminal(ctx context.Context, r wire.TerminalPairingRequest
 		words := "Asked Agent Loops on this Mac to pair this terminal. Approve it in Needs you there (Approve or Deny)."
 		return wire.TerminalPairingReply{Request: &id, Words: &words}, nil
 	}
-	return wire.TerminalPairingReply{}, Invalid("A person did not pair this terminal. To pair it by hand: loops auth login '<code>'")
+	return wire.TerminalPairingReply{}, Invalid("A person did not pair this terminal.")
 }
 
 // hasControlPlane is whether this machine is on a control plane, whose code a window can make.

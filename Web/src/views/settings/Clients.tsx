@@ -118,7 +118,6 @@ function PairDialog({ store, purpose, close }: { store: Store; purpose: PairPurp
                 <>
                   <p class="sheet-note">{words.terminal}</p>
                   <code class="code-text" aria-label="Command">{terminalLogin(code.text)}</code>
-                  <button type="button" onClick={copyLogin}>{copiedLogin.value ? "Copied" : "Copy Command"}</button>
                 </>
               )}
             </>
@@ -126,6 +125,9 @@ function PairDialog({ store, purpose, close }: { store: Store; purpose: PairPurp
         ) : !problem.value && <p class="sheet-note" role="status">{words.making}</p>}
         {problem.value && <p class="sheet-note failure" role="alert">{problem.value}</p>}
         <div class="sheet-actions">
+          {code && !joined.value && purpose === "mac" && (
+            <button type="button" onClick={copyLogin}>{copiedLogin.value ? "Copied" : "Copy Command"}</button>
+          )}
           {code && !joined.value && purpose !== "device" && (
             <button type="button" onClick={copy}>{copied.value ? "Copied" : "Copy"}</button>
           )}

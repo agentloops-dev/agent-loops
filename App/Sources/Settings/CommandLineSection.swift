@@ -101,7 +101,8 @@ struct CommandLineSection: View {
         Section {
             LabeledContent("loops") {
                 HStack(spacing: 8) {
-                    Text(stateWords).foregroundStyle(.secondary)
+                    // Whole, never cut: the path is the state (#6875).
+                    Text(stateWords).foregroundStyle(.secondary).fixedSize()
                     switch cli.state {
                     case .installed:
                         Button("Remove") { Task { await cli.remove() } }
