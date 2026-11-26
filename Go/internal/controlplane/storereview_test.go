@@ -29,54 +29,11 @@ func TestStoreReviewAtRealisticCounts(t *testing.T) {
 	if os.Getenv("AGENTS_RUN_PERF") != "1" {
 		t.Skip("a measurement for #7240; set AGENTS_RUN_PERF=1")
 	}
-	const (
-		machines     = 10
-		auditPerDay  = 1000
-		auditDays    = 120 // 30 past the 90 that are kept: an update after a time with no sweep
-		busEnvelopes = 20_000
-		meshEvents   = 10_000
-		runs         = 5_000
-	)
 	ctx := context.Background()
 	folder := store.NewFolder(t.TempDir())
 	st := &reviewStore{Store: folder}
 	now := time.Now()
-	put := func(key string, size int) {
-		if _, err := folder.Put(ctx, key, []byte(`{"pad":"`+strings.Repeat("x", max(size-10, 0))+`"}`), store.Always); err != nil {
-			t.Fatal(err)
-		}
-	}
-	t.Logf("seed: %s", cost(func() {
-		if err := SeedFakeMachines(ctx, folder, machines); err != nil {
-			t.Fatal(err)
-		}
-		for day := range auditDays {
-			at := now.Add(-time.Duration(day) * 24 * time.Hour)
-			for i := range auditPerDay {
-				put(audit.Key(at.Add(-time.Duration(i)*time.Second), "alex@example.com"), 600)
-			}
-		}
-		for i := range busEnvelopes {
-			put(busLogKey("alex", now.Add(-time.Duration(i)*time.Minute), fmt.Sprintf("%016x", i)), 1024)
-		}
-		for i := range meshEvents {
-			put(fmt.Sprintf("%s%013d-%04d.json", meshEventsPrefix, now.Add(-time.Duration(i)*time.Second).UnixMilli(), i), 400)
-		}
-		for i := range runs {
-			put(fmt.Sprintf("v1/runs/run-%05d.json", i), 800)
-		}
-		for m := 1; m <= machines; m++ {
-			host := fmt.Sprintf("fake-%04d", m)
-			put(copyKey(host), 1<<20) // about 300 sessions a machine: 3,000 in all
-			fillLineage(ctx, t, folder, host, 0)
-			for h := range 168 {
-				put(usageKey(usageHoursPrefix, now.Add(-time.Duration(h)*time.Hour).UTC().Format(usageHourLayout), host), 2048)
-			}
-			for d := range 90 {
-				put(usageKey(usageDaysPrefix, now.AddDate(0, 0, -d).UTC().Format(usageDayLayout), host), 2048)
-			}
-		}
-	}))
+	t.Logf("seed: %s", cost(func() { seedReview(ctx, t, folder, now) }))
 	files, bytes, err := folder.Stats()
 	t.Logf("store: %d files, %d MB (err %v)", files, bytes>>20, err)
 
@@ -135,6 +92,53 @@ func TestStoreReviewAtRealisticCounts(t *testing.T) {
 			t.Fatal(err)
 		}
 	}), st)
+}
+
+// seedReview fills folder with the review's realistic counts (#7240).
+func seedReview(ctx context.Context, t *testing.T, folder *store.Folder, now time.Time) {
+	t.Helper()
+	const (
+		machines     = 10
+		auditPerDay  = 1000
+		auditDays    = 120 // 30 past the 90 that are kept: an update after a time with no sweep
+		busEnvelopes = 20_000
+		meshEvents   = 10_000
+		runs         = 5_000
+	)
+	put := func(key string, size int) {
+		if _, err := folder.Put(ctx, key, []byte(`{"pad":"`+strings.Repeat("x", max(size-10, 0))+`"}`), store.Always); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := SeedFakeMachines(ctx, folder, machines); err != nil {
+		t.Fatal(err)
+	}
+	for day := range auditDays {
+		at := now.Add(-time.Duration(day) * 24 * time.Hour)
+		for i := range auditPerDay {
+			put(audit.Key(at.Add(-time.Duration(i)*time.Second), "alex@example.com"), 600)
+		}
+	}
+	for i := range busEnvelopes {
+		put(busLogKey("alex", now.Add(-time.Duration(i)*time.Minute), fmt.Sprintf("%016x", i)), 1024)
+	}
+	for i := range meshEvents {
+		put(fmt.Sprintf("%s%013d-%04d.json", meshEventsPrefix, now.Add(-time.Duration(i)*time.Second).UnixMilli(), i), 400)
+	}
+	for i := range runs {
+		put(fmt.Sprintf("v1/runs/run-%05d.json", i), 800)
+	}
+	for m := 1; m <= machines; m++ {
+		host := fmt.Sprintf("fake-%04d", m)
+		put(copyKey(host), 1<<20) // about 300 sessions a machine: 3,000 in all
+		fillLineage(ctx, t, folder, host, 0)
+		for h := range 168 {
+			put(usageKey(usageHoursPrefix, now.Add(-time.Duration(h)*time.Hour).UTC().Format(usageHourLayout), host), 2048)
+		}
+		for d := range 90 {
+			put(usageKey(usageDaysPrefix, now.AddDate(0, 0, -d).UTC().Format(usageDayLayout), host), 2048)
+		}
+	}
 }
 
 // reviewStore counts the lists of a store and the keys they return.
