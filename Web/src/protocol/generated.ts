@@ -2221,12 +2221,13 @@ export type CapacityLevel =
   | "full";
 
 /**
- * What put a machine near or at capacity (#6596): cpu (its load per core) or memory (critical
- * memory pressure). It stays while the level waits to fall. Absent at ok.
+ * What put a machine near or at capacity (#6596): cpu (its load per core), memory (critical memory
+ * pressure) or disk (disk pressure, #7300). It stays while the level waits to fall. Absent at ok.
  */
 export type CapacityReason =
   | "cpu"
-  | "memory";
+  | "memory"
+  | "disk";
 
 /**
  * machine/capacity (#5374): a host tells the control plane its capacity level and 5-minute load per
