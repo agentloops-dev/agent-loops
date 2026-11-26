@@ -1,0 +1,54 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://agents.alexecollins.com/schema/artifacts.schema.json",
+  "title": "The wire: artifacts types",
+  "description": "Part of the source of every type on the wire (#1135, #5380): one file per domain in Packages/Wire/schema. A $ref to another file names it (core.schema.json#/definitions/JSONValue); scripts/wire.sh gen reads them all.",
+  "definitions": {
+    "BlobInfo": {
+      "type": "object",
+      "description": "A blob in the artifact store (#5715, epic #5713): bytes at a sha256 digest.",
+      "properties": {
+        "digest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "description": "The blob's id, \"sha256:\" and 64 lower-case hex digits."
+        },
+        "size": {
+          "type": "integer",
+          "description": "The blob's length in bytes."
+        },
+        "stored": {
+          "type": "string",
+          "format": "date-time",
+          "description": "When the blob was first written, in RFC 3339."
+        }
+      },
+      "required": [
+        "digest",
+        "size",
+        "stored"
+      ],
+      "additionalProperties": false
+    },
+    "BlobPage": {
+      "type": "object",
+      "description": "One page of a blob listing, in digest order, at most 1000 blobs (#5715).",
+      "properties": {
+        "blobs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/BlobInfo"
+          }
+        },
+        "next": {
+          "type": "string",
+          "description": "Pass as the next listing's after to get the next page; absent on the last page."
+        }
+      },
+      "required": [
+        "blobs"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

@@ -1586,6 +1586,26 @@ func (v *BackupTarget) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
+// A blob in the artifact store (#5715, epic #5713): bytes at a sha256 digest.
+type BlobInfo struct {
+	// The blob's id, "sha256:" and 64 lower-case hex digits.
+	Digest string `json:"digest"`
+
+	// The blob's length in bytes.
+	Size int64 `json:"size"`
+
+	// When the blob was first written, in RFC 3339.
+	Stored string `json:"stored"`
+}
+
+// One page of a blob listing, in digest order, at most 1000 blobs (#5715).
+type BlobPage struct {
+	Blobs []BlobInfo `json:"blobs"`
+
+	// Pass as the next listing's after to get the next page; absent on the last page.
+	Next *string `json:"next,omitzero"`
+}
+
 type Block struct {
 	Waits []Wait `json:"waits"`
 
