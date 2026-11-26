@@ -176,9 +176,10 @@ var namedEvents = map[string]struct {
 	"checks.failed":   {"PR", "every PR in the repo", prNamingKeys},
 	"checks.passed":   {"PR", "every PR in the repo", prNamingKeys},
 	"run.completed":   {"run", "every run in the repo", []string{"run", "branch", "workflow", "pipeline"}},
-	"issue.closed":    {"issue", "every issue in the repo", []string{"issue", "label"}},
-	"issue.commented": {"issue", "every issue in the repo", []string{"issue", "label"}},
-	"issue.labelled":  {"issue", "every issue in the repo", []string{"issue", "label"}},
+	"issue.closed":    {"issue", "every issue in the repo", []string{"issue", "label", "parent"}},
+	"issue.commented": {"issue", "every issue in the repo", []string{"issue", "label", "parent"}},
+	"issue.parented":  {"issue", "every issue in the repo", []string{"issue", "label", "parent"}},
+	"issue.labelled":  {"issue", "every issue in the repo", []string{"issue", "label", "parent"}},
 }
 
 var prNamingKeys = []string{"pr", "branch", "fixes", "mine"}
