@@ -40,7 +40,7 @@ import (
 // stays frozen and says so.
 
 const (
-	// store-bounds: kind=document; count=20; size=4KiB a record; age=90d; applied=on write (refused past its size), and each write deletes, from the keys, the moves past the newest 20 and those started 90 days ago; a read writes nothing (#7396)
+	// store-bounds: kind=document; count=20; size=4KiB a record; age=90d; applied=on write (refused past its size), and each write deletes, from the keys, the moves past the newest 20 and those started 90 days ago, and a read writes nothing (#7396)
 	movesPrefix = "v1/moves/"
 	// movesKept is how many moves are kept, the newest.
 	movesKept = 20
