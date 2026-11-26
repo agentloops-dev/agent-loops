@@ -8526,6 +8526,29 @@ type LockJoinStarted struct {
 	Expires Date `json:"expires"`
 }
 
+// A record that a client of a person's machine lock signed, for one or more of the person's machines (#7167). v is 1. person and root name the lock (root is the SHA-256 of its root entry's body). kind and subject say what the value is: setup.script is the approval of a set-up script (SetupScriptApproval), with the subject root or setup. scope says which machines take it: "m:<machine id>" (that one) or "made" (a machine as it is made). seq is at least 1 and goes up with each record of one kind and subject that one machine can take. content is the value's exact bytes, at most 256 KiB; empty content says that the value is removed. key is the signing key (X9.63) of a client of the lock. sig is ECDSA P-256 (r then s) with SHA-256 over "agents-lock-record/1", person, root in lower-case hex, kind, subject, scope, seq in decimal and the lower-case hex SHA-256 of content, each ended by a newline.
+type LockRecord struct {
+	V int64 `json:"v"`
+
+	Person string `json:"person"`
+
+	Root Data `json:"root"`
+
+	Kind string `json:"kind"`
+
+	Subject string `json:"subject"`
+
+	Scope string `json:"scope"`
+
+	Seq int64 `json:"seq"`
+
+	Content Data `json:"content"`
+
+	Key Data `json:"key"`
+
+	Sig Data `json:"sig"`
+}
+
 // A request signed by its sender's own key (#3492, D6, D7): a client's kept request for a machine that is not there, or a machine's call to another of its person's machines. It goes as the request's "lock" member. sig is ECDSA P-256 (r then s) with SHA-256 over "agents-lock-request/1\n", to, "\n", at in decimal, "\n", the method, "\n", then the params as sent. to is the machine's id; a machine may leave it out for another machine it named by name. at is seconds since 1970. The machine refuses one whose key its lock does not name, older than a day, or seen before.
 type LockSignature struct {
 	To *string `json:"to,omitzero"`
@@ -15396,6 +15419,13 @@ type SettleUntrustedYourPolicyRequest struct {
 	Revision int64 `json:"revision"`
 
 	Sign bool `json:"sign"`
+}
+
+// The content of a setup.script record (#7167): the script's SHA-256 in lower-case hexadecimal, and its length in bytes (at least 1).
+type SetupScriptApproval struct {
+	Hash string `json:"hash"`
+
+	Size int64 `json:"size"`
 }
 
 type SharedInstructions struct {

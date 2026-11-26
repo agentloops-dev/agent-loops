@@ -1,0 +1,845 @@
+{
+  "lock": {
+    "person": "alex",
+    "entries": [
+      {
+        "body": "eyJ2IjoxLCJraW5kIjoicm9vdCIsInBlcnNvbiI6ImFsZXgiLCJzaWduZXIiOiJCR3ZuWFJjb3MzYXpzUXhtaEdVSVFZOUJoRXVmZHVlM1YwaHBLaHNXN3hyVm9zeGhOQUhNQUJsM0IzRnRBdC8xT3pDTTNMOExqc2w4eEpTMkx1YlpZK289IiwiYXQiOjgxNzM0NDEwMi40MDI4NDYsImtleSI6IkJHdm5YUmNvczNhenNReG1oR1VJUVk5QmhFdWZkdWUzVjBocEtoc1c3eHJWb3N4aE5BSE1BQmwzQjNGdEF0LzFPekNNM0w4TGpzbDh4SlMyTHViWlkrbz0iLCJuYW1lIjoiTWFjIiwiY2xpZW50S2luZCI6Im1hYyJ9",
+        "sig": "IjTtVhI/JGI1wYMy6nuQVKy/r1vYZjTlH5Sfq+I7xTqxjpTX7L0QzDqDcP0F5tHriO14181A/GlKJ1ADc0DQnQ=="
+      },
+      {
+        "body": "eyJ2IjoxLCJraW5kIjoiYWRkQ2xpZW50IiwicGVyc29uIjoiYWxleCIsInByZXZpb3VzIjoiUEp0NzB6QjF6dEVMTDBvYkdmM29kcEphSFRBNHg1Z2ZTUTVyci94T2FJUT0iLCJzaWduZXIiOiJCR3ZuWFJjb3MzYXpzUXhtaEdVSVFZOUJoRXVmZHVlM1YwaHBLaHNXN3hyVm9zeGhOQUhNQUJsM0IzRnRBdC8xT3pDTTNMOExqc2w4eEpTMkx1YlpZK289IiwiYXQiOjgxNzIxNDQwMCwia2V5IjoiQk01aFZuZjZQcUt6SlljREVFdmMxbVlYWjdNbDdIY0dKWmxoSEwyeml1SjhNWVNCdlVKb0VzRDRyNzk0MkJjd0piUDhFeTBsV3NEanppOVgwVUVPRWJrPSJ9",
+        "sig": "2Hd8Vn4GYpzzepJI/4y/IlHg0EOOzeTpvrByJcRJAGdTYRqTCB63UyiSnNBaMwT4nJG6nOLg2LjEPKL4spJBHg=="
+      },
+      {
+        "body": "eyJ2IjoxLCJraW5kIjoiYWRkQ2xpZW50IiwicGVyc29uIjoiYWxleCIsInByZXZpb3VzIjoiZGo5QzNKLzQ2ZWxvRFFBZDRMc0RPbkFEQTZzUjE5K2tkQ0ZMR0dsdU95RT0iLCJzaWduZXIiOiJCR3ZuWFJjb3MzYXpzUXhtaEdVSVFZOUJoRXVmZHVlM1YwaHBLaHNXN3hyVm9zeGhOQUhNQUJsM0IzRnRBdC8xT3pDTTNMOExqc2w4eEpTMkx1YlpZK289IiwiYXQiOjgxNzIxNDQwMCwia2V5IjoiQkxrb0dYTTBaYjh5dkVqTGJqaUtqN0VNLzdGM1doK3ZyMW9MckJ2YVhSeGNDWlA4Z0dtU05mRERDZ0p1c0t0YndtelROR01iQnJocWJSNGF2WWQyUGtJPSJ9",
+        "sig": "btyYjyv5sSNjpOZOeUJHHYYoUb7Rku3zX1Ud2rMQdbK2D1+ydgxWWgPd/hmBAwEqabk+9ah5PGJnxAvU2HTIfA=="
+      },
+      {
+        "body": "eyJ2IjoxLCJraW5kIjoiYWRkTWFjaGluZSIsInBlcnNvbiI6ImFsZXgiLCJwcmV2aW91cyI6Im5NaFlXbnRjWTdqK0twSnJPZlN1czd3bWVEd3NtZWhhS1ZON1YzN1ZoUHM9Iiwic2lnbmVyIjoiQkd2blhSY29zM2F6c1F4bWhHVUlRWTlCaEV1ZmR1ZTNWMGhwS2hzVzd4clZvc3hoTkFITUFCbDNCM0Z0QXQvMU96Q00zTDhManNsOHhKUzJMdWJaWStvPSIsImF0Ijo4MTcyMTQ0MDAsImtleSI6IkJEbjBsODhzMnN0OCtUWWk2ejhjQWwvRjFGVHZMOGRiUTZlT0JwOVJuTHgzeklNdzBCV2N3aWZWOXJOMXh4alJYQ1ZtZXVicnRhNG84ZkNLZktRRlpOcz0iLCJzZWFsaW5nS2V5IjoiQkRuMGw4OHMyc3Q4K1RZaTZ6OGNBbC9GMUZUdkw4ZGJRNmVPQnA5Um5MeDN6SU13MEJXY3dpZlY5ck4xeHhqUlhDVm1ldWJydGE0bzhmQ0tmS1FGWk5zPSIsImlkIjoiZGV2LTEifQ==",
+        "sig": "+VaLmSOJBfa9fXYBb3wCIRuVDaLsSPjXvDk8Rh8yfrbsSgnPJdQJ98koiQ9niSu6Pyu2nQQop0UCrlcq4zNuVw=="
+      },
+      {
+        "body": "eyJ2IjoxLCJraW5kIjoicmVjb3ZlcnkiLCJwZXJzb24iOiJhbGV4IiwicHJldmlvdXMiOiJCay9wRzBuYVYxUjZXSmcvK09NSlRudGhQaWpXK1d0K2xibVhoN1pEd0Z3PSIsInNpZ25lciI6IkJHdm5YUmNvczNhenNReG1oR1VJUVk5QmhFdWZkdWUzVjBocEtoc1c3eHJWb3N4aE5BSE1BQmwzQjNGdEF0LzFPekNNM0w4TGpzbDh4SlMyTHViWlkrbz0iLCJhdCI6ODE3MjE0NDAwLCJrZXkiOiJCTENFY1R0ZkEvSzNid29QdnRkeVVWRjErTmdYQU1rU05ySFJEZ2VXTDhMdVFzRmE5c0kwSzBaYTZpN1BpaHo4dU5ZNXZkTWc5RnNrMklBRzdFWUJnODg9In0=",
+        "sig": "0XU8v2VJi+yNt58OijMnxMuu6B677fBjTCwvwoSq45Tds3dqgVux58A7oGa7R7eYUASYzAiI17xutaqvR69oWA=="
+      },
+      {
+        "body": "eyJ2IjoxLCJraW5kIjoicmVtb3ZlIiwicGVyc29uIjoiYWxleCIsInByZXZpb3VzIjoiYzluSk9hWHozYVYzd2poaUh4MldtTjVSeGZYT2pRUi9pSHBhaXdyRkdWRT0iLCJzaWduZXIiOiJCR3ZuWFJjb3MzYXpzUXhtaEdVSVFZOUJoRXVmZHVlM1YwaHBLaHNXN3hyVm9zeGhOQUhNQUJsM0IzRnRBdC8xT3pDTTNMOExqc2w4eEpTMkx1YlpZK289IiwiYXQiOjgxNzIxNDQwMCwia2V5IjoiQkxrb0dYTTBaYjh5dkVqTGJqaUtqN0VNLzdGM1doK3ZyMW9MckJ2YVhSeGNDWlA4Z0dtU05mRERDZ0p1c0t0YndtelROR01iQnJocWJSNGF2WWQyUGtJPSJ9",
+        "sig": "mtNoy5LqjS3C/7xgNmI7+VKNFukBJromKuFN17Th4OTmETHlBjks6wLJKMHGFkVhZPNptNWVA053+2jvuMxRAw=="
+      },
+      {
+        "body": "eyJ2IjoxLCJraW5kIjoiaW52aXRlIiwicGVyc29uIjoiYWxleCIsInByZXZpb3VzIjoid0tTRy9NaWovYUNCWjhTdlp1QUhnejBqQjZaUFViWTdkTitwREpTdC9yYz0iLCJzaWduZXIiOiJCR3ZuWFJjb3MzYXpzUXhtaEdVSVFZOUJoRXVmZHVlM1YwaHBLaHNXN3hyVm9zeGhOQUhNQUJsM0IzRnRBdC8xT3pDTTNMOExqc2w4eEpTMkx1YlpZK289IiwiYXQiOjgxNzIxNDQwMCwia2V5IjoiQlBvMWs5NzNZbVY1SXAzdUJHWnJoaVV6N056SmRBSjdSZk40T3U0akhFOTJROWMrcTc5UzkrUEpQQ0lYNUtGQ0MxM1RYY0VkM05OazJTeHRIbDZDQXk0PSIsImV4cGlyZXMiOjgxNzIxNDcwMH0=",
+        "sig": "+fvRaxqrkdpxa1Bx3ekXNpm4k1eskB/tal6ban6NN8Y+Nla1spmek/5EsMsDpOSNZFQl0L/LVSTVaVrIRLWmQw=="
+      }
+    ]
+  },
+  "kinds": {
+    "setup.script": [
+      "made",
+      "m:"
+    ]
+  },
+  "records": [
+    {
+      "name": "for a made machine",
+      "record": {
+        "v": 1,
+        "person": "alex",
+        "root": "PJt70zB1ztELL0obGf3odpJaHTA4x5gfSQ5rr/xOaIQ=",
+        "kind": "setup.script",
+        "subject": "setup",
+        "scope": "made",
+        "seq": 7,
+        "content": "eyJoYXNoIjoiNzY4NWRjNDNiYzYzNTBmOWNkNDM2YTRiYWViYWJiNDVjMGYyZWUyZTYwYTNlMzM3MTJjMzdkNGE4MjhjNjc2YyIsInNpemUiOjEyfQ==",
+        "key": "BM5hVnf6PqKzJYcDEEvc1mYXZ7Ml7HcGJZlhHL2ziuJ8MYSBvUJoEsD4r7942BcwJbP8Ey0lWsDjzi9X0UEOEbk=",
+        "sig": "V5jBCd/sSDPoY8Q3skKUipIygQD9sFg6nzXye+ZHXUGpbLoR79u+rtR6Ec4R9lCKeLxjRAf+1zgNOOwwKidPNQ=="
+      },
+      "signed": "YWdlbnRzLWxvY2stcmVjb3JkLzEKYWxleAozYzliN2JkMzMwNzVjZWQxMGIyZjRhMWIxOWZkZTg3NjkyNWExZDMwMzhjNzk4MWY0OTBlNmJhZmZjNGU2ODg0CnNldHVwLnNjcmlwdApzZXR1cAptYWRlCjcKODUwOTk1NWJlM2ZhN2E5MTc2NDg0NzlkNmM4MjZiZGUzNTU1MWE3YmRmZTA3OTQ4ZjViYzIxMmE0OGE0ODkyOAo=",
+      "host": "dev-9",
+      "made": true,
+      "why": ""
+    },
+    {
+      "name": "for one machine",
+      "record": {
+        "v": 1,
+        "person": "alex",
+        "root": "PJt70zB1ztELL0obGf3odpJaHTA4x5gfSQ5rr/xOaIQ=",
+        "kind": "setup.script",
+        "subject": "root",
+        "scope": "m:dev-1",
+        "seq": 1,
+        "content": "eyJoYXNoIjoiYjViZWE0MWI2YzYyM2Y3YzA5ZjFiZjI0ZGNhZTU4ZWJhYjNjMGNkZDkwYWQ5NjZiYzQzYTQ1YjQ0ODY3ZTEyYiIsInNpemUiOjR9",
+        "key": "BGvnXRcos3azsQxmhGUIQY9BhEufdue3V0hpKhsW7xrVosxhNAHMABl3B3FtAt/1OzCM3L8Ljsl8xJS2LubZY+o=",
+        "sig": "UOYYwyujWUDHSOu/mODHv0q0RaoAf5t7FpO8zHs3mNhFMpDJ6P1mvgrdqFsf1Umlx8GTKfR4hSrLfUd4zglYww=="
+      },
+      "signed": "YWdlbnRzLWxvY2stcmVjb3JkLzEKYWxleAozYzliN2JkMzMwNzVjZWQxMGIyZjRhMWIxOWZkZTg3NjkyNWExZDMwMzhjNzk4MWY0OTBlNmJhZmZjNGU2ODg0CnNldHVwLnNjcmlwdApyb290Cm06ZGV2LTEKMQo1YjRkZWI1NTMzMGZlMTVlOTc2MTNiYzM3NzExM2E5N2IzOGQ5ZTljNGFjNWVmNThhN2E3ZTM1MjZhOTI0OWQ1Cg==",
+      "host": "dev-1",
+      "made": false,
+      "why": ""
+    },
+    {
+      "name": "any bytes",
+      "record": {
+        "v": 1,
+        "person": "alex",
+        "root": "PJt70zB1ztELL0obGf3odpJaHTA4x5gfSQ5rr/xOaIQ=",
+        "kind": "setup.script",
+        "subject": "s-1.a_B",
+        "scope": "m:dev-1",
+        "seq": 1,
+        "content": "AP8K",
+        "key": "BGvnXRcos3azsQxmhGUIQY9BhEufdue3V0hpKhsW7xrVosxhNAHMABl3B3FtAt/1OzCM3L8Ljsl8xJS2LubZY+o=",
+        "sig": "axBLzIDYydRj2PgR2cALltURVU3SQBFka/g6dZ1ALQq7G9SjC7Q65CS8DaWyc13GWs1qWMNJAK+eJ4mONgFNMw=="
+      },
+      "signed": "YWdlbnRzLWxvY2stcmVjb3JkLzEKYWxleAozYzliN2JkMzMwNzVjZWQxMGIyZjRhMWIxOWZkZTg3NjkyNWExZDMwMzhjNzk4MWY0OTBlNmJhZmZjNGU2ODg0CnNldHVwLnNjcmlwdApzLTEuYV9CCm06ZGV2LTEKMQo3MTI0NTBkM2M0YTc5ZWVhOTUwOWU3NWRjMWRhY2RlZmY1ODAzNGRmNTM4NTM2Y2ZhZTJkYTg4MmJkOGEwYzUwCg==",
+      "host": "dev-1",
+      "made": false,
+      "why": ""
+    },
+    {
+      "name": "a removed value",
+      "record": {
+        "v": 1,
+        "person": "alex",
+        "root": "PJt70zB1ztELL0obGf3odpJaHTA4x5gfSQ5rr/xOaIQ=",
+        "kind": "setup.script",
+        "subject": "setup",
+        "scope": "m:dev-1",
+        "seq": 9007199254740991,
+        "content": "",
+        "key": "BGvnXRcos3azsQxmhGUIQY9BhEufdue3V0hpKhsW7xrVosxhNAHMABl3B3FtAt/1OzCM3L8Ljsl8xJS2LubZY+o=",
+        "sig": "qBSV8fd61JP1vNEb8Z4JKZKKPxF4ZhlKGsO21nbSPucRTDYoadh8nI/NuWLBgJUDLaJDE6Kq4x0okmbNcrA0+Q=="
+      },
+      "signed": "YWdlbnRzLWxvY2stcmVjb3JkLzEKYWxleAozYzliN2JkMzMwNzVjZWQxMGIyZjRhMWIxOWZkZTg3NjkyNWExZDMwMzhjNzk4MWY0OTBlNmJhZmZjNGU2ODg0CnNldHVwLnNjcmlwdApzZXR1cAptOmRldi0xCjkwMDcxOTkyNTQ3NDA5OTEKZTNiMGM0NDI5OGZjMWMxNDlhZmJmNGM4OTk2ZmI5MjQyN2FlNDFlNDY0OWI5MzRjYTQ5NTk5MWI3ODUyYjg1NQo=",
+      "host": "dev-1",
+      "made": false,
+      "why": ""
+    },
+    {
+      "name": "not a made machine",
+      "record": {
+        "v": 1,
+        "person": "alex",
+        "root": "PJt70zB1ztELL0obGf3odpJaHTA4x5gfSQ5rr/xOaIQ=",
+        "kind": "setup.script",
+        "subject": "setup",
+        "scope": "made",
+        "seq": 7,
+        "content": "eyJoYXNoIjoiNzY4NWRjNDNiYzYzNTBmOWNkNDM2YTRiYWViYWJiNDVjMGYyZWUyZTYwYTNlMzM3MTJjMzdkNGE4MjhjNjc2YyIsInNpemUiOjEyfQ==",
+        "key": "BM5hVnf6PqKzJYcDEEvc1mYXZ7Ml7HcGJZlhHL2ziuJ8MYSBvUJoEsD4r7942BcwJbP8Ey0lWsDjzi9X0UEOEbk=",
+        "sig": "V5jBCd/sSDPoY8Q3skKUipIygQD9sFg6nzXye+ZHXUGpbLoR79u+rtR6Ec4R9lCKeLxjRAf+1zgNOOwwKidPNQ=="
+      },
+      "signed": "YWdlbnRzLWxvY2stcmVjb3JkLzEKYWxleAozYzliN2JkMzMwNzVjZWQxMGIyZjRhMWIxOWZkZTg3NjkyNWExZDMwMzhjNzk4MWY0OTBlNmJhZmZjNGU2ODg0CnNldHVwLnNjcmlwdApzZXR1cAptYWRlCjcKODUwOTk1NWJlM2ZhN2E5MTc2NDg0NzlkNmM4MjZiZGUzNTU1MWE3YmRmZTA3OTQ4ZjViYzIxMmE0OGE0ODkyOAo=",
+      "host": "dev-9",
+      "made": false,
+      "why": "otherPlace"
+    },
+    {
+      "name": "a made machine for one machine",
+      "record": {
+        "v": 1,
+        "person": "alex",
+        "root": "PJt70zB1ztELL0obGf3odpJaHTA4x5gfSQ5rr/xOaIQ=",
+        "kind": "setup.script",
+        "subject": "setup",
+        "scope": "m:dev-1",
+        "seq": 1,
+        "content": "eyJoYXNoIjoiNzY4NWRjNDNiYzYzNTBmOWNkNDM2YTRiYWViYWJiNDVjMGYyZWUyZTYwYTNlMzM3MTJjMzdkNGE4MjhjNjc2YyIsInNpemUiOjEyfQ==",
+        "key": "BGvnXRcos3azsQxmhGUIQY9BhEufdue3V0hpKhsW7xrVosxhNAHMABl3B3FtAt/1OzCM3L8Ljsl8xJS2LubZY+o=",
+        "sig": "ReggbXOyvIKS3mCzSOPk4+OCTP602N+TbA6kHchhT9iUX58sxGUhCHNjLuG1tEbkTmiIyiJV8d0d8nJbsV6HZA=="
+      },
+      "signed": "YWdlbnRzLWxvY2stcmVjb3JkLzEKYWxleAozYzliN2JkMzMwNzVjZWQxMGIyZjRhMWIxOWZkZTg3NjkyNWExZDMwMzhjNzk4MWY0OTBlNmJhZmZjNGU2ODg0CnNldHVwLnNjcmlwdApzZXR1cAptOmRldi0xCjEKODUwOTk1NWJlM2ZhN2E5MTc2NDg0NzlkNmM4MjZiZGUzNTU1MWE3YmRmZTA3OTQ4ZjViYzIxMmE0OGE0ODkyOAo=",
+      "host": "dev-9",
+      "made": true,
+      "why": "otherPlace"
+    },
+    {
+      "name": "for another machine",
+      "record": {
+        "v": 1,
+        "person": "alex",
+        "root": "PJt70zB1ztELL0obGf3odpJaHTA4x5gfSQ5rr/xOaIQ=",
+        "kind": "setup.script",
+        "subject": "setup",
+        "scope": "m:dev-1",
+        "seq": 1,
+        "content": "eyJoYXNoIjoiNzY4NWRjNDNiYzYzNTBmOWNkNDM2YTRiYWViYWJiNDVjMGYyZWUyZTYwYTNlMzM3MTJjMzdkNGE4MjhjNjc2YyIsInNpemUiOjEyfQ==",
+        "key": "BGvnXRcos3azsQxmhGUIQY9BhEufdue3V0hpKhsW7xrVosxhNAHMABl3B3FtAt/1OzCM3L8Ljsl8xJS2LubZY+o=",
+        "sig": "aenZ49tq7EDoujeBAEdrmlWkGo/vIxQ8C6uT/9ckmmHFYT6GLhYWwTG8fuYZq0KgP8nl6QjXACu8O6OFA0g7uQ=="
+      },
+      "signed": "YWdlbnRzLWxvY2stcmVjb3JkLzEKYWxleAozYzliN2JkMzMwNzVjZWQxMGIyZjRhMWIxOWZkZTg3NjkyNWExZDMwMzhjNzk4MWY0OTBlNmJhZmZjNGU2ODg0CnNldHVwLnNjcmlwdApzZXR1cAptOmRldi0xCjEKODUwOTk1NWJlM2ZhN2E5MTc2NDg0NzlkNmM4MjZiZGUzNTU1MWE3YmRmZTA3OTQ4ZjViYzIxMmE0OGE0ODkyOAo=",
+      "host": "dev-2",
+      "made": false,
+      "why": "otherPlace"
+    },
+    {
+      "name": "a removed client",
+      "record": {
+        "v": 1,
+        "person": "alex",
+        "root": "PJt70zB1ztELL0obGf3odpJaHTA4x5gfSQ5rr/xOaIQ=",
+        "kind": "setup.script",
+        "subject": "setup",
+        "scope": "m:dev-1",
+        "seq": 1,
+        "content": "eyJoYXNoIjoiY2U2ZGEwZWQ2MThhZWExNGRkNzk2OTBjZjk4NGY2MGU1YzAxZTdkNDRjZDdmM2ZhOGM3N2EzOWY2ODE4YmI0MyIsInNpemUiOjZ9",
+        "key": "BLkoGXM0Zb8yvEjLbjiKj7EM/7F3Wh+vr1oLrBvaXRxcCZP8gGmSNfDDCgJusKtbwmzTNGMbBrhqbR4avYd2PkI=",
+        "sig": "3pLw9Xxfbv9ibbUu9tEBjxc5lDiJk4Sa6XjMtnXWQV1O6jVZXfoIBxxMBC4C+tSkKl/5yQrYq+X5wVN+dYfydw=="
+      },
+      "signed": "YWdlbnRzLWxvY2stcmVjb3JkLzEKYWxleAozYzliN2JkMzMwNzVjZWQxMGIyZjRhMWIxOWZkZTg3NjkyNWExZDMwMzhjNzk4MWY0OTBlNmJhZmZjNGU2ODg0CnNldHVwLnNjcmlwdApzZXR1cAptOmRldi0xCjEKNWY1NjRlZWVkY2NhZjYwMmZhMWE2MTA5YmE4MjZlZTVlZTYzZjRkN2M5YTNkMTQzZWQ3NDg2M2JiMjdlMDk4Ywo=",
+      "host": "dev-1",
+      "made": false,
+      "why": "notMember"
+    },
+    {
+      "name": "a machine",
+      "record": {
+        "v": 1,
+        "person": "alex",
+        "root": "PJt70zB1ztELL0obGf3odpJaHTA4x5gfSQ5rr/xOaIQ=",
+        "kind": "setup.script",
+        "subject": "setup",
+        "scope": "m:dev-1",
+        "seq": 1,
+        "content": "eyJoYXNoIjoiNzY4NWRjNDNiYzYzNTBmOWNkNDM2YTRiYWViYWJiNDVjMGYyZWUyZTYwYTNlMzM3MTJjMzdkNGE4MjhjNjc2YyIsInNpemUiOjEyfQ==",
+        "key": "BDn0l88s2st8+TYi6z8cAl/F1FTvL8dbQ6eOBp9RnLx3zIMw0BWcwifV9rN1xxjRXCVmeubrta4o8fCKfKQFZNs=",
+        "sig": "r1vsCbXLZh3bifcvvWZXqogejaMciFLpPMr0jBM9uzgtDKXinI5wIR3fFJs6HA2NTOTxGbDUhBGf088Y8q9A7A=="
+      },
+      "signed": "YWdlbnRzLWxvY2stcmVjb3JkLzEKYWxleAozYzliN2JkMzMwNzVjZWQxMGIyZjRhMWIxOWZkZTg3NjkyNWExZDMwMzhjNzk4MWY0OTBlNmJhZmZjNGU2ODg0CnNldHVwLnNjcmlwdApzZXR1cAptOmRldi0xCjEKODUwOTk1NWJlM2ZhN2E5MTc2NDg0NzlkNmM4MjZiZGUzNTU1MWE3YmRmZTA3OTQ4ZjViYzIxMmE0OGE0ODkyOAo=",
+      "host": "dev-1",
+      "made": false,
+      "why": "notMember"
+    },
+    {
+      "name": "the recovery key",
+      "record": {
+        "v": 1,
+        "person": "alex",
+        "root": "PJt70zB1ztELL0obGf3odpJaHTA4x5gfSQ5rr/xOaIQ=",
+        "kind": "setup.script",
+        "subject": "setup",
+        "scope": "m:dev-1",
+        "seq": 1,
+        "content": "eyJoYXNoIjoiNzY4NWRjNDNiYzYzNTBmOWNkNDM2YTRiYWViYWJiNDVjMGYyZWUyZTYwYTNlMzM3MTJjMzdkNGE4MjhjNjc2YyIsInNpemUiOjEyfQ==",
+        "key": "BLCEcTtfA/K3bwoPvtdyUVF1+NgXAMkSNrHRDgeWL8LuQsFa9sI0K0Za6i7Pihz8uNY5vdMg9Fsk2IAG7EYBg88=",
+        "sig": "DAVXEXuo9B7CrrLshdJgjEJ499C3yJjR1PkeFg+5h2URI3DHGw1XlebtdhRJcErQvMPnSHhmsCeXpdiXgnfcLQ=="
+      },
+      "signed": "YWdlbnRzLWxvY2stcmVjb3JkLzEKYWxleAozYzliN2JkMzMwNzVjZWQxMGIyZjRhMWIxOWZkZTg3NjkyNWExZDMwMzhjNzk4MWY0OTBlNmJhZmZjNGU2ODg0CnNldHVwLnNjcmlwdApzZXR1cAptOmRldi0xCjEKODUwOTk1NWJlM2ZhN2E5MTc2NDg0NzlkNmM4MjZiZGUzNTU1MWE3YmRmZTA3OTQ4ZjViYzIxMmE0OGE0ODkyOAo=",
+      "host": "dev-1",
+      "made": false,
+      "why": "notMember"
+    },
+    {
+      "name": "no member",
+      "record": {
+        "v": 1,
+        "person": "alex",
+        "root": "PJt70zB1ztELL0obGf3odpJaHTA4x5gfSQ5rr/xOaIQ=",
+        "kind": "setup.script",
+        "subject": "setup",
+        "scope": "m:dev-1",
+        "seq": 1,
+        "content": "eyJoYXNoIjoiNzY4NWRjNDNiYzYzNTBmOWNkNDM2YTRiYWViYWJiNDVjMGYyZWUyZTYwYTNlMzM3MTJjMzdkNGE4MjhjNjc2YyIsInNpemUiOjEyfQ==",
+        "key": "BA2r6T4fgOTDpahtkV5CBiCIE5tcmQ7aPdJmHaxsaDDG/TF846XPVpXSO69jx16ZdTYJVLPScE9i0hZBgJC5x6Q=",
+        "sig": "/vTbwhavh9f758xFyBjm3mPf0QDLlCTAiHea8/3nqUUpg+7fy3uzxMXNaATqQTDt+kuOCU1iKh5S4eSb6Aj2yw=="
+      },
+      "signed": "YWdlbnRzLWxvY2stcmVjb3JkLzEKYWxleAozYzliN2JkMzMwNzVjZWQxMGIyZjRhMWIxOWZkZTg3NjkyNWExZDMwMzhjNzk4MWY0OTBlNmJhZmZjNGU2ODg0CnNldHVwLnNjcmlwdApzZXR1cAptOmRldi0xCjEKODUwOTk1NWJlM2ZhN2E5MTc2NDg0NzlkNmM4MjZiZGUzNTU1MWE3YmRmZTA3OTQ4ZjViYzIxMmE0OGE0ODkyOAo=",
+      "host": "dev-1",
+      "made": false,
+      "why": "notMember"
+    },
+    {
+      "name": "another lock",
+      "record": {
+        "v": 1,
+        "person": "alex",
+        "root": "nV2f4PNaYx4jDlCoz2bSemt9YoUJdoLC3IG1zIu8qK8=",
+        "kind": "setup.script",
+        "subject": "setup",
+        "scope": "m:dev-1",
+        "seq": 1,
+        "content": "eyJoYXNoIjoiNzY4NWRjNDNiYzYzNTBmOWNkNDM2YTRiYWViYWJiNDVjMGYyZWUyZTYwYTNlMzM3MTJjMzdkNGE4MjhjNjc2YyIsInNpemUiOjEyfQ==",
+        "key": "BM5hVnf6PqKzJYcDEEvc1mYXZ7Ml7HcGJZlhHL2ziuJ8MYSBvUJoEsD4r7942BcwJbP8Ey0lWsDjzi9X0UEOEbk=",
+        "sig": "npufucyvt0eZBIH3kerCUy12iZw1tKx3t1dpbauySsO2fq+y5Wmv0ZwyFzl0QPuZFGRds9HlbDXAWHYd7dTdBQ=="
+      },
+      "signed": "YWdlbnRzLWxvY2stcmVjb3JkLzEKYWxleAo5ZDVkOWZlMGYzNWE2MzFlMjMwZTUwYThjZjY2ZDI3YTZiN2Q2Mjg1MDk3NjgyYzJkYzgxYjVjYzhiYmNhOGFmCnNldHVwLnNjcmlwdApzZXR1cAptOmRldi0xCjEKODUwOTk1NWJlM2ZhN2E5MTc2NDg0NzlkNmM4MjZiZGUzNTU1MWE3YmRmZTA3OTQ4ZjViYzIxMmE0OGE0ODkyOAo=",
+      "host": "dev-1",
+      "made": false,
+      "why": "otherLock"
+    },
+    {
+      "name": "an invite",
+      "record": {
+        "v": 1,
+        "person": "alex",
+        "root": "PJt70zB1ztELL0obGf3odpJaHTA4x5gfSQ5rr/xOaIQ=",
+        "kind": "setup.script",
+        "subject": "setup",
+        "scope": "m:dev-1",
+        "seq": 1,
+        "content": "eyJoYXNoIjoiNzY4NWRjNDNiYzYzNTBmOWNkNDM2YTRiYWViYWJiNDVjMGYyZWUyZTYwYTNlMzM3MTJjMzdkNGE4MjhjNjc2YyIsInNpemUiOjEyfQ==",
+        "key": "BPo1k973YmV5Ip3uBGZrhiUz7NzJdAJ7RfN4Ou4jHE92Q9c+q79S9+PJPCIX5KFCC13TXcEd3NNk2SxtHl6CAy4=",
+        "sig": "Nr4vCTCxVPcXwBJyuSTLTJQmd+97816fKRaN2h+8MJGzSrj4s5EHKWTrsYb0psMgghtHmexI64ft1op9QhGh9g=="
+      },
+      "signed": "YWdlbnRzLWxvY2stcmVjb3JkLzEKYWxleAozYzliN2JkMzMwNzVjZWQxMGIyZjRhMWIxOWZkZTg3NjkyNWExZDMwMzhjNzk4MWY0OTBlNmJhZmZjNGU2ODg0CnNldHVwLnNjcmlwdApzZXR1cAptOmRldi0xCjEKODUwOTk1NWJlM2ZhN2E5MTc2NDg0NzlkNmM4MjZiZGUzNTU1MWE3YmRmZTA3OTQ4ZjViYzIxMmE0OGE0ODkyOAo=",
+      "host": "dev-1",
+      "made": false,
+      "why": "notMember"
+    },
+    {
+      "name": "a kind it does not know",
+      "record": {
+        "v": 1,
+        "person": "alex",
+        "root": "PJt70zB1ztELL0obGf3odpJaHTA4x5gfSQ5rr/xOaIQ=",
+        "kind": "setup.other",
+        "subject": "setup",
+        "scope": "made",
+        "seq": 7,
+        "content": "eyJoYXNoIjoiNzY4NWRjNDNiYzYzNTBmOWNkNDM2YTRiYWViYWJiNDVjMGYyZWUyZTYwYTNlMzM3MTJjMzdkNGE4MjhjNjc2YyIsInNpemUiOjEyfQ==",
+        "key": "BM5hVnf6PqKzJYcDEEvc1mYXZ7Ml7HcGJZlhHL2ziuJ8MYSBvUJoEsD4r7942BcwJbP8Ey0lWsDjzi9X0UEOEbk=",
+        "sig": "V5jBCd/sSDPoY8Q3skKUipIygQD9sFg6nzXye+ZHXUGpbLoR79u+rtR6Ec4R9lCKeLxjRAf+1zgNOOwwKidPNQ=="
+      },
+      "signed": "YWdlbnRzLWxvY2stcmVjb3JkLzEKYWxleAozYzliN2JkMzMwNzVjZWQxMGIyZjRhMWIxOWZkZTg3NjkyNWExZDMwMzhjNzk4MWY0OTBlNmJhZmZjNGU2ODg0CnNldHVwLm90aGVyCnNldHVwCm1hZGUKNwo4NTA5OTU1YmUzZmE3YTkxNzY0ODQ3OWQ2YzgyNmJkZTM1NTUxYTdiZGZlMDc5NDhmNWJjMjEyYTQ4YTQ4OTI4Cg==",
+      "host": "dev-9",
+      "made": true,
+      "why": "invalid"
+    },
+    {
+      "name": "another subject",
+      "record": {
+        "v": 1,
+        "person": "alex",
+        "root": "PJt70zB1ztELL0obGf3odpJaHTA4x5gfSQ5rr/xOaIQ=",
+        "kind": "setup.script",
+        "subject": "root",
+        "scope": "made",
+        "seq": 7,
+        "content": "eyJoYXNoIjoiNzY4NWRjNDNiYzYzNTBmOWNkNDM2YTRiYWViYWJiNDVjMGYyZWUyZTYwYTNlMzM3MTJjMzdkNGE4MjhjNjc2YyIsInNpemUiOjEyfQ==",
+        "key": "BM5hVnf6PqKzJYcDEEvc1mYXZ7Ml7HcGJZlhHL2ziuJ8MYSBvUJoEsD4r7942BcwJbP8Ey0lWsDjzi9X0UEOEbk=",
+        "sig": "V5jBCd/sSDPoY8Q3skKUipIygQD9sFg6nzXye+ZHXUGpbLoR79u+rtR6Ec4R9lCKeLxjRAf+1zgNOOwwKidPNQ=="
+      },
+      "signed": "YWdlbnRzLWxvY2stcmVjb3JkLzEKYWxleAozYzliN2JkMzMwNzVjZWQxMGIyZjRhMWIxOWZkZTg3NjkyNWExZDMwMzhjNzk4MWY0OTBlNmJhZmZjNGU2ODg0CnNldHVwLnNjcmlwdApyb290Cm1hZGUKNwo4NTA5OTU1YmUzZmE3YTkxNzY0ODQ3OWQ2YzgyNmJkZTM1NTUxYTdiZGZlMDc5NDhmNWJjMjEyYTQ4YTQ4OTI4Cg==",
+      "host": "dev-9",
+      "made": true,
+      "why": "forged"
+    },
+    {
+      "name": "another scope",
+      "record": {
+        "v": 1,
+        "person": "alex",
+        "root": "PJt70zB1ztELL0obGf3odpJaHTA4x5gfSQ5rr/xOaIQ=",
+        "kind": "setup.script",
+        "subject": "setup",
+        "scope": "m:dev-9",
+        "seq": 7,
+        "content": "eyJoYXNoIjoiNzY4NWRjNDNiYzYzNTBmOWNkNDM2YTRiYWViYWJiNDVjMGYyZWUyZTYwYTNlMzM3MTJjMzdkNGE4MjhjNjc2YyIsInNpemUiOjEyfQ==",
+        "key": "BM5hVnf6PqKzJYcDEEvc1mYXZ7Ml7HcGJZlhHL2ziuJ8MYSBvUJoEsD4r7942BcwJbP8Ey0lWsDjzi9X0UEOEbk=",
+        "sig": "V5jBCd/sSDPoY8Q3skKUipIygQD9sFg6nzXye+ZHXUGpbLoR79u+rtR6Ec4R9lCKeLxjRAf+1zgNOOwwKidPNQ=="
+      },
+      "signed": "YWdlbnRzLWxvY2stcmVjb3JkLzEKYWxleAozYzliN2JkMzMwNzVjZWQxMGIyZjRhMWIxOWZkZTg3NjkyNWExZDMwMzhjNzk4MWY0OTBlNmJhZmZjNGU2ODg0CnNldHVwLnNjcmlwdApzZXR1cAptOmRldi05CjcKODUwOTk1NWJlM2ZhN2E5MTc2NDg0NzlkNmM4MjZiZGUzNTU1MWE3YmRmZTA3OTQ4ZjViYzIxMmE0OGE0ODkyOAo=",
+      "host": "dev-9",
+      "made": true,
+      "why": "forged"
+    },
+    {
+      "name": "another number",
+      "record": {
+        "v": 1,
+        "person": "alex",
+        "root": "PJt70zB1ztELL0obGf3odpJaHTA4x5gfSQ5rr/xOaIQ=",
+        "kind": "setup.script",
+        "subject": "setup",
+        "scope": "made",
+        "seq": 8,
+        "content": "eyJoYXNoIjoiNzY4NWRjNDNiYzYzNTBmOWNkNDM2YTRiYWViYWJiNDVjMGYyZWUyZTYwYTNlMzM3MTJjMzdkNGE4MjhjNjc2YyIsInNpemUiOjEyfQ==",
+        "key": "BM5hVnf6PqKzJYcDEEvc1mYXZ7Ml7HcGJZlhHL2ziuJ8MYSBvUJoEsD4r7942BcwJbP8Ey0lWsDjzi9X0UEOEbk=",
+        "sig": "V5jBCd/sSDPoY8Q3skKUipIygQD9sFg6nzXye+ZHXUGpbLoR79u+rtR6Ec4R9lCKeLxjRAf+1zgNOOwwKidPNQ=="
+      },
+      "signed": "YWdlbnRzLWxvY2stcmVjb3JkLzEKYWxleAozYzliN2JkMzMwNzVjZWQxMGIyZjRhMWIxOWZkZTg3NjkyNWExZDMwMzhjNzk4MWY0OTBlNmJhZmZjNGU2ODg0CnNldHVwLnNjcmlwdApzZXR1cAptYWRlCjgKODUwOTk1NWJlM2ZhN2E5MTc2NDg0NzlkNmM4MjZiZGUzNTU1MWE3YmRmZTA3OTQ4ZjViYzIxMmE0OGE0ODkyOAo=",
+      "host": "dev-9",
+      "made": true,
+      "why": "forged"
+    },
+    {
+      "name": "another content",
+      "record": {
+        "v": 1,
+        "person": "alex",
+        "root": "PJt70zB1ztELL0obGf3odpJaHTA4x5gfSQ5rr/xOaIQ=",
+        "kind": "setup.script",
+        "subject": "setup",
+        "scope": "made",
+        "seq": 7,
+        "content": "eyJoYXNoIjoiMTg2MGVhMGE4MGY0M2RkZTliNGYzODk0MTUwZmQ3NWVjZjI0OGQ5MDMxN2Q3NzQxODMxYjY5N2IwYzcwZWZmNCIsInNpemUiOjZ9",
+        "key": "BM5hVnf6PqKzJYcDEEvc1mYXZ7Ml7HcGJZlhHL2ziuJ8MYSBvUJoEsD4r7942BcwJbP8Ey0lWsDjzi9X0UEOEbk=",
+        "sig": "V5jBCd/sSDPoY8Q3skKUipIygQD9sFg6nzXye+ZHXUGpbLoR79u+rtR6Ec4R9lCKeLxjRAf+1zgNOOwwKidPNQ=="
+      },
+      "signed": "YWdlbnRzLWxvY2stcmVjb3JkLzEKYWxleAozYzliN2JkMzMwNzVjZWQxMGIyZjRhMWIxOWZkZTg3NjkyNWExZDMwMzhjNzk4MWY0OTBlNmJhZmZjNGU2ODg0CnNldHVwLnNjcmlwdApzZXR1cAptYWRlCjcKMTkwNDVhYWU1OGYxNzQ4YmM0YjBmY2Y1ZTM2MDYzMzA0NzdjOWM5YTkwMzU3OGMwYzA0NDExNmNkMWIzYzZkYwo=",
+      "host": "dev-9",
+      "made": true,
+      "why": "forged"
+    },
+    {
+      "name": "another key",
+      "record": {
+        "v": 1,
+        "person": "alex",
+        "root": "PJt70zB1ztELL0obGf3odpJaHTA4x5gfSQ5rr/xOaIQ=",
+        "kind": "setup.script",
+        "subject": "setup",
+        "scope": "made",
+        "seq": 7,
+        "content": "eyJoYXNoIjoiNzY4NWRjNDNiYzYzNTBmOWNkNDM2YTRiYWViYWJiNDVjMGYyZWUyZTYwYTNlMzM3MTJjMzdkNGE4MjhjNjc2YyIsInNpemUiOjEyfQ==",
+        "key": "BGvnXRcos3azsQxmhGUIQY9BhEufdue3V0hpKhsW7xrVosxhNAHMABl3B3FtAt/1OzCM3L8Ljsl8xJS2LubZY+o=",
+        "sig": "V5jBCd/sSDPoY8Q3skKUipIygQD9sFg6nzXye+ZHXUGpbLoR79u+rtR6Ec4R9lCKeLxjRAf+1zgNOOwwKidPNQ=="
+      },
+      "signed": "YWdlbnRzLWxvY2stcmVjb3JkLzEKYWxleAozYzliN2JkMzMwNzVjZWQxMGIyZjRhMWIxOWZkZTg3NjkyNWExZDMwMzhjNzk4MWY0OTBlNmJhZmZjNGU2ODg0CnNldHVwLnNjcmlwdApzZXR1cAptYWRlCjcKODUwOTk1NWJlM2ZhN2E5MTc2NDg0NzlkNmM4MjZiZGUzNTU1MWE3YmRmZTA3OTQ4ZjViYzIxMmE0OGE0ODkyOAo=",
+      "host": "dev-9",
+      "made": true,
+      "why": "forged"
+    },
+    {
+      "name": "a short signature",
+      "record": {
+        "v": 1,
+        "person": "alex",
+        "root": "PJt70zB1ztELL0obGf3odpJaHTA4x5gfSQ5rr/xOaIQ=",
+        "kind": "setup.script",
+        "subject": "setup",
+        "scope": "made",
+        "seq": 7,
+        "content": "eyJoYXNoIjoiNzY4NWRjNDNiYzYzNTBmOWNkNDM2YTRiYWViYWJiNDVjMGYyZWUyZTYwYTNlMzM3MTJjMzdkNGE4MjhjNjc2YyIsInNpemUiOjEyfQ==",
+        "key": "BM5hVnf6PqKzJYcDEEvc1mYXZ7Ml7HcGJZlhHL2ziuJ8MYSBvUJoEsD4r7942BcwJbP8Ey0lWsDjzi9X0UEOEbk=",
+        "sig": "V5jBCd/sSDPoY8Q3skKUipIygQD9sFg6nzXye+ZHXUGpbLoR79u+rtR6Ec4R9lCKeLxjRAf+1zgNOOwwKidP"
+      },
+      "signed": "YWdlbnRzLWxvY2stcmVjb3JkLzEKYWxleAozYzliN2JkMzMwNzVjZWQxMGIyZjRhMWIxOWZkZTg3NjkyNWExZDMwMzhjNzk4MWY0OTBlNmJhZmZjNGU2ODg0CnNldHVwLnNjcmlwdApzZXR1cAptYWRlCjcKODUwOTk1NWJlM2ZhN2E5MTc2NDg0NzlkNmM4MjZiZGUzNTU1MWE3YmRmZTA3OTQ4ZjViYzIxMmE0OGE0ODkyOAo=",
+      "host": "dev-9",
+      "made": true,
+      "why": "forged"
+    },
+    {
+      "name": "a long signature",
+      "record": {
+        "v": 1,
+        "person": "alex",
+        "root": "PJt70zB1ztELL0obGf3odpJaHTA4x5gfSQ5rr/xOaIQ=",
+        "kind": "setup.script",
+        "subject": "setup",
+        "scope": "made",
+        "seq": 7,
+        "content": "eyJoYXNoIjoiNzY4NWRjNDNiYzYzNTBmOWNkNDM2YTRiYWViYWJiNDVjMGYyZWUyZTYwYTNlMzM3MTJjMzdkNGE4MjhjNjc2YyIsInNpemUiOjEyfQ==",
+        "key": "BM5hVnf6PqKzJYcDEEvc1mYXZ7Ml7HcGJZlhHL2ziuJ8MYSBvUJoEsD4r7942BcwJbP8Ey0lWsDjzi9X0UEOEbk=",
+        "sig": "V5jBCd/sSDPoY8Q3skKUipIygQD9sFg6nzXye+ZHXUGpbLoR79u+rtR6Ec4R9lCKeLxjRAf+1zgNOOwwKidPNQA="
+      },
+      "signed": "YWdlbnRzLWxvY2stcmVjb3JkLzEKYWxleAozYzliN2JkMzMwNzVjZWQxMGIyZjRhMWIxOWZkZTg3NjkyNWExZDMwMzhjNzk4MWY0OTBlNmJhZmZjNGU2ODg0CnNldHVwLnNjcmlwdApzZXR1cAptYWRlCjcKODUwOTk1NWJlM2ZhN2E5MTc2NDg0NzlkNmM4MjZiZGUzNTU1MWE3YmRmZTA3OTQ4ZjViYzIxMmE0OGE0ODkyOAo=",
+      "host": "dev-9",
+      "made": true,
+      "why": "forged"
+    },
+    {
+      "name": "a signature of zeros",
+      "record": {
+        "v": 1,
+        "person": "alex",
+        "root": "PJt70zB1ztELL0obGf3odpJaHTA4x5gfSQ5rr/xOaIQ=",
+        "kind": "setup.script",
+        "subject": "setup",
+        "scope": "made",
+        "seq": 7,
+        "content": "eyJoYXNoIjoiNzY4NWRjNDNiYzYzNTBmOWNkNDM2YTRiYWViYWJiNDVjMGYyZWUyZTYwYTNlMzM3MTJjMzdkNGE4MjhjNjc2YyIsInNpemUiOjEyfQ==",
+        "key": "BM5hVnf6PqKzJYcDEEvc1mYXZ7Ml7HcGJZlhHL2ziuJ8MYSBvUJoEsD4r7942BcwJbP8Ey0lWsDjzi9X0UEOEbk=",
+        "sig": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=="
+      },
+      "signed": "YWdlbnRzLWxvY2stcmVjb3JkLzEKYWxleAozYzliN2JkMzMwNzVjZWQxMGIyZjRhMWIxOWZkZTg3NjkyNWExZDMwMzhjNzk4MWY0OTBlNmJhZmZjNGU2ODg0CnNldHVwLnNjcmlwdApzZXR1cAptYWRlCjcKODUwOTk1NWJlM2ZhN2E5MTc2NDg0NzlkNmM4MjZiZGUzNTU1MWE3YmRmZTA3OTQ4ZjViYzIxMmE0OGE0ODkyOAo=",
+      "host": "dev-9",
+      "made": true,
+      "why": "forged"
+    },
+    {
+      "name": "a short root",
+      "record": {
+        "v": 1,
+        "person": "alex",
+        "root": "PJt70zB1ztELL0obGf3odpJaHTA4x5gfSQ5rr/xOaA==",
+        "kind": "setup.script",
+        "subject": "setup",
+        "scope": "made",
+        "seq": 7,
+        "content": "eyJoYXNoIjoiNzY4NWRjNDNiYzYzNTBmOWNkNDM2YTRiYWViYWJiNDVjMGYyZWUyZTYwYTNlMzM3MTJjMzdkNGE4MjhjNjc2YyIsInNpemUiOjEyfQ==",
+        "key": "BM5hVnf6PqKzJYcDEEvc1mYXZ7Ml7HcGJZlhHL2ziuJ8MYSBvUJoEsD4r7942BcwJbP8Ey0lWsDjzi9X0UEOEbk=",
+        "sig": "V5jBCd/sSDPoY8Q3skKUipIygQD9sFg6nzXye+ZHXUGpbLoR79u+rtR6Ec4R9lCKeLxjRAf+1zgNOOwwKidPNQ=="
+      },
+      "signed": "YWdlbnRzLWxvY2stcmVjb3JkLzEKYWxleAozYzliN2JkMzMwNzVjZWQxMGIyZjRhMWIxOWZkZTg3NjkyNWExZDMwMzhjNzk4MWY0OTBlNmJhZmZjNGU2OApzZXR1cC5zY3JpcHQKc2V0dXAKbWFkZQo3Cjg1MDk5NTViZTNmYTdhOTE3NjQ4NDc5ZDZjODI2YmRlMzU1NTFhN2JkZmUwNzk0OGY1YmMyMTJhNDhhNDg5MjgK",
+      "host": "dev-9",
+      "made": true,
+      "why": "otherLock"
+    },
+    {
+      "name": "another person",
+      "record": {
+        "v": 1,
+        "person": "sam",
+        "root": "PJt70zB1ztELL0obGf3odpJaHTA4x5gfSQ5rr/xOaIQ=",
+        "kind": "setup.script",
+        "subject": "setup",
+        "scope": "made",
+        "seq": 7,
+        "content": "eyJoYXNoIjoiNzY4NWRjNDNiYzYzNTBmOWNkNDM2YTRiYWViYWJiNDVjMGYyZWUyZTYwYTNlMzM3MTJjMzdkNGE4MjhjNjc2YyIsInNpemUiOjEyfQ==",
+        "key": "BM5hVnf6PqKzJYcDEEvc1mYXZ7Ml7HcGJZlhHL2ziuJ8MYSBvUJoEsD4r7942BcwJbP8Ey0lWsDjzi9X0UEOEbk=",
+        "sig": "V5jBCd/sSDPoY8Q3skKUipIygQD9sFg6nzXye+ZHXUGpbLoR79u+rtR6Ec4R9lCKeLxjRAf+1zgNOOwwKidPNQ=="
+      },
+      "signed": "YWdlbnRzLWxvY2stcmVjb3JkLzEKc2FtCjNjOWI3YmQzMzA3NWNlZDEwYjJmNGExYjE5ZmRlODc2OTI1YTFkMzAzOGM3OTgxZjQ5MGU2YmFmZmM0ZTY4ODQKc2V0dXAuc2NyaXB0CnNldHVwCm1hZGUKNwo4NTA5OTU1YmUzZmE3YTkxNzY0ODQ3OWQ2YzgyNmJkZTM1NTUxYTdiZGZlMDc5NDhmNWJjMjEyYTQ4YTQ4OTI4Cg==",
+      "host": "dev-9",
+      "made": true,
+      "why": "otherLock"
+    },
+    {
+      "name": "another person, signed",
+      "record": {
+        "v": 1,
+        "person": "sam",
+        "root": "PJt70zB1ztELL0obGf3odpJaHTA4x5gfSQ5rr/xOaIQ=",
+        "kind": "setup.script",
+        "subject": "setup",
+        "scope": "made",
+        "seq": 7,
+        "content": "eyJoYXNoIjoiNzY4NWRjNDNiYzYzNTBmOWNkNDM2YTRiYWViYWJiNDVjMGYyZWUyZTYwYTNlMzM3MTJjMzdkNGE4MjhjNjc2YyIsInNpemUiOjEyfQ==",
+        "key": "BM5hVnf6PqKzJYcDEEvc1mYXZ7Ml7HcGJZlhHL2ziuJ8MYSBvUJoEsD4r7942BcwJbP8Ey0lWsDjzi9X0UEOEbk=",
+        "sig": "gZRkJFtUuCJhgcBugKprEIr5WboBWknaW+CCmOdhzDWJFiHYnl25AJlPlEde2aqG5mkWFH3mYjLFN7628cYvZg=="
+      },
+      "signed": "YWdlbnRzLWxvY2stcmVjb3JkLzEKc2FtCjNjOWI3YmQzMzA3NWNlZDEwYjJmNGExYjE5ZmRlODc2OTI1YTFkMzAzOGM3OTgxZjQ5MGU2YmFmZmM0ZTY4ODQKc2V0dXAuc2NyaXB0CnNldHVwCm1hZGUKNwo4NTA5OTU1YmUzZmE3YTkxNzY0ODQ3OWQ2YzgyNmJkZTM1NTUxYTdiZGZlMDc5NDhmNWJjMjEyYTQ4YTQ4OTI4Cg==",
+      "host": "dev-9",
+      "made": true,
+      "why": "otherLock"
+    },
+    {
+      "name": "another version, signed",
+      "record": {
+        "v": 2,
+        "person": "alex",
+        "root": "PJt70zB1ztELL0obGf3odpJaHTA4x5gfSQ5rr/xOaIQ=",
+        "kind": "setup.script",
+        "subject": "setup",
+        "scope": "made",
+        "seq": 7,
+        "content": "eyJoYXNoIjoiNzY4NWRjNDNiYzYzNTBmOWNkNDM2YTRiYWViYWJiNDVjMGYyZWUyZTYwYTNlMzM3MTJjMzdkNGE4MjhjNjc2YyIsInNpemUiOjEyfQ==",
+        "key": "BM5hVnf6PqKzJYcDEEvc1mYXZ7Ml7HcGJZlhHL2ziuJ8MYSBvUJoEsD4r7942BcwJbP8Ey0lWsDjzi9X0UEOEbk=",
+        "sig": "zqnouhyX5DOxpEaaw2cOi2E7AUQYFz1b7RroeHI/qMFMqPg4OSe6zZ/uSy0nMTDQLAiuUcfzPFqhpLGThDU4Qg=="
+      },
+      "signed": "YWdlbnRzLWxvY2stcmVjb3JkLzEKYWxleAozYzliN2JkMzMwNzVjZWQxMGIyZjRhMWIxOWZkZTg3NjkyNWExZDMwMzhjNzk4MWY0OTBlNmJhZmZjNGU2ODg0CnNldHVwLnNjcmlwdApzZXR1cAptYWRlCjcKODUwOTk1NWJlM2ZhN2E5MTc2NDg0NzlkNmM4MjZiZGUzNTU1MWE3YmRmZTA3OTQ4ZjViYzIxMmE0OGE0ODkyOAo=",
+      "host": "dev-9",
+      "made": true,
+      "why": "invalid"
+    },
+    {
+      "name": "no such kind, signed",
+      "record": {
+        "v": 1,
+        "person": "alex",
+        "root": "PJt70zB1ztELL0obGf3odpJaHTA4x5gfSQ5rr/xOaIQ=",
+        "kind": "setup.other",
+        "subject": "setup",
+        "scope": "made",
+        "seq": 7,
+        "content": "eyJoYXNoIjoiNzY4NWRjNDNiYzYzNTBmOWNkNDM2YTRiYWViYWJiNDVjMGYyZWUyZTYwYTNlMzM3MTJjMzdkNGE4MjhjNjc2YyIsInNpemUiOjEyfQ==",
+        "key": "BM5hVnf6PqKzJYcDEEvc1mYXZ7Ml7HcGJZlhHL2ziuJ8MYSBvUJoEsD4r7942BcwJbP8Ey0lWsDjzi9X0UEOEbk=",
+        "sig": "drLImKkRfynWOaGrYY5RdedQyGh4I4YYgeFqSCr7vyn8xl2VGTQd2/h/vJq5swV7KrtoJgc/vdaId4+blzorDA=="
+      },
+      "signed": "YWdlbnRzLWxvY2stcmVjb3JkLzEKYWxleAozYzliN2JkMzMwNzVjZWQxMGIyZjRhMWIxOWZkZTg3NjkyNWExZDMwMzhjNzk4MWY0OTBlNmJhZmZjNGU2ODg0CnNldHVwLm90aGVyCnNldHVwCm1hZGUKNwo4NTA5OTU1YmUzZmE3YTkxNzY0ODQ3OWQ2YzgyNmJkZTM1NTUxYTdiZGZlMDc5NDhmNWJjMjEyYTQ4YTQ4OTI4Cg==",
+      "host": "dev-9",
+      "made": true,
+      "why": "invalid"
+    },
+    {
+      "name": "a newline in the subject, signed",
+      "record": {
+        "v": 1,
+        "person": "alex",
+        "root": "PJt70zB1ztELL0obGf3odpJaHTA4x5gfSQ5rr/xOaIQ=",
+        "kind": "setup.script",
+        "subject": "setup\nmade",
+        "scope": "made",
+        "seq": 7,
+        "content": "eyJoYXNoIjoiNzY4NWRjNDNiYzYzNTBmOWNkNDM2YTRiYWViYWJiNDVjMGYyZWUyZTYwYTNlMzM3MTJjMzdkNGE4MjhjNjc2YyIsInNpemUiOjEyfQ==",
+        "key": "BM5hVnf6PqKzJYcDEEvc1mYXZ7Ml7HcGJZlhHL2ziuJ8MYSBvUJoEsD4r7942BcwJbP8Ey0lWsDjzi9X0UEOEbk=",
+        "sig": "XTgvYBYL3KUBaTYrDTNAcDfs5O9GZMiudwqa0kLIIUVGHee6mPHnCTFRR8qTKnyTlIycypZVITW6ywTHKlgP5g=="
+      },
+      "signed": "YWdlbnRzLWxvY2stcmVjb3JkLzEKYWxleAozYzliN2JkMzMwNzVjZWQxMGIyZjRhMWIxOWZkZTg3NjkyNWExZDMwMzhjNzk4MWY0OTBlNmJhZmZjNGU2ODg0CnNldHVwLnNjcmlwdApzZXR1cAptYWRlCm1hZGUKNwo4NTA5OTU1YmUzZmE3YTkxNzY0ODQ3OWQ2YzgyNmJkZTM1NTUxYTdiZGZlMDc5NDhmNWJjMjEyYTQ4YTQ4OTI4Cg==",
+      "host": "dev-9",
+      "made": true,
+      "why": "invalid"
+    },
+    {
+      "name": "a newline after the subject, signed",
+      "record": {
+        "v": 1,
+        "person": "alex",
+        "root": "PJt70zB1ztELL0obGf3odpJaHTA4x5gfSQ5rr/xOaIQ=",
+        "kind": "setup.script",
+        "subject": "setup\n",
+        "scope": "made",
+        "seq": 7,
+        "content": "eyJoYXNoIjoiNzY4NWRjNDNiYzYzNTBmOWNkNDM2YTRiYWViYWJiNDVjMGYyZWUyZTYwYTNlMzM3MTJjMzdkNGE4MjhjNjc2YyIsInNpemUiOjEyfQ==",
+        "key": "BM5hVnf6PqKzJYcDEEvc1mYXZ7Ml7HcGJZlhHL2ziuJ8MYSBvUJoEsD4r7942BcwJbP8Ey0lWsDjzi9X0UEOEbk=",
+        "sig": "I1LyptMclxgqnyWxjwbY+o7ZyNaWJF+/xn2LqVcFxaqceu74t2WR+Z/UgEfC7uMATfMRlH6evIide09cWj9WmA=="
+      },
+      "signed": "YWdlbnRzLWxvY2stcmVjb3JkLzEKYWxleAozYzliN2JkMzMwNzVjZWQxMGIyZjRhMWIxOWZkZTg3NjkyNWExZDMwMzhjNzk4MWY0OTBlNmJhZmZjNGU2ODg0CnNldHVwLnNjcmlwdApzZXR1cAoKbWFkZQo3Cjg1MDk5NTViZTNmYTdhOTE3NjQ4NDc5ZDZjODI2YmRlMzU1NTFhN2JkZmUwNzk0OGY1YmMyMTJhNDhhNDg5MjgK",
+      "host": "dev-9",
+      "made": true,
+      "why": "invalid"
+    },
+    {
+      "name": "a letter past ASCII, signed",
+      "record": {
+        "v": 1,
+        "person": "alex",
+        "root": "PJt70zB1ztELL0obGf3odpJaHTA4x5gfSQ5rr/xOaIQ=",
+        "kind": "setup.script",
+        "subject": "K",
+        "scope": "made",
+        "seq": 7,
+        "content": "eyJoYXNoIjoiNzY4NWRjNDNiYzYzNTBmOWNkNDM2YTRiYWViYWJiNDVjMGYyZWUyZTYwYTNlMzM3MTJjMzdkNGE4MjhjNjc2YyIsInNpemUiOjEyfQ==",
+        "key": "BM5hVnf6PqKzJYcDEEvc1mYXZ7Ml7HcGJZlhHL2ziuJ8MYSBvUJoEsD4r7942BcwJbP8Ey0lWsDjzi9X0UEOEbk=",
+        "sig": "qhf7jtJkOfgKcPDdoIEmwaDmPUj7FrQc+416GCgUaTz4x3oHI9MMYy2RJGv62MBYjy05d4t6zATAx/UFSk12lA=="
+      },
+      "signed": "YWdlbnRzLWxvY2stcmVjb3JkLzEKYWxleAozYzliN2JkMzMwNzVjZWQxMGIyZjRhMWIxOWZkZTg3NjkyNWExZDMwMzhjNzk4MWY0OTBlNmJhZmZjNGU2ODg0CnNldHVwLnNjcmlwdArihKoKbWFkZQo3Cjg1MDk5NTViZTNmYTdhOTE3NjQ4NDc5ZDZjODI2YmRlMzU1NTFhN2JkZmUwNzk0OGY1YmMyMTJhNDhhNDg5MjgK",
+      "host": "dev-9",
+      "made": true,
+      "why": "invalid"
+    },
+    {
+      "name": "a scope no kind has, signed",
+      "record": {
+        "v": 1,
+        "person": "alex",
+        "root": "PJt70zB1ztELL0obGf3odpJaHTA4x5gfSQ5rr/xOaIQ=",
+        "kind": "setup.script",
+        "subject": "setup",
+        "scope": "all",
+        "seq": 7,
+        "content": "eyJoYXNoIjoiNzY4NWRjNDNiYzYzNTBmOWNkNDM2YTRiYWViYWJiNDVjMGYyZWUyZTYwYTNlMzM3MTJjMzdkNGE4MjhjNjc2YyIsInNpemUiOjEyfQ==",
+        "key": "BM5hVnf6PqKzJYcDEEvc1mYXZ7Ml7HcGJZlhHL2ziuJ8MYSBvUJoEsD4r7942BcwJbP8Ey0lWsDjzi9X0UEOEbk=",
+        "sig": "U7DLTBQV1jBqTK3To8Y2Cts3TfxaIM7/EYtJdlQjQLUxt8QE59kEtl8+Ao+QwYdJlDlOvp5ml4Slavkbicdc7g=="
+      },
+      "signed": "YWdlbnRzLWxvY2stcmVjb3JkLzEKYWxleAozYzliN2JkMzMwNzVjZWQxMGIyZjRhMWIxOWZkZTg3NjkyNWExZDMwMzhjNzk4MWY0OTBlNmJhZmZjNGU2ODg0CnNldHVwLnNjcmlwdApzZXR1cAphbGwKNwo4NTA5OTU1YmUzZmE3YTkxNzY0ODQ3OWQ2YzgyNmJkZTM1NTUxYTdiZGZlMDc5NDhmNWJjMjEyYTQ4YTQ4OTI4Cg==",
+      "host": "dev-9",
+      "made": true,
+      "why": "invalid"
+    },
+    {
+      "name": "a scope of no machine, signed",
+      "record": {
+        "v": 1,
+        "person": "alex",
+        "root": "PJt70zB1ztELL0obGf3odpJaHTA4x5gfSQ5rr/xOaIQ=",
+        "kind": "setup.script",
+        "subject": "setup",
+        "scope": "m:",
+        "seq": 7,
+        "content": "eyJoYXNoIjoiNzY4NWRjNDNiYzYzNTBmOWNkNDM2YTRiYWViYWJiNDVjMGYyZWUyZTYwYTNlMzM3MTJjMzdkNGE4MjhjNjc2YyIsInNpemUiOjEyfQ==",
+        "key": "BM5hVnf6PqKzJYcDEEvc1mYXZ7Ml7HcGJZlhHL2ziuJ8MYSBvUJoEsD4r7942BcwJbP8Ey0lWsDjzi9X0UEOEbk=",
+        "sig": "WWsKmheOgubdJ2Cjtz1jOBzppThkj4o3HVf/qlCQJk8w0n2rE2+3/VZ1Dd2hcjwZ9LGAGIPpq52gMB3bP03CRA=="
+      },
+      "signed": "YWdlbnRzLWxvY2stcmVjb3JkLzEKYWxleAozYzliN2JkMzMwNzVjZWQxMGIyZjRhMWIxOWZkZTg3NjkyNWExZDMwMzhjNzk4MWY0OTBlNmJhZmZjNGU2ODg0CnNldHVwLnNjcmlwdApzZXR1cAptOgo3Cjg1MDk5NTViZTNmYTdhOTE3NjQ4NDc5ZDZjODI2YmRlMzU1NTFhN2JkZmUwNzk0OGY1YmMyMTJhNDhhNDg5MjgK",
+      "host": "dev-9",
+      "made": true,
+      "why": "invalid"
+    },
+    {
+      "name": "a scope in another case, signed",
+      "record": {
+        "v": 1,
+        "person": "alex",
+        "root": "PJt70zB1ztELL0obGf3odpJaHTA4x5gfSQ5rr/xOaIQ=",
+        "kind": "setup.script",
+        "subject": "setup",
+        "scope": "Made",
+        "seq": 7,
+        "content": "eyJoYXNoIjoiNzY4NWRjNDNiYzYzNTBmOWNkNDM2YTRiYWViYWJiNDVjMGYyZWUyZTYwYTNlMzM3MTJjMzdkNGE4MjhjNjc2YyIsInNpemUiOjEyfQ==",
+        "key": "BM5hVnf6PqKzJYcDEEvc1mYXZ7Ml7HcGJZlhHL2ziuJ8MYSBvUJoEsD4r7942BcwJbP8Ey0lWsDjzi9X0UEOEbk=",
+        "sig": "iM1mLopP+Vq82j8Gy5pfwboylXHMqBDozLOx5TB1MB+4M55FKhTj9ssHh5QjEC7GjvIbgYQHSj7k+y53gBtvYQ=="
+      },
+      "signed": "YWdlbnRzLWxvY2stcmVjb3JkLzEKYWxleAozYzliN2JkMzMwNzVjZWQxMGIyZjRhMWIxOWZkZTg3NjkyNWExZDMwMzhjNzk4MWY0OTBlNmJhZmZjNGU2ODg0CnNldHVwLnNjcmlwdApzZXR1cApNYWRlCjcKODUwOTk1NWJlM2ZhN2E5MTc2NDg0NzlkNmM4MjZiZGUzNTU1MWE3YmRmZTA3OTQ4ZjViYzIxMmE0OGE0ODkyOAo=",
+      "host": "dev-9",
+      "made": true,
+      "why": "invalid"
+    },
+    {
+      "name": "no person, signed",
+      "record": {
+        "v": 1,
+        "person": "",
+        "root": "PJt70zB1ztELL0obGf3odpJaHTA4x5gfSQ5rr/xOaIQ=",
+        "kind": "setup.script",
+        "subject": "setup",
+        "scope": "made",
+        "seq": 7,
+        "content": "eyJoYXNoIjoiNzY4NWRjNDNiYzYzNTBmOWNkNDM2YTRiYWViYWJiNDVjMGYyZWUyZTYwYTNlMzM3MTJjMzdkNGE4MjhjNjc2YyIsInNpemUiOjEyfQ==",
+        "key": "BM5hVnf6PqKzJYcDEEvc1mYXZ7Ml7HcGJZlhHL2ziuJ8MYSBvUJoEsD4r7942BcwJbP8Ey0lWsDjzi9X0UEOEbk=",
+        "sig": "YCftW1lUVmT7rfvwWx0hh/jf49WVIh2rcCG/p8Z9lAiMFhXr33Bgg2gTq6/EEoxehl28YrrEP7KIThP0EnOXLg=="
+      },
+      "signed": "YWdlbnRzLWxvY2stcmVjb3JkLzEKCjNjOWI3YmQzMzA3NWNlZDEwYjJmNGExYjE5ZmRlODc2OTI1YTFkMzAzOGM3OTgxZjQ5MGU2YmFmZmM0ZTY4ODQKc2V0dXAuc2NyaXB0CnNldHVwCm1hZGUKNwo4NTA5OTU1YmUzZmE3YTkxNzY0ODQ3OWQ2YzgyNmJkZTM1NTUxYTdiZGZlMDc5NDhmNWJjMjEyYTQ4YTQ4OTI4Cg==",
+      "host": "dev-9",
+      "made": true,
+      "why": "otherLock"
+    },
+    {
+      "name": "a number past the most, signed",
+      "record": {
+        "v": 1,
+        "person": "alex",
+        "root": "PJt70zB1ztELL0obGf3odpJaHTA4x5gfSQ5rr/xOaIQ=",
+        "kind": "setup.script",
+        "subject": "setup",
+        "scope": "made",
+        "seq": 9007199254740992,
+        "content": "eyJoYXNoIjoiNzY4NWRjNDNiYzYzNTBmOWNkNDM2YTRiYWViYWJiNDVjMGYyZWUyZTYwYTNlMzM3MTJjMzdkNGE4MjhjNjc2YyIsInNpemUiOjEyfQ==",
+        "key": "BM5hVnf6PqKzJYcDEEvc1mYXZ7Ml7HcGJZlhHL2ziuJ8MYSBvUJoEsD4r7942BcwJbP8Ey0lWsDjzi9X0UEOEbk=",
+        "sig": "AFv0lbSMOMFBCZF1JdVUzWwL1UEcOj/YJ5ezyvX27nSuvn/RsY3Zh2LHO9yQIDFpOh/M/sDQUjESPdazg31xqw=="
+      },
+      "signed": "YWdlbnRzLWxvY2stcmVjb3JkLzEKYWxleAozYzliN2JkMzMwNzVjZWQxMGIyZjRhMWIxOWZkZTg3NjkyNWExZDMwMzhjNzk4MWY0OTBlNmJhZmZjNGU2ODg0CnNldHVwLnNjcmlwdApzZXR1cAptYWRlCjkwMDcxOTkyNTQ3NDA5OTIKODUwOTk1NWJlM2ZhN2E5MTc2NDg0NzlkNmM4MjZiZGUzNTU1MWE3YmRmZTA3OTQ4ZjViYzIxMmE0OGE0ODkyOAo=",
+      "host": "dev-9",
+      "made": true,
+      "why": "invalid"
+    },
+    {
+      "name": "no number, signed",
+      "record": {
+        "v": 1,
+        "person": "alex",
+        "root": "PJt70zB1ztELL0obGf3odpJaHTA4x5gfSQ5rr/xOaIQ=",
+        "kind": "setup.script",
+        "subject": "setup",
+        "scope": "made",
+        "seq": 0,
+        "content": "eyJoYXNoIjoiNzY4NWRjNDNiYzYzNTBmOWNkNDM2YTRiYWViYWJiNDVjMGYyZWUyZTYwYTNlMzM3MTJjMzdkNGE4MjhjNjc2YyIsInNpemUiOjEyfQ==",
+        "key": "BM5hVnf6PqKzJYcDEEvc1mYXZ7Ml7HcGJZlhHL2ziuJ8MYSBvUJoEsD4r7942BcwJbP8Ey0lWsDjzi9X0UEOEbk=",
+        "sig": "DAizKwlQQIlDU/q6LHzqa30c4JvatT6Cl+1CE9ZfwNp/t/2W7Zp1h1A0rwdjVQaEK8rc3Im8CyhH8+3lIeQOFQ=="
+      },
+      "signed": "YWdlbnRzLWxvY2stcmVjb3JkLzEKYWxleAozYzliN2JkMzMwNzVjZWQxMGIyZjRhMWIxOWZkZTg3NjkyNWExZDMwMzhjNzk4MWY0OTBlNmJhZmZjNGU2ODg0CnNldHVwLnNjcmlwdApzZXR1cAptYWRlCjAKODUwOTk1NWJlM2ZhN2E5MTc2NDg0NzlkNmM4MjZiZGUzNTU1MWE3YmRmZTA3OTQ4ZjViYzIxMmE0OGE0ODkyOAo=",
+      "host": "dev-9",
+      "made": true,
+      "why": "invalid"
+    },
+    {
+      "name": "a control character in the person, signed",
+      "record": {
+        "v": 1,
+        "person": "alex",
+        "root": "PJt70zB1ztELL0obGf3odpJaHTA4x5gfSQ5rr/xOaIQ=",
+        "kind": "setup.script",
+        "subject": "setup",
+        "scope": "made",
+        "seq": 7,
+        "content": "eyJoYXNoIjoiNzY4NWRjNDNiYzYzNTBmOWNkNDM2YTRiYWViYWJiNDVjMGYyZWUyZTYwYTNlMzM3MTJjMzdkNGE4MjhjNjc2YyIsInNpemUiOjEyfQ==",
+        "key": "BM5hVnf6PqKzJYcDEEvc1mYXZ7Ml7HcGJZlhHL2ziuJ8MYSBvUJoEsD4r7942BcwJbP8Ey0lWsDjzi9X0UEOEbk=",
+        "sig": "F2MARJb0l40m6FZOPRgCoRbDtnOQ8Q5LTQMlH4Wo1CshKmSHbPSdjFrENQIRMC3aNK+YMLco1Eu8vua4RvMVJQ=="
+      },
+      "signed": "YWdlbnRzLWxvY2stcmVjb3JkLzEKYWx/ZXgKM2M5YjdiZDMzMDc1Y2VkMTBiMmY0YTFiMTlmZGU4NzY5MjVhMWQzMDM4Yzc5ODFmNDkwZTZiYWZmYzRlNjg4NApzZXR1cC5zY3JpcHQKc2V0dXAKbWFkZQo3Cjg1MDk5NTViZTNmYTdhOTE3NjQ4NDc5ZDZjODI2YmRlMzU1NTFhN2JkZmUwNzk0OGY1YmMyMTJhNDhhNDg5MjgK",
+      "host": "dev-9",
+      "made": true,
+      "why": "invalid"
+    }
+  ],
+  "foreign": [
+    {
+      "domain": "agents-lock/1",
+      "data": "YWdlbnRzLWxvY2svMQphbGV4CjNjOWI3YmQzMzA3NWNlZDEwYjJmNGExYjE5ZmRlODc2OTI1YTFkMzAzOGM3OTgxZjQ5MGU2YmFmZmM0ZTY4ODQKc2V0dXAuc2NyaXB0CnNldHVwCm1hZGUKNwo4NTA5OTU1YmUzZmE3YTkxNzY0ODQ3OWQ2YzgyNmJkZTM1NTUxYTdiZGZlMDc5NDhmNWJjMjEyYTQ4YTQ4OTI4Cg==",
+      "sig": "+yMDrn2J7bcbAOC8ZHbfpWMYeued2eWWjMYi3VUMZXu8Q5ed/+yMvEfNtNhcIvJw7edQtqysJU2jCBe+PeLXLA=="
+    },
+    {
+      "domain": "agents-lock-channel/1",
+      "data": "YWdlbnRzLWxvY2stY2hhbm5lbC8xCmNsaWVudAphbGV4CjNjOWI3YmQzMzA3NWNlZDEwYjJmNGExYjE5ZmRlODc2OTI1YTFkMzAzOGM3OTgxZjQ5MGU2YmFmZmM0ZTY4ODQKc2V0dXAuc2NyaXB0CnNldHVwCm1hZGUKNwo4NTA5OTU1YmUzZmE3YTkxNzY0ODQ3OWQ2YzgyNmJkZTM1NTUxYTdiZGZlMDc5NDhmNWJjMjEyYTQ4YTQ4OTI4Cg==",
+      "sig": "bJ/WQi5D99i/CxpIZ79QIs7GQbfohJV1Dy6yyYPSnd/bjRAVdOJZv9t+o2126pFTriPVfBuPNE7JpH7lPHDbIg=="
+    },
+    {
+      "domain": "agents-lock-request/1",
+      "data": "YWdlbnRzLWxvY2stcmVxdWVzdC8xCmRldi0xCjE3OTU1MjE2MDAKYWdlbnRzL3N0YXJ0CmFsZXgKM2M5YjdiZDMzMDc1Y2VkMTBiMmY0YTFiMTlmZGU4NzY5MjVhMWQzMDM4Yzc5ODFmNDkwZTZiYWZmYzRlNjg4NApzZXR1cC5zY3JpcHQKc2V0dXAKbWFkZQo3Cjg1MDk5NTViZTNmYTdhOTE3NjQ4NDc5ZDZjODI2YmRlMzU1NTFhN2JkZmUwNzk0OGY1YmMyMTJhNDhhNDg5MjgK",
+      "sig": "t1AOqt3HLUXExy75wCXEOD8JDWpZ9URojpLIAZQNbwakfXjbeKLB/rnHrYQm9K2OEJ1GbRyB8cvp2Uv5XaunDg=="
+    },
+    {
+      "domain": "agents-approval/1",
+      "data": "YWdlbnRzLWFwcHJvdmFsLzEKYWxleAozYzliN2JkMzMwNzVjZWQxMGIyZjRhMWIxOWZkZTg3NjkyNWExZDMwMzhjNzk4MWY0OTBlNmJhZmZjNGU2ODg0CnNldHVwLnNjcmlwdApzZXR1cAptYWRlCjcKODUwOTk1NWJlM2ZhN2E5MTc2NDg0NzlkNmM4MjZiZGUzNTU1MWE3YmRmZTA3OTQ4ZjViYzIxMmE0OGE0ODkyOAo=",
+      "sig": "O/ttzRXmTHeadtqGeYjh/Cno9XDilX20ycsOo7vuZGHHNA1OMnyZDsOfy0qqV7gcwrcsFD9Jvmqq/tcSbJiS9w=="
+    },
+    {
+      "domain": "agents-lock-join/1",
+      "data": "YWdlbnRzLWxvY2stam9pbi8xCmFsZXgKM2M5YjdiZDMzMDc1Y2VkMTBiMmY0YTFiMTlmZGU4NzY5MjVhMWQzMDM4Yzc5ODFmNDkwZTZiYWZmYzRlNjg4NApzZXR1cC5zY3JpcHQKc2V0dXAKbWFkZQo3Cjg1MDk5NTViZTNmYTdhOTE3NjQ4NDc5ZDZjODI2YmRlMzU1NTFhN2JkZmUwNzk0OGY1YmMyMTJhNDhhNDg5MjgK",
+      "sig": "6Yk9gJTve/aYQxo3Sht1/l7PbNEemFz/i1ZbXlERd9xPOnf6ngnkRYmKG4HFMWPlrEMqA/Buz3bXgYllYiXmVA=="
+    }
+  ],
+  "steps": [
+    {
+      "had": 0,
+      "seq": 1,
+      "why": ""
+    },
+    {
+      "had": 0,
+      "seq": 1099511627776,
+      "why": ""
+    },
+    {
+      "had": 0,
+      "seq": 1099511627777,
+      "why": "far"
+    },
+    {
+      "had": 0,
+      "seq": 9007199254740991,
+      "why": "far"
+    },
+    {
+      "had": 3,
+      "seq": 2,
+      "why": "older"
+    },
+    {
+      "had": 3,
+      "seq": 3,
+      "why": ""
+    },
+    {
+      "had": 3,
+      "seq": 4,
+      "why": ""
+    },
+    {
+      "had": 3,
+      "seq": 1048579,
+      "why": ""
+    },
+    {
+      "had": 3,
+      "seq": 1048580,
+      "why": "far"
+    },
+    {
+      "had": 1099511627776,
+      "seq": 1099511627777,
+      "why": ""
+    },
+    {
+      "had": 9007199254740990,
+      "seq": 9007199254740991,
+      "why": ""
+    },
+    {
+      "had": 9007199254740991,
+      "seq": 1,
+      "why": "older"
+    }
+  ],
+  "request": {
+    "to": "dev-1",
+    "at": 1795521600,
+    "key": "BM5hVnf6PqKzJYcDEEvc1mYXZ7Ml7HcGJZlhHL2ziuJ8MYSBvUJoEsD4r7942BcwJbP8Ey0lWsDjzi9X0UEOEbk=",
+    "sig": "V5jBCd/sSDPoY8Q3skKUipIygQD9sFg6nzXye+ZHXUGpbLoR79u+rtR6Ec4R9lCKeLxjRAf+1zgNOOwwKidPNQ=="
+  },
+  "entry": {
+    "body": "YWdlbnRzLWxvY2stcmVjb3JkLzEKYWxleAozYzliN2JkMzMwNzVjZWQxMGIyZjRhMWIxOWZkZTg3NjkyNWExZDMwMzhjNzk4MWY0OTBlNmJhZmZjNGU2ODg0CnNldHVwLnNjcmlwdApzZXR1cAptYWRlCjcKODUwOTk1NWJlM2ZhN2E5MTc2NDg0NzlkNmM4MjZiZGUzNTU1MWE3YmRmZTA3OTQ4ZjViYzIxMmE0OGE0ODkyOAo=",
+    "sig": "V5jBCd/sSDPoY8Q3skKUipIygQD9sFg6nzXye+ZHXUGpbLoR79u+rtR6Ec4R9lCKeLxjRAf+1zgNOOwwKidPNQ=="
+  }
+}

@@ -22,7 +22,7 @@ export function sealed(message: string): boolean {
   return tail.test(message);
 }
 
-async function verify(publicRaw: Uint8Array, data: Uint8Array, sig: Uint8Array): Promise<boolean> {
+export async function verify(publicRaw: Uint8Array, data: Uint8Array, sig: Uint8Array): Promise<boolean> {
   try {
     const key = await crypto.subtle.importKey("raw", publicRaw as BufferSource, { name: "ECDSA", namedCurve: "P-256" }, false, ["verify"]);
     return await crypto.subtle.verify({ name: "ECDSA", hash: "SHA-256" }, key, sig as BufferSource, data as BufferSource);
@@ -31,7 +31,7 @@ async function verify(publicRaw: Uint8Array, data: Uint8Array, sig: Uint8Array):
   }
 }
 
-async function signData(privateKey: CryptoKey, data: Uint8Array): Promise<Uint8Array> {
+export async function signData(privateKey: CryptoKey, data: Uint8Array): Promise<Uint8Array> {
   return new Uint8Array(await crypto.subtle.sign({ name: "ECDSA", hash: "SHA-256" }, privateKey, data as BufferSource));
 }
 
