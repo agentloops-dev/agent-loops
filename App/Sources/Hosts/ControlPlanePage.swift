@@ -104,9 +104,10 @@ struct ControlCapacityFigures: View {
                 }
                 Text(ControlPlaneMachine.foot).appText(.fine).foregroundStyle(.secondary)
             } else if model.controlCapacity.readAt != nil || model.controlCapacity.failure != nil {
+                let words = model.controlCapacity.noReadingWords
                 VStack(spacing: 6) {
-                    Text(ControlPlaneMachine.noReading).fontWeight(.semibold)
-                    Text(ControlPlaneMachine.noReadingDetail).foregroundStyle(.secondary)
+                    Text(words.line).fontWeight(.semibold)
+                    Text(words.detail).foregroundStyle(.secondary)
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 28)
@@ -186,22 +187,23 @@ struct ControlPlaneRow: View {
         let line = ControlPlaneMachine.level(look)
         let rows = model.controlPlaneHosts ?? []
         let row = rows.first { $0.id == host }
+        let none = model.controlCapacity.noReadingWords
         HStack(alignment: .firstTextBaseline, spacing: 6) {
             MachineIconView(symbol: MachineIcon.symbol(isThisMac: false, row: nil),
                             icon: look == nil ? .stopped : MachineIcon.of(.online, diskLow: false, capacity: look?.level))
                 .frame(width: 16)
             VStack(alignment: .leading, spacing: 2) {
                 Text(ControlPlaneMachine.title(row, among: rows)).foregroundStyle(.primary).lineLimit(1)
-                Text(look == nil ? ControlPlaneMachine.noReading : line)
+                Text(look == nil ? none.line : line)
                     .appText(.fine)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
             Spacer(minLength: 4)
         }
-        .help(look.map { ControlPlaneMachine.sentence($0, on: ControlPlaneMachine.label(row, among: rows)) } ?? ControlPlaneMachine.noReadingDetail)
+        .help(look.map { ControlPlaneMachine.sentence($0, on: ControlPlaneMachine.label(row, among: rows)) } ?? none.detail)
         .accessibilityElement(children: .contain)
-        .accessibilityValue(look == nil ? ControlPlaneMachine.noReading : line)
+        .accessibilityValue(look == nil ? none.line : line)
         .contextMenu {
             Button("Open", action: open)
         }

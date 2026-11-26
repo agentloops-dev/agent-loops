@@ -435,6 +435,12 @@ struct ContentView: View {
         // Each page the window comes to goes on its history (#5784).
         .onChange(of: model.pagePlace, initial: true) { model.notePagePlace() }
         .onChange(of: model.flags.on) { model.leaveHiddenPages() }
+        // The flag control-plane-machine turned on, or the person became an admin (#7364): read
+        // the control plane's capacity now, not at the next connect. The first value is false
+        // until the people load, so the connect's own read is not done twice at launch.
+        .task(id: model.showsControlPlaneMachine) {
+            if model.showsControlPlaneMachine, let control = model.controlRequests { await model.controlCapacity.shown(control) }
+        }
         .onChange(of: model.selection) {
             // Open File… searches the session it was opened over.
             requests.showsFileSearch = false
