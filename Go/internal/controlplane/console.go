@@ -58,23 +58,14 @@ func (m *Methods) consoleMethod(ctx context.Context, method string, params json.
 
 func (m *Methods) controlCapacity(ctx context.Context) (wire.ControlCapacityBoard, error) {
 	board := wire.ControlCapacityBoard{Copies: []wire.ControlCapacityCopy{}}
-	keys, err := m.s.cfg.Store.List(ctx, copiesPrefix)
+	// The samples, not v1/copies/, which also holds each host's kept list (#7360): the cost
+	// grows with the copies (at most controlCapacityMost samples), not with the hosts' lists.
+	keys, err := m.s.cfg.Store.List(ctx, controlCapacityPrefix)
 	if err != nil {
 		return board, err
 	}
 	for _, key := range keys {
-		object, err := m.s.cfg.Store.Get(ctx, key.Key)
-		if err != nil {
-			return board, err
-		}
-		if object == nil {
-			continue
-		}
-		var copy copyRecord
-		if json.Unmarshal(object.Data, &copy) != nil || copy.ID == "" {
-			continue
-		}
-		capacity, err := m.s.cfg.Store.Get(ctx, controlCapacityKey(copy.ID))
+		capacity, err := m.s.cfg.Store.Get(ctx, key.Key)
 		if err != nil {
 			return board, err
 		}
@@ -82,9 +73,22 @@ func (m *Methods) controlCapacity(ctx context.Context) (wire.ControlCapacityBoar
 			continue
 		}
 		var snapshot wire.ControlCapacityCopy
-		if json.Unmarshal(capacity.Data, &snapshot) == nil {
-			board.Copies = append(board.Copies, snapshot)
+		if json.Unmarshal(capacity.Data, &snapshot) != nil || snapshot.Copy == "" || controlCapacityKey(snapshot.Copy) != key.Key {
+			continue
 		}
+		// Only a live copy's sample: a copy that crashed leaves one until the hourly sweep.
+		object, err := m.s.cfg.Store.Get(ctx, copyRecordKey(snapshot.Copy))
+		if err != nil {
+			return board, err
+		}
+		if object == nil {
+			continue
+		}
+		var copy copyRecord
+		if json.Unmarshal(object.Data, &copy) != nil || copy.ID != snapshot.Copy {
+			continue
+		}
+		board.Copies = append(board.Copies, snapshot)
 	}
 	sort.Slice(board.Copies, func(i, j int) bool { return board.Copies[i].Copy < board.Copies[j].Copy })
 	return board, nil
