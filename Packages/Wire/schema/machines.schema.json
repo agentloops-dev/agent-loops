@@ -1209,6 +1209,18 @@
           "items": {
             "$ref": "#/definitions/ControlEligibleReason"
           }
+        },
+        "address": {
+          "type": "string",
+          "description": "Where the control plane reached the machine's control role, as a person reads it (#7313): its domain, or its public address, with the port when it is not 443. Absent when it did not reach it there, or reached it by its tunnel."
+        },
+        "memoryBytes": {
+          "type": "integer",
+          "description": "The machine's memory, as it said it (#7313). Absent when it did not say."
+        },
+        "diskFreeBytes": {
+          "type": "integer",
+          "description": "The free space on its fullest disk, as it said it (#7313). Absent when it did not say."
         }
       },
       "required": [
@@ -2015,6 +2027,23 @@
       ],
       "additionalProperties": false
     },
+    "MachineControlAddress": {
+      "type": "object",
+      "description": "Where a machine's control role serves (#7313): the domain its certificate is for, when it has one, and the port. With no domain, the control plane dials the public address that the machine's uplink comes from.",
+      "properties": {
+        "domain": {
+          "type": "string"
+        },
+        "port": {
+          "type": "integer",
+          "description": "From 1 to 65535; a hello with another is taken as none."
+        }
+      },
+      "required": [
+        "port"
+      ],
+      "additionalProperties": false
+    },
     "MachineConversation": {
       "type": "object",
       "description": "A conversation of messages/conversationsAll (#5571) with the machine whose connector has it.",
@@ -2293,6 +2322,10 @@
         "maturity": {
           "$ref": "core.schema.json#/definitions/Maturity",
           "description": "The levels of this host's capabilities that are not GA (#6579). None from a host older than that."
+        },
+        "control": {
+          "$ref": "#/definitions/MachineControlAddress",
+          "description": "Where this machine's own control plane serves, when its install gave it the control role (agentsd install --control, #6610, #7313). Absent when it has none, and from an older host."
         }
       },
       "required": [

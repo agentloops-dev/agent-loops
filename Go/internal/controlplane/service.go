@@ -191,6 +191,9 @@ type Service struct {
 	controlMu      sync.Mutex
 	// dialMachine is set by tests; nil opens a TCP connection (control/eligible, #6611).
 	dialMachine func(ctx context.Context, address string) error
+	// lookupMachine is set by tests; nil asks DNS for the domain a machine's control role
+	// said (control/eligible, #7313).
+	lookupMachine func(ctx context.Context, host string) ([]netip.Addr, error)
 	records     *records.Records
 	// When the audit last said that the people are at their limit (#7019).
 	peopleFullMu   sync.Mutex

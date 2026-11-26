@@ -23,6 +23,7 @@ import (
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
 	"github.com/agentloops-dev/agent-loops/Go/internal/buildinfo"
 	"github.com/agentloops-dev/agent-loops/Go/internal/controllink"
+	"github.com/agentloops-dev/agent-loops/Go/internal/controlsetup"
 	"github.com/agentloops-dev/agent-loops/Go/internal/machine"
 	"github.com/agentloops-dev/agent-loops/Go/internal/rolllog"
 	"github.com/agentloops-dev/agent-loops/Go/internal/safe"
@@ -414,6 +415,10 @@ func machineHello(cl commandLine, d *agentsd.Daemon) controllink.MachineHello {
 		Implementation: new(buildinfo.Implementation), Capabilities: capabilities, Maturity: wire.MaturityOf(capabilities)}
 	if name != "" {
 		hello.Name = &name
+	}
+	// Where its control role serves, when its install gave it one (#7313).
+	if home, err := os.UserHomeDir(); err == nil {
+		hello.Control = controlsetup.Address(home)
 	}
 	return hello
 }

@@ -209,3 +209,43 @@ func TestHostCodeStopsAtATeam(t *testing.T) {
 		t.Fatalf("%d calls, drop-in: %v", calls, err)
 	}
 }
+
+// The host says where its control role serves (#7313), from the unit the install wrote.
+func TestAddressIsWhatTheUnitServes(t *testing.T) {
+	home := t.TempDir()
+	if a := Address(home); a != nil {
+		t.Fatalf("a machine with no control role says %+v", a)
+	}
+	for _, c := range []struct {
+		o      Options
+		domain string
+		port   int64
+	}{
+		{Options{}, "", DefaultPort},
+		{Options{Port: 9000}, "", 9000},
+		{Options{Domain: "ams3-1.example.dev", Name: "--port 1"}, "ams3-1.example.dev", 443},
+		{Options{Domain: "ams3-1.example.dev", Port: 8443}, "ams3-1.example.dev", 8443},
+	} {
+		a := addressOf(Unit(c.o))
+		if a == nil {
+			t.Fatalf("%+v: no address", c.o)
+		}
+		domain := ""
+		if a.Domain != nil {
+			domain = *a.Domain
+		}
+		if domain != c.domain || a.Port != c.port {
+			t.Errorf("%+v: address %q:%d, want %q:%d", c.o, domain, a.Port, c.domain, c.port)
+		}
+	}
+	unit := LayoutOf(home).Unit
+	if err := os.MkdirAll(filepath.Dir(unit), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(unit, []byte(Unit(Options{Port: 9001})), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if a := Address(home); a == nil || a.Port != 9001 || a.Domain != nil {
+		t.Errorf("Address = %+v, want port 9001", a)
+	}
+}
