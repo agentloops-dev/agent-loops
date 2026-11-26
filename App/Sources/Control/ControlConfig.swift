@@ -140,7 +140,7 @@ enum ControlConfig {
 
     /// The pairing as it is on disk, for Connect to Another… (#4228) to put back when the
     /// switch stops part way.
-    static func keptPairing() -> Data? { try? Data(contentsOf: membershipFile) }
+    static func keptPairing() -> Data? { ControlMembership.read(membershipFile) }
 
     /// The pairing with this Mac's own control plane, kept while the window is paired with
     /// another (#4228), so Use This Mac Only goes back as the same client.
