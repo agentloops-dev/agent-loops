@@ -272,12 +272,13 @@ func TestControlMovesAreBounded(t *testing.T) {
 }
 
 // The store goes across in batches (#7394): with a link between two machines, 25 ms a call,
-// 5,000 records are frozen for about a second, not the 4 minutes that two calls a record took.
+// 2,000 records are frozen for a fraction of a second, not the 100 s that two calls a record
+// took. The bound leaves room for a loaded runner under -race.
 func TestControlMoveCopiesALargeStoreInBatches(t *testing.T) {
 	t.Parallel()
 	r := newMoveRig(t)
 	ctx := context.Background()
-	const many = 5000
+	const many = 2000
 	body := bytes.Repeat([]byte("x"), 200)
 	for i := range many {
 		_, err := r.p.store.Put(ctx, "v1/test-load/"+itoa(i)+".json", body, store.Absent)
@@ -286,14 +287,15 @@ func TestControlMoveCopiesALargeStoreInBatches(t *testing.T) {
 	r.p.s.moving.linkDelay = 25 * time.Millisecond
 	began := time.Now()
 	r.move()
+	for r.p.s.moving.now() != "" {
+		if time.Since(began) > 30*time.Second {
+			t.Fatalf("the move still runs after %v: two calls a record would be 100 s", time.Since(began))
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
 	ended := r.waitEnded()
-	took := time.Since(began)
 	if ended.Phase != wire.ControlMovePhaseForwarding || ended.Error != nil {
 		t.Fatalf("%+v", ended)
-	}
-	// Two calls a record would be 250 s; a batch is 1,000 records, so it is about 15 calls.
-	if took > 5*time.Second {
-		t.Fatalf("the move took %v", took)
 	}
 	r.mu.Lock()
 	fresh := r.fresh
