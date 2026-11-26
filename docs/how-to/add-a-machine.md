@@ -179,25 +179,10 @@ server needs no browser: the web page opens the sign-in page in yours.
 The row then says **Signed in on this machine**. A server that uses this Mac's sign-in
 does not offer **Sign In…**.
 
-### Let the server use this Mac's git access
+### Git access on the server
 
-A private repository needs git access. If the server has no git credential helper of its
-own, its git asks this Mac for one, through the control plane, over https only.
-
-1. The first time the server's git needs access to a git server (for example
-   `github.com`), every window, phone and web page asks **Let devbox use this Mac's git
-   access for github.com?** Click **Allow**.
-
-   The clone, pull or push goes on. This Mac answers from its own git (the Keychain,
-   `gh auth git-credential` and the like). The credential is used for that one git command
-   and is not kept on the server or logged. A push uses the same approval.
-2. To take it back, open the server's page from **Machines** in the sidebar, and under
-   **Git access** choose **Stop Lending Git Access for github.com**. On a phone or the web page, it is
-   **Settings ▸ Git access**.
-
-Git fails at once, and says why, when this Mac is not connected or has no git access to that
-git server. A server with ssh agent forwarding, or a credential helper of its own, uses its
-own access and asks nothing.
+A private repository needs git access on the server itself: a credential helper of its own,
+or ssh agent forwarding. The server does not use this Mac's git access.
 
 ### Add another Mac
 
@@ -229,8 +214,8 @@ filled in. Once the server joins, it is linked to its workspace, so it can be st
 stopped from Agent Loops. See [Start workspaces from Agent Loops](start-machines-from-agents.md).
 
 **New Machine…** on a provider's card has **Clone these folders**: git URLs, one a line.
-Once the new workspace joins, it clones each one, with this Mac's git access when you allow
-it, and they appear under its heading.
+Once the new workspace joins, it clones each one, and they appear under its heading. A
+private repository needs git access on the workspace itself.
 
 ## When the server is offline
 

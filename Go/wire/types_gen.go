@@ -3914,10 +3914,6 @@ type ControlMachine struct {
 
 	SignInFrom map[string]MachineRef `json:"signInFrom,omitzero"`
 
-	GitFrom map[string]MachineRef `json:"gitFrom,omitzero"`
-
-	GitAsks []GitAsk `json:"gitAsks,omitzero"`
-
 	Tunnel *MachineTunnel `json:"tunnel,omitzero"`
 
 	Workspace *MachineWorkspace `json:"workspace,omitzero"`
@@ -7071,28 +7067,6 @@ type FoundFolder struct {
 	IsFolder bool `json:"isFolder"`
 }
 
-type GitAsk struct {
-	Server string `json:"server"`
-
-	From MachineRef `json:"from"`
-}
-
-// A credential for one git command. Never printed, logged or kept.
-type GitCredential struct {
-	Username string `json:"username"`
-
-	Password string `json:"password"`
-}
-
-// git/credential, git/fill (#1122): only https, and only the server. `path` is the Go host's, unread by Swift.
-type GitCredentialRequest struct {
-	Protocol string `json:"protocol"`
-
-	Host string `json:"host"`
-
-	Path *string `json:"path,omitzero"`
-}
-
 // The trailer block for a commit or a squash message (#6365), in order, one "Key: value" line each; empty when the rule turns every trailer off.
 type GitTrailers struct {
 	Lines []string `json:"lines"`
@@ -7559,16 +7533,6 @@ type LeaseSnapshot struct {
 
 type LeaseTokenRequest struct {
 	Token string `json:"token"`
-}
-
-type LendGit struct {
-	Host MachineRef `json:"host"`
-
-	From MachineRef `json:"from"`
-
-	Server string `json:"server"`
-
-	Allowed bool `json:"allowed"`
 }
 
 // machines/lendSignIn (T091).

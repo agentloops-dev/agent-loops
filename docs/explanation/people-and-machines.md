@@ -40,7 +40,7 @@ This holds on the machine too:
 - **The direct path.** The Mac window reaches this Mac's machine over a local socket
   (#1118). The machine lets in only a window of its own user, even if a control plane
   were to list another.
-- **Lending.** A machine borrows a sign-in or git access only from a machine of the same
+- **Lending.** A machine borrows a sign-in only from a machine of the same
   user. A lend made before people came, from another user's machine, is not used.
 - **An agent's tools.** `list_sessions`, `read_session`, `message_session` and the leases
   act on the machine they run on. They never reach through the control plane to another

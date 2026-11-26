@@ -8,7 +8,7 @@ metadata:
 
 On the live root (`~/Library/Application Support/Agents`) the socket gives roles by code
 signature (`roles_darwin.go`): a Python or shell caller is a **stranger** and may call only
-`daemon/ping`, `daemon/status`, `git/credential`, `daemon/lockReset` and `secrets/terminalValue`.
+`daemon/ping`, `daemon/status`, `daemon/lockReset` and `secrets/terminalValue`.
 `connections/sign-in/email`, `mcp/approve`, `workflows/enable` and the other control-role
 methods answer `-32045 not open to this connection (stranger)`. Never widen a role to get past it.
 

@@ -109,7 +109,7 @@ and iPad show, on every host:
 - see **Cost** (Spend, Tokens and Time), **Events**, **Resources**, **Runtimes**, **Your
   Connectors** and **Worktrees** from the sidebar's Activity rows;
 - open **Settings**: **Sidebar** (which smart
-  groups show), **Finished chats**, **Machine providers**, **Git access**, **Versions**,
+  groups show), **Finished chats**, **Machine providers**, **Versions**,
   **Backups** and **People**.
 
 The tab's title counts the sessions that need you, as **(2) Agent Loops**.

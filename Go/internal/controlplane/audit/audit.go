@@ -133,7 +133,6 @@ var controlActions = map[string]string{
 	"machines/install":           "Installed a machine over ssh",
 	"machines/update":            "Updated a machine",
 	"machines/lendSignIn":        "Lent a sign-in to a machine",
-	"machines/lendGit":           "Lent git access to a machine",
 	"machines/detect":            "Added the machines it found",
 	"control/setFolderDetection": "Changed folder detection",
 	"control/setAuditDays":       "Changed how long the audit is kept",

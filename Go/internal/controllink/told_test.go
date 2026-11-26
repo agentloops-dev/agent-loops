@@ -12,7 +12,7 @@ func TestChannelZeroNotificationsAreTold(t *testing.T) {
 	heard := make(chan string, 4)
 	u := &Uplink{Told: func(method string, params json.RawMessage) { heard <- method + " " + string(params) }}
 	u.message(0, `{"jsonrpc":"2.0","method":"machine/clients","params":{"clients":[]}}`)
-	u.message(0, `{"jsonrpc":"2.0","id":3,"method":"git/fill","params":{}}`)
+	u.message(0, `{"jsonrpc":"2.0","id":3,"method":"runtimes/list","params":{}}`)
 	u.message(0, `{"jsonrpc":"2.0","id":4,"result":{}}`)
 	select {
 	case got := <-heard:

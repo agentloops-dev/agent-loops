@@ -1104,18 +1104,6 @@
             "$ref": "machines.schema.json#/definitions/MachineRef"
           }
         },
-        "gitFrom": {
-          "type": "object",
-          "additionalProperties": {
-            "$ref": "machines.schema.json#/definitions/MachineRef"
-          }
-        },
-        "gitAsks": {
-          "type": "array",
-          "items": {
-            "$ref": "#/definitions/GitAsk"
-          }
-        },
         "tunnel": {
           "$ref": "machines.schema.json#/definitions/MachineTunnel"
         },
@@ -1973,59 +1961,6 @@
         "mac"
       ]
     },
-    "GitAsk": {
-      "type": "object",
-      "properties": {
-        "server": {
-          "type": "string"
-        },
-        "from": {
-          "$ref": "machines.schema.json#/definitions/MachineRef"
-        }
-      },
-      "required": [
-        "server",
-        "from"
-      ],
-      "additionalProperties": false
-    },
-    "GitCredential": {
-      "type": "object",
-      "description": "A credential for one git command. Never printed, logged or kept.",
-      "properties": {
-        "username": {
-          "type": "string"
-        },
-        "password": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "username",
-        "password"
-      ],
-      "additionalProperties": false
-    },
-    "GitCredentialRequest": {
-      "type": "object",
-      "description": "git/credential, git/fill (#1122): only https, and only the server. `path` is the Go host's, unread by Swift.",
-      "properties": {
-        "protocol": {
-          "type": "string"
-        },
-        "host": {
-          "type": "string"
-        },
-        "path": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "protocol",
-        "host"
-      ],
-      "additionalProperties": false
-    },
     "GitTrailers": {
       "type": "object",
       "description": "The trailer block for a commit or a squash message (#6365), in order, one \"Key: value\" line each; empty when the rule turns every trailer off.",
@@ -2599,30 +2534,6 @@
         "folder",
         "name",
         "project"
-      ],
-      "additionalProperties": false
-    },
-    "LendGit": {
-      "type": "object",
-      "properties": {
-        "host": {
-          "$ref": "machines.schema.json#/definitions/MachineRef"
-        },
-        "from": {
-          "$ref": "machines.schema.json#/definitions/MachineRef"
-        },
-        "server": {
-          "type": "string"
-        },
-        "allowed": {
-          "type": "boolean"
-        }
-      },
-      "required": [
-        "host",
-        "from",
-        "server",
-        "allowed"
       ],
       "additionalProperties": false
     },
