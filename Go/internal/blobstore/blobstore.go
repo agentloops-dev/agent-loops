@@ -131,6 +131,21 @@ func checkAfter(after Digest) error {
 	return after.Validate()
 }
 
+// checkPut is what every backend's PutAs checks before it stores: a well-formed digest, a blob
+// within the bound, and bytes that hash to the digest.
+func checkPut(d Digest, data []byte) error {
+	if err := d.Validate(); err != nil {
+		return err
+	}
+	if len(data) > MaxBlobBytes {
+		return ErrTooLarge
+	}
+	if Of(data) != d {
+		return ErrMismatch
+	}
+	return nil
+}
+
 // Wire is the info as the wire says it.
 func (i Info) Wire() wire.BlobInfo {
 	return wire.BlobInfo{Digest: string(i.Digest), Size: i.Size, Stored: i.Stored.UTC().Format(time.RFC3339)}

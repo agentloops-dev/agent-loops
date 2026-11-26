@@ -39,14 +39,8 @@ func (f *Folder) Put(ctx context.Context, data []byte) (Info, bool, error) {
 }
 
 func (f *Folder) PutAs(ctx context.Context, d Digest, data []byte) (Info, bool, error) {
-	if err := d.Validate(); err != nil {
+	if err := checkPut(d, data); err != nil {
 		return Info{}, false, err
-	}
-	if len(data) > MaxBlobBytes {
-		return Info{}, false, ErrTooLarge
-	}
-	if Of(data) != d {
-		return Info{}, false, ErrMismatch
 	}
 	if err := ctx.Err(); err != nil {
 		return Info{}, false, err
@@ -61,6 +55,7 @@ func (f *Folder) PutAs(ctx context.Context, d Digest, data []byte) (Info, bool, 
 	b := make([]byte, 8)
 	_, _ = rand.Read(b)
 	tmp := filepath.Join(dir, "."+hex.EncodeToString(b)+".tmp")
+	// store-bounds: kind=blob; size=1GiB; age=until-deleted; applied=on write (refused), a blob goes only when its caller deletes it
 	w, err := os.OpenFile(tmp, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o400)
 	if err != nil {
 		return Info{}, false, err

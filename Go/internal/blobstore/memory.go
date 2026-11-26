@@ -29,14 +29,8 @@ func (m *Memory) Put(ctx context.Context, data []byte) (Info, bool, error) {
 }
 
 func (m *Memory) PutAs(ctx context.Context, d Digest, data []byte) (Info, bool, error) {
-	if err := d.Validate(); err != nil {
+	if err := checkPut(d, data); err != nil {
 		return Info{}, false, err
-	}
-	if len(data) > MaxBlobBytes {
-		return Info{}, false, ErrTooLarge
-	}
-	if Of(data) != d {
-		return Info{}, false, ErrMismatch
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
