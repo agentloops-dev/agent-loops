@@ -538,3 +538,24 @@ func TestAPartOfASend(t *testing.T) {
 		t.Error("another method")
 	}
 }
+
+// machines/previewStart (#5876): an agent asks which machine Auto picks, as its person.
+func TestAnAgentAsksWhichMachineAutoPicks(t *testing.T) {
+	h := newHarness(t)
+	if _, err := h.agentCall(MethodPreviewStart, map[string]any{"project": "p-app", "runtimeID": "claude"}); err == nil {
+		t.Fatal("answered with no hook")
+	}
+	var asked []wire.AutoMachineRequest
+	h.providers.hooks.PreviewStart = func(request wire.AutoMachineRequest, caller Caller) (wire.AutoMachinePick, error) {
+		asked = append(asked, request)
+		text := "Auto chose devbox: least busy."
+		return wire.AutoMachinePick{Text: &text}, nil
+	}
+	out, err := h.agentCall(MethodPreviewStart, map[string]any{"project": "p-app", "runtimeID": "claude"})
+	if err != nil || len(asked) != 1 || asked[0].Project != "p-app" || *out.(wire.AutoMachinePick).Text != "Auto chose devbox: least busy." {
+		t.Fatalf("%v %+v %+v", err, asked, out)
+	}
+	if _, err := h.agentCall(MethodPreviewStart, map[string]any{"project": "p-app"}); err == nil {
+		t.Fatal("answered with no runtime")
+	}
+}
