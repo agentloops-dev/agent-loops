@@ -86,6 +86,10 @@ func (s *Service) makeProviders() *providers.Providers {
 			MadeFor:   s.madeFor,
 			Setup:     func(host string) *wire.MachineSetup { return s.machineSetup(context.Background(), host) },
 			BackUp:    s.backUpBeforeDelete,
+			Capacity: func(host string) (wire.CapacityLevel, *float64, time.Time, bool) {
+				n, ok := s.capacityOf(host)
+				return n.level, n.load5, n.at, ok
+			},
 		},
 	})
 	kept := providers.NewKeptFor(p, s.log)

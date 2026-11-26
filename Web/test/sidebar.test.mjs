@@ -329,11 +329,14 @@ test("the groups on round-trip through what this browser keeps: the groups off (
   assert.deepEqual([...smartRowsOn(null)], ["pinned", "needsYou", "forReview"], "nothing kept: Working and Unread off (#979)");
   assert.deepEqual([...smartRowsOn(undefined)], ["pinned", "needsYou", "forReview"]);
   assert.equal(smartRowsOff(new Set(all)), "");
-  assert.equal(smartRowsOff(new Set(["unread", "needsYou"])), "pinned,forReview,working", "in the sidebar's order");
+  assert.equal(smartRowsOff(new Set(["unread", "needsYou"])), "pinned,working", "in the sidebar's order, never an always-on group");
   assert.deepEqual([...smartRowsOn("pinned,working,gone")], ["needsYou", "forReview", "unread"], "a name not a group's is passed over");
-  for (const off of ["", "pinned", "needsYou,unread", "pinned,needsYou,forReview,working,unread"]) {
+  for (const off of ["", "pinned", "working,unread", "pinned,working,unread"]) {
     assert.equal(smartRowsOff(smartRowsOn(off)), off);
   }
+  // Needs You and For Review are always on (#6835): a kept name is passed over, and the next write drops it.
+  assert.deepEqual([...smartRowsOn("pinned,needsYou,forReview,working,unread")], ["needsYou", "forReview"]);
+  assert.equal(smartRowsOff(smartRowsOn("needsYou,unread")), "unread");
 });
 
 test("Settings is a section in the address on its own (#846, #2141)", async () => {
