@@ -188,8 +188,15 @@ func readSelfUpdateSettings(path string) selfUpdateSettings {
 	return s
 }
 
+// selfUpdateSettingsMost bounds the self-update settings (#7350): a switch and a version.
+const selfUpdateSettingsMost = 4 << 10
+
 func writeSelfUpdateSettings(path string, s selfUpdateSettings) error {
 	b, _ := json.Marshal(s)
+	if len(b) > selfUpdateSettingsMost {
+		return fmt.Errorf("the self-update settings are %d bytes, at most %d: %w", len(b), selfUpdateSettingsMost, store.ErrLimit)
+	}
+	// store-bounds: kind=key-value; size=4KiB; count=1; age=until-deleted; applied=on write (a larger one is refused) (#7350)
 	return store.WriteAtomically(path, b, 0o600)
 }
 
