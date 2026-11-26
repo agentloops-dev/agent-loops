@@ -363,3 +363,70 @@ func TestControlMoveCopiesALargeStoreInBatches(t *testing.T) {
 		t.Fatal(len(keys))
 	}
 }
+
+// The admins hear the copy's count during the copy, not one note for the whole step (#7395):
+// the records copied and the total, as the copy starts, between its batches and as it ends.
+func TestControlMoveSaysTheCopysCount(t *testing.T) {
+	t.Parallel()
+	r := newMoveRig(t)
+	ctx := context.Background()
+	const many = 2500
+	for i := range many {
+		_, err := r.p.store.Put(ctx, "v1/test-load/"+itoa(i)+".json", []byte("{}"), store.Absent)
+		must(t, err)
+	}
+	r.p.s.moving.progressEvery = time.Nanosecond
+	r.move()
+	var counts []wire.ControlMove
+	deadline := time.After(30 * time.Second)
+	for ended := false; !ended; {
+		select {
+		case n, ok := <-r.window.Notes:
+			if !ok {
+				ended = true
+				break
+			}
+			if n.Method != wire.NotifyControlMoveChanged.Name {
+				continue
+			}
+			var move wire.ControlMove
+			must(t, json.Unmarshal(n.Params, &move))
+			if move.Phase == wire.ControlMovePhaseCopying && move.Copied != nil {
+				counts = append(counts, move)
+			}
+			ended = move.Phase == wire.ControlMovePhaseForwarding || move.Phase == wire.ControlMovePhaseFailed
+		case <-deadline:
+			t.Fatal("the move did not end")
+		}
+	}
+	if len(counts) < 3 {
+		t.Fatalf("%d counts", len(counts))
+	}
+	first, last := counts[0], counts[len(counts)-1]
+	if *first.Copied != 0 || *first.Total < many || *last.Copied != *last.Total || *last.Total != *first.Total {
+		t.Fatalf("first %d of %d, last %d of %d", *first.Copied, *first.Total, *last.Copied, *last.Total)
+	}
+	if between := counts[1]; *between.Copied == 0 || *between.Copied >= *between.Total {
+		t.Fatalf("%d of %d", *between.Copied, *between.Total)
+	}
+}
+
+// The confirmation's time comes from the store's size and the copy's batches (#7395): a small
+// store is frozen for seconds, a large one for minutes.
+func TestFrozenSecondsFollowsTheStoresSize(t *testing.T) {
+	t.Parallel()
+	for _, c := range []struct {
+		records, bytes, want int64
+	}{
+		{0, 0, 5},
+		{1000, 1 << 20, 6},     // 5 s, 3 calls, 0.1 s of reads, 0.1 s of bytes
+		{5000, 20 << 20, 9},    // 5 s, 13 calls, 0.5 s of reads, 2 s of bytes
+		{40000, 200 << 20, 35}, // 5 s, 110 calls, 4 s of reads, 20 s of bytes
+		{200000, 2 << 30, 271}, // 5 s, 812 calls, 20 s of reads, 205 s of bytes
+		{-1, -1, 5},
+	} {
+		if got := frozenSeconds(c.records, c.bytes); got != c.want {
+			t.Errorf("frozenSeconds(%d, %d) = %d, want %d", c.records, c.bytes, got, c.want)
+		}
+	}
+}

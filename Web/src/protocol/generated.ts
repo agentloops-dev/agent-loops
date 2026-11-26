@@ -3606,6 +3606,12 @@ export interface ControlEligible {
   memoryBytes?: number;
   /** The free space on its fullest disk, as it said it (#7313). Absent when it did not say. */
   diskFreeBytes?: number;
+  /**
+   * About how long a move to the machine keeps the control plane frozen, in seconds, from the
+   * store's size and the copy's batches (#7395). Changes are refused while it is frozen. Absent
+   * from a control plane before #7395.
+   */
+  frozenSeconds?: number;
 }
 
 /** One reason a machine cannot take the control role (#6611), with its words for the person. */
@@ -3746,6 +3752,13 @@ export interface ControlMove {
   failedPhase?: ControlMovePhase;
   /** Where the new copy answers, once it said so. */
   address?: string;
+  /**
+   * With copying: the records copied so far (#7395). control/moveChanged says it every few seconds
+   * during the copy.
+   */
+  copied?: number;
+  /** With copying: the records the copy takes (#7395). */
+  total?: number;
   /** With forwarding: until when the old copy sends members to the new one (30 days at most). */
   forwardingUntil?: WireDate;
   startedAt: WireDate;
@@ -19033,14 +19046,14 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   ControlClientChanged: { required: [], optional: ["client", "removed"] },
   ControlCodeShown: { required: ["text", "expires"], optional: ["command"] },
   ControlCutOff: { required: ["why"], optional: ["provider"] },
-  ControlEligible: { required: ["ok", "reasons"], optional: ["address", "memoryBytes", "diskFreeBytes"] },
+  ControlEligible: { required: ["ok", "reasons"], optional: ["address", "memoryBytes", "diskFreeBytes", "frozenSeconds"] },
   ControlEligibleReason: { required: ["reason", "text"], optional: [] },
   ControlEligibleRequest: { required: ["machine"], optional: ["allowSleep"] },
   ControlEndpoint: { required: ["url"], optional: ["pin"] },
   ControlHello: { required: ["v", "name", "control", "nonce", "copy"], optional: ["previous"] },
   ControlInstallProgress: { required: ["name", "step"], optional: [] },
   ControlMachine: { required: ["id", "name", "platform", "version", "state", "reach"], optional: ["machineID", "signInFrom", "gitFrom", "gitAsks", "tunnel", "workspace", "implementation", "capabilities", "maturity", "missing", "owner", "capacity", "loadPerCore5", "capacityAt", "setup", "roles", "labels", "autoLabels"] },
-  ControlMove: { required: ["id", "from", "to", "toName", "phase", "startedAt", "updatedAt", "by"], optional: ["failedPhase", "address", "forwardingUntil", "error"] },
+  ControlMove: { required: ["id", "from", "to", "toName", "phase", "startedAt", "updatedAt", "by"], optional: ["failedPhase", "address", "copied", "total", "forwardingUntil", "error"] },
   ControlMoveRequest: { required: ["machine"], optional: [] },
   ControlMoveResult: { required: ["move"], optional: [] },
   ControlMoved: { required: ["url", "controlKey", "name"], optional: ["pin"] },
