@@ -23,6 +23,15 @@ none, shows it to admins only, and refuses to remove it. Each copy's record in
 `v1/copies/<id>.json` names its machine (`machine`). `machines/list` says each machine's
 `roles`; an older control plane does not, and a client reads that as `agents`.
 
+The control plane finds its record by its machine's id (#7399): `AGENTS_CONTROL_MACHINE_ID`, else
+the id kept in the file `AGENTS_CONTROL_MACHINE_ID_FILE` names, made there the first time, else
+the machine's own id (the Mac's hardware UUID, Linux's `/etc/machine-id`, else its host name).
+The image sets that file to `/data/machine-id`, in its data volume, because a container has no
+machine id and a new host name each time it is made: without it, each deploy was a new machine.
+A control-only record that no copy runs on any more goes away: one copy over its store drops the
+others when it starts, and several copies drop one that no live copy record has named for
+30 seconds. A record with a host's key stays.
+
 `control/eligible` (#6611, admins only) says whether a machine can take the control role, and
 each reason why it cannot. It changes nothing. A machine is refused when one of these is true:
 

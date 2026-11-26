@@ -69,6 +69,9 @@ services:
       # The right to use that key. An empty file: the machine's own service account.
       GOOGLE_APPLICATION_CREDENTIALS: /run/secrets/gcp-service-account
       AGENTS_CONTROL_NAME: ${AGENTS_CONTROL_NAME:-${AGENTS_DOMAIN}}
+      # This machine's id (#7399): the image keeps it in the data volume, /data/machine-id, so
+      # a redeploy is the same machine. Set AGENTS_CONTROL_MACHINE_ID in deploy/.env to give one.
+      AGENTS_CONTROL_MACHINE_ID: ${AGENTS_CONTROL_MACHINE_ID:-}
       # Machine providers' folder (#691, #3113): without it, Settings ▸ Machine Providers says
       # they are off. Their tokens and keys are sealed in the store by AGENTS_CONTROL_KMS; the
       # folder keeps only what a provider's command writes.

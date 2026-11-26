@@ -46,7 +46,7 @@ itself, `loops` updates too.
 **From a release download, on any Mac or Linux computer.** Each release has
 `loops-<os>-<arch>-<version>.tar.gz` for `darwin` and `linux`, `arm64` and `amd64`, on the
 [releases page](https://github.com/agentloops-dev/agents-releases/releases/latest).
-Download the one for your computer, compare it with the release's `SHA256SUMS`, and put
+Download the one for your computer, compare it with the release's `SHA256SUMS` (which `SHA256SUMS.sig` signs), and put
 `loops` on your `PATH`:
 
 ```sh

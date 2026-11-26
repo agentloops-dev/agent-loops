@@ -1967,3 +1967,36 @@ func TestAnAgentDeletesAMachineWithNoHost(t *testing.T) {
 		t.Errorf("deleted %v", deleted)
 	}
 }
+
+// #5875: an agent's list of machines carries each machine's last capacity push, when it has one.
+func TestForAgentCarriesEachMachinesCapacity(t *testing.T) {
+	h := newHarness(t)
+	h.add()
+	h.providers.hooks.OwnerOf = func(string) string { return "kim" }
+	heard := time.Date(2026, 11, 26, 12, 0, 0, 0, time.UTC)
+	load := 3.25
+	h.providers.hooks.Capacity = func(host string) (wire.CapacityLevel, *float64, time.Time, bool) {
+		return wire.CapacityLevelFull, &load, heard, host == devbox
+	}
+	byName := map[string]AgentHost{}
+	for _, host := range h.providers.forAgent("kim").Hosts {
+		byName[host.Name] = host
+	}
+	var withFigure, without int
+	for _, host := range byName {
+		if host.Capacity == nil {
+			without++
+			if host.LoadPerCore5 != nil || host.CapacityAt != nil {
+				t.Errorf("%+v", host)
+			}
+			continue
+		}
+		withFigure++
+		if *host.Capacity != wire.CapacityLevelFull || *host.LoadPerCore5 != 3.25 || host.CapacityAt.Time() != heard {
+			t.Errorf("%+v", host)
+		}
+	}
+	if withFigure != 1 || without == 0 {
+		t.Errorf("%d with a figure, %d without: %+v", withFigure, without, byName)
+	}
+}

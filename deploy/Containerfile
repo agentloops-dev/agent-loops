@@ -119,6 +119,9 @@ COPY --chmod=0755 App/Resources/toolsets/ /toolsets/
 COPY deploy/compose.public.yaml deploy/compose.hosted.yaml deploy/Caddyfile.public \
      deploy/Caddyfile.hosted deploy/make-secrets.sh /deploy/
 USER control
+# The machine's id, kept in the data volume (#7399): a container has no machine-id, and its host
+# name is new each time it is made, so without it each deploy is a new control-plane machine.
+ENV AGENTS_CONTROL_MACHINE_ID_FILE=/data/machine-id
 EXPOSE 8791
 # tini is PID 1 (#3380): agents-control starts gh and ssh, and their children are orphaned to
 # PID 1, which must reap them or they stay as zombies. In the image, so every runner gets it

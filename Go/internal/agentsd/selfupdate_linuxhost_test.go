@@ -100,6 +100,8 @@ func newLinuxRig(t *testing.T, tarball, sumOf []byte) (r *linuxRig, fromControl,
 		case ok && rest == "SHA256SUMS":
 			hits.Add(1)
 			_, _ = w.Write([]byte(linuxSum(sumOf) + "  Agent-Loops-0.12.0.zip\n" + linuxSum(sumOf) + "  " + name + "\n"))
+		case ok && rest == "SHA256SUMS.sig":
+			_, _ = w.Write(releaseSig(t, "current", []byte(linuxSum(sumOf)+"  Agent-Loops-0.12.0.zip\n"+linuxSum(sumOf)+"  "+name+"\n")))
 		case ok && rest == name:
 			_, _ = w.Write(tarball)
 		default:
@@ -108,18 +110,13 @@ func newLinuxRig(t *testing.T, tarball, sumOf []byte) (r *linuxRig, fromControl,
 	}))
 	t.Cleanup(srv.Close)
 	t.Setenv("AGENTS_RELEASE_DOWNLOADS", "")
+	t.Setenv("AGENTS_RELEASE_KEY", "")
 	u := newSelfUpdater(filepath.Join(t.TempDir(), selfUpdateFile), r.current, "0.11.0")
 	u.ctx, u.pause = t.Context(), 0
 	u.turns = func() int { return 0 }
 	u.control = func() []releaseSource { return []releaseSource{{base: srv.URL}} }
 	u.public = srv.URL
-	u.asset = func(version string) string { return linuxrelease.Tarball("x86_64", version) }
-	u.open = func(version, work, file string) (string, error) {
-		return openLinuxRelease(r.current, "x86_64", version, work, file)
-	}
-	u.place = func(work string) error { placeLinuxServers(r.current, "x86_64", work); return nil }
-	u.version = func(next string) (string, error) { return linkedVersion(r.current, next) }
-	u.verify = func(string, string) error { return nil }
+	u.asLinux(r.current, "x86_64")
 	u.restart = func() error { r.restarts.Add(1); return nil }
 	r.u = u
 	return r, fromControl, fromPublic
