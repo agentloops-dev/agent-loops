@@ -15677,6 +15677,17 @@ export interface StopBackgroundRequest {
   itemID: string;
 }
 
+/**
+ * What happens to a store over its limit (#7408), by its declaration: refuse, a new write is
+ * refused until it is within its limit again; write, the next write removes what is past the limit;
+ * hourly or daily, the sweep removes what is past the limit each hour or each day.
+ */
+export type StoreAtLimit =
+  | "refuse"
+  | "write"
+  | "hourly"
+  | "daily";
+
 export interface StoreNotes {
   notes: string[];
 }
@@ -15724,6 +15735,10 @@ export interface StoreSize {
   percentRecords?: number;
   /** When this store's measurement ended. */
   measuredAt?: WireDate;
+  /**
+   * What happens to the store when it is over its limit (#7408). Absent from a host too old to say.
+   */
+  atLimit?: StoreAtLimit;
 }
 
 /**
@@ -16094,6 +16109,11 @@ export interface TurnsPage {
   firstTurn: number;
   openStart: number;
   firstPrompt?: number;
+  /**
+   * When the 90-day or size trim took the start of this chat (#7405): the line every client shows
+   * where its start was, once it shows the first turn kept. Absent when nothing was removed.
+   */
+  startRemoved?: string;
 }
 
 export interface TurnsRequest {
@@ -19894,7 +19914,7 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   StartingPoint: { required: ["repository", "commit"], optional: [] },
   StopBackgroundRequest: { required: ["agentID", "itemID"], optional: [] },
   StoreNotes: { required: ["notes"], optional: [] },
-  StoreSize: { required: ["id", "owner", "scope", "kind", "state"], optional: ["why", "bytes", "records", "averageRecordBytes", "maxBytes", "maxRecords", "limitPer", "percentBytes", "percentRecords", "measuredAt"] },
+  StoreSize: { required: ["id", "owner", "scope", "kind", "state"], optional: ["why", "bytes", "records", "averageRecordBytes", "maxBytes", "maxRecords", "limitPer", "percentBytes", "percentRecords", "measuredAt", "atLimit"] },
   StoreSizes: { required: ["stores", "total"], optional: ["cursor"] },
   StoreSizesQuery: { required: [], optional: ["cursor", "limit"] },
   SuggestedPrompt: { required: ["id", "label", "prompt"], optional: [] },
@@ -19923,7 +19943,7 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   TurnSummary: { required: ["id", "start", "end"], optional: ["ask", "outcome", "steps", "usage"] },
   TurnUndo: { required: ["turn", "putBack"], optional: [] },
   TurnUsage: { required: ["totalTokens", "inputTokens", "outputTokens"], optional: ["thoughtTokens", "cachedReadTokens", "cachedWriteTokens", "cost", "route", "relayTokens"] },
-  TurnsPage: { required: ["turns", "firstTurn", "openStart"], optional: ["firstPrompt"] },
+  TurnsPage: { required: ["turns", "firstTurn", "openStart"], optional: ["firstPrompt", "startRemoved"] },
   TurnsRequest: { required: ["agentID", "limit"], optional: ["before"] },
   UndoTurnRequest: { required: ["agentID", "turn"], optional: ["confirmed"] },
   UndoTurnResult: { required: ["putBack", "changedSince"], optional: [] },

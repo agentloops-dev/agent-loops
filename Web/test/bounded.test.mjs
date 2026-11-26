@@ -949,3 +949,15 @@ test("a count that moves sets only its machine's entry; a machine with none is a
   assert.equal("a" in work.sessionsByMachine.value, false, "a machine with no session working or waiting is absent");
   counts.stop();
 });
+
+test("a chat that lost its start says so once its first kept turn is in hand (#7405)", () => {
+  const work = new Work();
+  const summary = (id) => ({ id, start: 0, end: 2, steps: 1 });
+  const line = "The start of this chat was removed because it was older than 90 days.";
+  work.replaceTurns({ turns: [summary("t2")], firstTurn: 1, openStart: 4, startRemoved: line });
+  assert.equal(work.removedStartLine.value, null, "not while there is more before it");
+  work.prependTurns({ turns: [summary("t1")], firstTurn: 0, startRemoved: line });
+  assert.equal(work.removedStartLine.value, line);
+  work.replaceTurns({ turns: [summary("t1")], firstTurn: 0, openStart: 4 });
+  assert.equal(work.removedStartLine.value, null, "a whole chat says nothing");
+});

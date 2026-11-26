@@ -724,6 +724,10 @@ export function Chat({ store, host, session, down: linkDown }: { store: Store; h
               action={{ label: "Try Again", run: () => { void store.reloadTranscript(); } }} />
           </div>
         )}
+        {/* The trim took the chat's start (#7405): said where it was, in the host's words. */}
+        {store.removedStartLine.value && (
+          <div class="removed-start" role="note"><RecordLine detail={store.removedStartLine.value} /></div>
+        )}
         {/* Only while more can come: by scrolling up, or by the chat paging back by itself (#3249). */}
         {store.hasMoreOfTheConversation && (fills.value || !live) && <p class="more" aria-label="Loading earlier"><span class="spinner" /></p>}
         {rows.map((turn, i) => (

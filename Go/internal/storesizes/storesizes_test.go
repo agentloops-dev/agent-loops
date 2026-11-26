@@ -42,6 +42,7 @@ func one(t *testing.T, r Row, m Measure, at time.Time) wire.StoreSize {
 // measured.
 func TestTheCatalogueIsWhole(t *testing.T) {
 	seen := map[string]bool{}
+	atLimits := map[wire.StoreAtLimit]bool{wire.StoreAtLimitRefuse: true, wire.StoreAtLimitWrite: true, wire.StoreAtLimitHourly: true, wire.StoreAtLimitDaily: true}
 	kinds := map[string]bool{"document": true, "log": true, "time series": true, "graph": true, "blob": true, "key-value": true, "cache": true, "secret": true}
 	for _, owner := range []wire.StoreOwner{wire.StoreOwnerMachine, wire.StoreOwnerControlPlane, wire.StoreOwnerClient} {
 		rows := Catalogue(owner)
@@ -49,7 +50,7 @@ func TestTheCatalogueIsWhole(t *testing.T) {
 			t.Errorf("%s has no store", owner)
 		}
 		for _, r := range rows {
-			if seen[r.ID] || r.Scope == "" || !kinds[r.Kind] || r.MaxBytes+r.MaxRecords == 0 {
+			if seen[r.ID] || r.Scope == "" || !kinds[r.Kind] || r.MaxBytes+r.MaxRecords == 0 || !atLimits[r.AtLimit] {
 				t.Errorf("%+v", r)
 			}
 			seen[r.ID] = true
@@ -71,7 +72,7 @@ func TestTheCatalogueIsWhole(t *testing.T) {
 func TestAtAndOverALimit(t *testing.T) {
 	dir := t.TempDir()
 	row := Row{ID: "machine.x", Owner: wire.StoreOwnerMachine, Scope: "machine", Kind: "blob", MaxBytes: 100, MaxRecords: 2,
-		At: &Place{Base: "root", Files: []string{"x/*"}, Count: "files"}}
+		AtLimit: wire.StoreAtLimitRefuse, At: &Place{Base: "root", Files: []string{"x/*"}, Count: "files"}}
 	write(t, filepath.Join(dir, "x", "a"), 60)
 	write(t, filepath.Join(dir, "x", "b"), 40)
 	m := row.Files([]string{dir}, Measure{}, now)
@@ -83,6 +84,8 @@ func TestAtAndOverALimit(t *testing.T) {
 	write(t, filepath.Join(dir, "x", "b"), 41)
 	if s := one(t, row, row.Files([]string{dir}, m, now), now); s.State != wire.StoreSizeStateOver || *s.PercentBytes <= 100 {
 		t.Errorf("a byte over: %+v", s)
+	} else if s.AtLimit == nil || *s.AtLimit != wire.StoreAtLimitRefuse {
+		t.Errorf("what happens over its limit: %v", s.AtLimit)
 	}
 	write(t, filepath.Join(dir, "x", "b"), 1)
 	write(t, filepath.Join(dir, "x", "c"), 1)
