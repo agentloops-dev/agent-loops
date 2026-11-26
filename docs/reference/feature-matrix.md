@@ -604,9 +604,28 @@ changelog, releases and README. A ?⃝ has the page that did not say.
 - **VibeiDE:** ○ task queues for existing projects ([source](https://vibeide.dev)).
 - **Warp:** ◐ Create a New Project starts from a prompt and makes the repository; the deploy is a guide you follow by hand ([source](https://docs.warp.dev/code/overview/)).
 
+## Agentic software delivery platforms
+
+These platforms take software through more of the lifecycle than the coding step, with
+agents (#6827). They are not scored with the apps above, and each has a row for the
+competitor check to fill; the table is empty until the first run after #6827. The cells
+mean the same as above. A source follows each row in the competitor check's report.
+
+| Platform | Specify | Plan | Dispatch | Build | Land (merge) | Deploy | Roll back | Verify |
+|---|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
+| **Agent Loops** | ?⃝ | ?⃝ | ?⃝ | ?⃝ | ?⃝ | ?⃝ | ?⃝ | ?⃝ |
+| 8090 (Software Factory) | ?⃝ | ?⃝ | ?⃝ | ?⃝ | ?⃝ | ?⃝ | ?⃝ | ?⃝ |
+| Factory | ?⃝ | ?⃝ | ?⃝ | ?⃝ | ?⃝ | ?⃝ | ?⃝ | ?⃝ |
+| Devin (Cognition) | ?⃝ | ?⃝ | ?⃝ | ?⃝ | ?⃝ | ?⃝ | ?⃝ | ?⃝ |
+| Harness Software Delivery Agent | ?⃝ | ?⃝ | ?⃝ | ?⃝ | ?⃝ | ?⃝ | ?⃝ | ?⃝ |
+| GitLab Duo Agent Platform | ?⃝ | ?⃝ | ?⃝ | ?⃝ | ?⃝ | ?⃝ | ?⃝ | ?⃝ |
+| Port | ?⃝ | ?⃝ | ?⃝ | ?⃝ | ?⃝ | ?⃝ | ?⃝ | ?⃝ |
+| GitHub Agent HQ | ?⃝ | ?⃝ | ?⃝ | ?⃝ | ?⃝ | ?⃝ | ?⃝ | ?⃝ |
+
 ## The apps
 
 - **Agent Loops:** this project. Mac window, Remote on iPhone and iPad, web page, and agentsd hosts.
+- **[8090](https://www.8090.ai):** 8090 Solutions' Software Factory, a governed workspace where people write natural-language documents and third-party agents turn them into code, for regulated enterprises. It is in the platforms table above, not scored with the apps.
 - **[Agentastic](https://www.agentastic.dev/):** A closed-source native Mac IDE for many agents, with an iPhone companion and cloud agents.
 - **[Ace](https://useace.dev):** A closed-source native app for Claude Code, Cursor and its own agent, on Mac, Windows and Linux, from the maker of Atelier. Its row is filled from its release notes ([flazouh/ace-releases](https://github.com/flazouh/ace-releases/releases)). Since 0.1.53 it is Sessions and Code only: the Browser, Git, Tasks, Usage and Marketplace pages are gone "for now".
 - **[Atelier (was Acepe)](https://github.com/flazouh/atelier):** A young native editor for coding agents over ACP, Mac and Linux.
