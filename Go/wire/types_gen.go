@@ -1322,6 +1322,62 @@ type AutoSkip struct {
 	Reason string `json:"reason"`
 }
 
+// What Autopilot starts in a folder (#5898, epic #5897). Off starts nothing; high starts only work whose priority is high; on starts any ready work. Absent is off.
+type AutopilotMode string
+
+const AutopilotModeOff AutopilotMode = "off"
+const AutopilotModeHigh AutopilotMode = "high"
+const AutopilotModeOn AutopilotMode = "on"
+
+type AutopilotRequest struct {
+	Folder URL `json:"folder"`
+}
+
+type AutopilotRow struct {
+	// The issue or epic, as the forge names it (#123).
+	Ref string `json:"ref"`
+
+	Kind AutopilotRowKind `json:"kind"`
+
+	State AutopilotRowState `json:"state"`
+
+	// Why it waits or is paused: one of `limit running`, `limit open-prs`, `capacity near`, `capacity full`, `on hold`, `blocked by #n`, `paused: main red`, `paused: over budget`, `mode high`. Empty when it started.
+	Reason string `json:"reason"`
+
+	// The session Autopilot started for it; absent until it started one.
+	Session *UUID `json:"session,omitzero"`
+
+	Since Date `json:"since"`
+}
+
+// A lead is for an epic; a lane is for an issue.
+type AutopilotRowKind string
+
+const AutopilotRowKindLead AutopilotRowKind = "lead"
+const AutopilotRowKindLane AutopilotRowKind = "lane"
+
+type AutopilotRowState string
+
+const AutopilotRowStateStarted AutopilotRowState = "started"
+const AutopilotRowStateWaiting AutopilotRowState = "waiting"
+const AutopilotRowStatePaused AutopilotRowState = "paused"
+
+type AutopilotSetRequest struct {
+	Folder URL `json:"folder"`
+
+	Mode AutopilotMode `json:"mode"`
+}
+
+type AutopilotStatus struct {
+	Mode AutopilotMode `json:"mode"`
+
+	// When Autopilot last looked at the folder's work; absent when it never has.
+	LastRunAt *Date `json:"lastRunAt,omitzero"`
+
+	// The newest 100 rows, the newest first.
+	Rows []AutopilotRow `json:"rows"`
+}
+
 type BackgroundItem struct {
 	ID string `json:"id"`
 
@@ -5926,6 +5982,9 @@ type Folder struct {
 
 	HelperLimits *HelperLimits `json:"helperLimits,omitzero"`
 
+	// What Autopilot may start in this folder (#5898). Absent is off.
+	Autopilot *FolderAutopilot `json:"autopilot,omitzero"`
+
 	DiskSpace *DiskThresholds `json:"diskSpace,omitzero"`
 
 	Pinned *bool `json:"pinned,omitzero"`
@@ -5935,6 +5994,15 @@ type Folder struct {
 
 	// The project's working hours (#4821), for a workflow's hours: working and hours: not-working, from .agents/folder.json. Absent is 09:00-17:00, Mon-Fri. Never named.
 	WorkingHours *WorkflowHours `json:"workingHours,omitzero"`
+}
+
+type FolderAutopilot struct {
+	Mode AutopilotMode `json:"mode"`
+
+	// Who chose the mode: a person's name, or the name of what set it.
+	SetBy string `json:"setBy"`
+
+	SetAt Date `json:"setAt"`
 }
 
 type FolderDetection struct {

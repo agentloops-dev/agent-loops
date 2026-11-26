@@ -138,6 +138,21 @@ counting again from the next agent that works.
 | --- | --- | --- | --- |
 | `ci.slowed` | repo, workflow, job | repo, workflow, job, branch, first_slow_run, first_slow_run_url, last_fast_run, last_fast_run_url, median_before, median_after, score | A job's run time on the default branch stepped up (#5200). The machine's daemon finds it in its build timings, with the per-job change finder of `Go/internal/citimings`. `first_slow_run` and `last_fast_run` are `ci-run` refs, as `github:run:owner/name#123`; `median_before` and `median_after` are the job's run time in seconds on each side; `repo` is `owner/name`. Raised once for each change, in each folder that pushes to the repository, and only for a change whose first slow run is at most 7 days old. A job that got faster sends nothing, and so does a longer wait for a runner or a turn: that is load, not a commit. Each machine that watches the repository finds the same change with the same envelope id (`<first_slow_run>@ci.slowed/<workflow>/<job>`), so the bus keeps one copy. GitHub only, as the build timings are. |
 
+## Autopilot
+
+| Event | Filter by | Details | What it means |
+| --- | --- | --- | --- |
+| `autopilot.started` | ref | ref, session | Autopilot started a lead (for an epic) or a lane (for an issue) in this folder (#5898, epic #5897). `ref` is the issue or epic, `session` the session it started. |
+| `autopilot.paused` | ref | ref, reason | Autopilot stopped starting work for `ref` in this folder. `reason` is what `autopilot/status` says, such as `paused: main red` or `paused: over budget`. |
+| `autopilot.resumed` | ref | ref, reason | `ref` was paused and is not now. `reason` is what was cleared. |
+
+The setting is `Folder.autopilot` (`off`, `high` or `on`; absent is `off`), chosen with `autopilot/set`.
+`autopilot/status` gives the mode, when Autopilot last looked (`lastRunAt`) and at most 100 rows, one for
+each issue or epic: `kind` (`lead` or `lane`), `state` (`started`, `waiting` or `paused`), `reason` and `since`. A row
+waits for one of `limit running`, `limit open-prs`, `capacity near`, `capacity full`, `on hold`,
+`blocked by #n` or `mode high`, or is paused for `paused: main red` or `paused: over budget`. The daemon keeps
+the rows in `autopilot-status.json`, a bounded small file (the newest 100 rows of each folder, 90 days). With the mode off there are no rows.
+
 ## Files
 
 `file.added` and `file.removed` are about files in the folder (#3795). A wait or a trigger
@@ -531,10 +546,10 @@ trigger is:
   | `pr.merged`, `pr.closed`, `pr.conflicted`, `pr.blocked`, `pr.commented`, `pr.reviewed`, `pr.labelled`, `pr.unlabelled`, `review.posted`, `review.comment` | `pr`, `branch`, `fixes` or `mine` | yes |
   | `checks.failed`, `checks.passed` | `pr`, `branch`, `fixes` or `mine` | yes |
   | `run.completed` | `run`, `branch`, `workflow` or `pipeline` (Azure DevOps) | yes |
-  | `issue.closed`, `issue.commented`, `issue.labelled` | `issue` or `label` | yes |
+  | `issue.closed`, `issue.commented`, `issue.labelled`, `issue.parented` | `issue`, `label` or `parent` | yes |
   | `branch.moved` (the app's) | `branch` | yes |
 
-  `pr.opened` and `issue.opened` are not checked, because a wait on a new one cannot name
+  `issue.parented` (#5945) is named by `parent` or `label`; the `parent` filter also narrows `issue.opened`, `issue.labelled`, `issue.commented` and `issue.closed` to the sub-issues of one issue. `pr.opened` and `issue.opened` are not checked, because a wait on a new one cannot name
   it. `issue.assigned` and `review.requested` are not checked, because they are only the
   connected account's. Only the keys that a server offers are named: GitHub's
   `pr.commented` has no `branch`. `fixes` is a list of issues, `"#12"` (the repo's own) or

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -1093,6 +1094,19 @@ func (g *RealGitHub) commentIssue(ctx context.Context, c issueCommentJSON, issue
 	return i, nil
 }
 
+// IssueParent is the issue's parent, from the sub-issues API: 0 when it has none (#5945).
+func (g *RealGitHub) IssueParent(ctx context.Context, repo string, issue int) (int, error) {
+	var p struct {
+		Number int `json:"number"`
+	}
+	err := g.get(ctx, fmt.Sprintf("repos/%s/issues/%d/parent", repo, issue), false, &p)
+	var ge *GitHubError
+	if errors.As(err, &ge) && ge.Kind == NotFound {
+		return 0, nil
+	}
+	return p.Number, err
+}
+
 // issueEvents is issue.labelled's and issue.closed's activity: the issues' events of that kind.
 func (g *RealGitHub) issueEvents(ctx context.Context, repo string, kind IssueKind, since string) ([]IssueActivity, bool, error) {
 	items, truncated, err := newest(ctx, g, fmt.Sprintf("repos/%s/issues/events", repo), since,
@@ -1101,8 +1115,11 @@ func (g *RealGitHub) issueEvents(ctx context.Context, repo string, kind IssueKin
 		return nil, false, err
 	}
 	wanted := "labeled"
-	if kind == IssueClosed {
+	switch kind {
+	case IssueClosed:
 		wanted = "closed"
+	case IssueParented:
+		wanted = "parent_issue_added"
 	}
 	var out []IssueActivity
 	for _, e := range items {
@@ -1120,6 +1137,9 @@ func issueEventActivity(e issueEvent, kind IssueKind) IssueActivity {
 		Trusted: isTrustedActor(e.Actor.Login, e.Actor.Type, kind == IssueClosed, e.Issue.User.Login, e.Issue.trusted())}
 	if kind == IssueLabelled {
 		a.Label = e.Label.Name
+		return a
+	}
+	if kind == IssueParented {
 		return a
 	}
 	reason := e.StateReason

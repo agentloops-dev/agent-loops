@@ -30,9 +30,21 @@ public enum ControlPlaneMachine {
     /// How often the control plane looks at itself, and so how often its page reads again.
     public static let lookSeconds = 15
 
-    /// The machine runs the control plane.
-    public static func runsControl(_ row: DaemonAPI.ControlMachine?) -> Bool {
+    /// The machine has the control role: it runs the control plane, or can take it (#6609). A team
+    /// moves the control plane only to a control-only machine, which runs no copy until then.
+    public static func controlRole(_ row: DaemonAPI.ControlMachine?) -> Bool {
         row?.roles?.contains("control") == true
+    }
+
+    /// The machine runs the control plane now: a copy names it (#6609, #7393), not its role. A copy
+    /// from before #6591 names no machine: when it is the only copy, it runs on the only machine
+    /// with the control role. Nil copies (not read yet) fall back to the role.
+    public static func runsControl(_ row: DaemonAPI.ControlMachine?, copies: [DaemonAPI.ControlCapacityCopy]?,
+                                   controlMachines: Int) -> Bool {
+        guard let row else { return false }
+        guard let copies else { return controlRole(row) }
+        if copies.contains(where: { $0.machine == row.id.rawValue }) { return true }
+        return controlRole(row) && controlMachines == 1 && copies.count == 1 && copies[0].machine == nil
     }
 
     /// The machine runs the control plane and no agents: nothing dials in with it, so it has no
@@ -44,7 +56,7 @@ public enum ControlPlaneMachine {
 
     /// The control plane's machines first, then the others in the order they came (#6591).
     public static func first(_ rows: [DaemonAPI.ControlMachine]) -> [DaemonAPI.ControlMachine] {
-        rows.filter { runsControl($0) } + rows.filter { !runsControl($0) }
+        rows.filter { controlRole($0) } + rows.filter { !controlRole($0) }
     }
 
     /// The latest look of the copy that runs on this machine. A copy from before #6591 names no

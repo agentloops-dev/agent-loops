@@ -139,12 +139,17 @@ with a form for the rest), then close it. Otherwise give it a lane as above.
 ## 3. Wait
 
 End each pass with one `wait_for_event` call: `events: ["issue.closed", "pr.merged",
-"pr.blocked"]`, `where: {"issue": [<open children>], "fixes": ["#<child>",
-…]}`, `until_minutes: 60`. Then end your turn. The wait names this epic's children (#3797):
+"pr.blocked", "issue.parented"]`, `where: {"issue": [<open children>], "fixes": ["#<child>",
+…], "parent": <epic>}`, `until_minutes: 60`. Then end your turn. The wait names this epic's children (#3797):
 `issue` for `issue.closed`, and `fixes` for the PR events, which match a PR whose body
 closes one of them, so you know the child before its lane opens the PR. Each event takes
 only the keys it has. A wait that names nothing is refused. When you start again:
 
+- **`issue.parented`** (#5945: an issue became a sub-issue of this epic; `parent` is the
+  epic's number): read the plan again (step 1) and start the new child's lane when it is
+  ready (step 2). `issue.parented` takes no `issue`, so the list of open children does not hide a new
+  child from it. An app older than #5945 refuses `issue.parented` ("No server here offers"): leave it
+  out and wait as before, reading the plan at the time limit.
 - **`issue.closed` or `pr.merged`** of a child: read the plan again (step 1) and start
   the lanes of the children that are now ready (step 2).
 - **`pr.blocked`** on a child's PR (#5321: a conflict, a failed required check, changes

@@ -287,6 +287,7 @@ func newWith(ctx context.Context, root string, opts startOptions) (*Daemon, erro
 	d.optionCache = d.openOptionCache()
 	d.erased = d.openErased()
 	d.deployStore = d.openDeploys()
+	d.autopilotFile = d.openAutopilot()
 	d.releaseDone = d.openReleaseTags()
 	d.secretOps.pending = d.openSecretOpsPending()
 	d.accountOps = d.openAccountOps()
