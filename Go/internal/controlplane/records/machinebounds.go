@@ -122,7 +122,7 @@ func (r *Records) machineChangeWithin(ctx context.Context, before, after Machine
 		return nil
 	}
 	set := func(h MachineRecord) (int, error) {
-		return machineSize(MachineRecord{Labels: h.Labels, SignInFrom: h.SignInFrom, GitFrom: h.GitFrom})
+		return machineSize(MachineRecord{Labels: h.Labels, SignInFrom: h.SignInFrom})
 	}
 	had, err := set(before)
 	if err != nil {

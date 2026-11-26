@@ -17,9 +17,6 @@ public extension DaemonAPI.Method {
     /// runtime, relayed through the control plane (058, T091). An operator's, after the
     /// window asked the person.
     static let hostsLendSignIn = "machines/lendSignIn"
-    /// `LendGit`: whether `host` may use `from`'s git access for one git server (#1122).
-    /// Any client's, after it asked the person; a no ends a waiting ask.
-    static let hostsLendGit = "machines/lendGit"
     /// `machines/sshHosts` (#610): the hosts in the control plane's ssh config, as `ssh -G`
     /// resolves each, with no network. `{destination}` resolves just that, as typed.
     /// `[SSHHost]`.
@@ -53,10 +50,6 @@ public extension DaemonAPI.Method {
     /// On the Mac's host (T091): start relaying a runtime's sign-in, and say what a server
     /// needs to use it. Never the token.
     static let relayGrant = "relay/grant"
-    /// `GitCredentialRequest` → `GitCredential` (#1122). Asked by the host's own git, through
-    /// `agentsd git-credential`, of its daemon on its socket only; then by that host of the
-    /// control plane on its channel 0.
-    static let gitCredential = "git/credential"
     static let clientsList = "clients/list"
     static let clientsStartPairing = "clients/startPairing"
     static let clientsStopPairing = "clients/stopPairing"
@@ -320,10 +313,6 @@ public extension DaemonAPI {
         public var machineID: String?
         /// The hosts whose sign-in this one may use, by runtime (T091).
         public var signInFrom: [String: MachineRef]?
-        /// The hosts whose git access this one may use, by git server (#1122).
-        public var gitFrom: [String: MachineRef]?
-        /// Its git asking to use a host's git access, waiting on a person's answer (#1122).
-        public var gitAsks: [GitAsk]?
         /// A server behind a bastion dials the control plane through a reverse tunnel the
         /// control plane holds over ssh (#435): how that session stands. Nil for a host
         /// that dials it directly.

@@ -8,8 +8,8 @@ import SwiftUI
 /// when one is declared or held, and its processes (#3453). The Agent Loops version it runs, since
 /// when and with what changes, comes after the summary (#5273). Read with
 /// `machine/usage` when it opens and every few seconds while it is open, never otherwise.
-/// A machine a provider made has its provider's options and Unlink here, and one that uses a Mac's
-/// git access has Stop Lending (#3975: Settings ▸ Machines lists no machines now). This Mac's own
+/// A machine a provider made has its provider's options and Unlink here (#3975: Settings ▸
+/// Machines lists no machines now). This Mac's own
 /// settings stay in Settings ▸ Machines; Settings… goes there. The web page draws the same in Web/src/views/MachinePage.tsx.
 struct MachinePage: View {
     @Environment(AppModel.self) private var model
@@ -279,8 +279,7 @@ struct MachinePage: View {
 }
 
 /// What Settings ▸ Machines' menu had for one machine and its row's menu leaves out (#3975):
-/// a provider's options and Unlink (rare, so not in the row's menu; the wireframe's section 4),
-/// and Stop Lending for each git server it uses a Mac's access for (#1122).
+/// a provider's options and Unlink (rare, so not in the row's menu; the wireframe's section 4).
 private struct MachineLinkSections: View {
     @Environment(AppModel.self) private var model
     let row: DaemonAPI.ControlMachine
@@ -312,19 +311,6 @@ private struct MachineLinkSections: View {
                 Button("Cancel", role: .cancel) {}
             } message: {
                 Text("\(workspace.providerName) can no longer start or stop it.")
-            }
-        }
-        if let lent = row.gitFrom, !lent.isEmpty {
-            Section {
-                ForEach(lent.keys.sorted(), id: \.self) { server in
-                    Button(GitLendWords.revoke(server)) {
-                        Task { await model.stopLendingGit(row.id, from: lent[server]!, server: server) }
-                    }
-                }
-            } header: {
-                Text("Git access")
-            } footer: {
-                if let uses = GitLendWords.uses(row, name: { model.hosts.label($0) }) { Text(uses) }
             }
         }
     }

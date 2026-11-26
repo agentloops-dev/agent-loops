@@ -762,7 +762,7 @@ It is read only.
   permission, question or sandbox card; change a setting, a cost limit or a folder's
   limits; approve, deny, run, turn on or off, or delete a workflow; approve a plugin; add,
   approve or remove an MCP server, a skill or a marketplace; add or delete a folder;
-  pair, forget or remove a client or a machine; lend a sign-in or git access; change a
+  pair, forget or remove a client or a machine; lend a sign-in; change a
   machine provider. Reads, prompts and presence are not kept. An entry is written when
   the control plane passes the call on, so a call that the host refuses is kept too.
 - **An agent's reads and changes of an outside account** (#4157): `manage_accounts` tells the

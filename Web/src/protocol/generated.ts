@@ -3681,8 +3681,6 @@ export interface ControlMachine {
   reach: string;
   machineID?: string;
   signInFrom?: Record<string, MachineRef>;
-  gitFrom?: Record<string, MachineRef>;
-  gitAsks?: GitAsk[];
   tunnel?: MachineTunnel;
   workspace?: MachineWorkspace;
   implementation?: string;
@@ -6756,27 +6754,6 @@ export interface FoundFolder {
   isFolder: boolean;
 }
 
-export interface GitAsk {
-  server: string;
-  from: MachineRef;
-}
-
-/** A credential for one git command. Never printed, logged or kept. */
-export interface GitCredential {
-  username: string;
-  password: string;
-}
-
-/**
- * git/credential, git/fill (#1122): only https, and only the server. `path` is the Go host's,
- * unread by Swift.
- */
-export interface GitCredentialRequest {
-  protocol: string;
-  host: string;
-  path?: string;
-}
-
 /**
  * The trailer block for a commit or a squash message (#6365), in order, one "Key: value" line each;
  * empty when the rule turns every trailer off.
@@ -7174,13 +7151,6 @@ export interface LeaseSnapshot {
 
 export interface LeaseTokenRequest {
   token: string;
-}
-
-export interface LendGit {
-  host: MachineRef;
-  from: MachineRef;
-  server: string;
-  allowed: boolean;
 }
 
 /** machines/lendSignIn (T091). */
@@ -18000,7 +17970,6 @@ export interface Methods {
   "machines/install": { params: MachineInstall; result: JSONValue };
   "machines/joinRequests": { params: Empty; result: JoinRequest[] };
   "machines/lastHeard": { params: MachineRequest; result: MachineLastHeard };
-  "machines/lendGit": { params: LendGit; result: Empty };
   "machines/link": { params: MachineLink; result: ControlMachine };
   "machines/list": { params: MachineListQuery; result: ControlMachine[] | MachineList };
   "machines/listKept": { params: KeptListQuery; result: KeptList };
@@ -18499,7 +18468,6 @@ export const MethodTarget = {
   "machines/install": "control",
   "machines/joinRequests": "control",
   "machines/lastHeard": "control",
-  "machines/lendGit": "control",
   "machines/link": "control",
   "machines/list": "control",
   "machines/listKept": "control",
@@ -19072,7 +19040,7 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   ControlEndpoint: { required: ["url"], optional: ["pin"] },
   ControlHello: { required: ["v", "name", "control", "nonce", "copy"], optional: ["previous"] },
   ControlInstallProgress: { required: ["name", "step"], optional: [] },
-  ControlMachine: { required: ["id", "name", "platform", "version", "state", "reach"], optional: ["machineID", "signInFrom", "gitFrom", "gitAsks", "tunnel", "workspace", "implementation", "capabilities", "maturity", "missing", "owner", "capacity", "loadPerCore5", "capacityAt", "setup", "roles", "labels", "autoLabels"] },
+  ControlMachine: { required: ["id", "name", "platform", "version", "state", "reach"], optional: ["machineID", "signInFrom", "tunnel", "workspace", "implementation", "capabilities", "maturity", "missing", "owner", "capacity", "loadPerCore5", "capacityAt", "setup", "roles", "labels", "autoLabels"] },
   ControlMove: { required: ["id", "from", "to", "toName", "phase", "startedAt", "updatedAt", "by"], optional: ["failedPhase", "address", "copied", "total", "forwardingUntil", "error"] },
   ControlMoveRequest: { required: ["machine"], optional: [] },
   ControlMoveResult: { required: ["move"], optional: [] },
@@ -19305,9 +19273,6 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   ForgeStart: { required: ["prompt", "labels"], optional: ["worktree"] },
   ForgeTransition: { required: ["id", "name"], optional: ["category"] },
   FoundFolder: { required: ["folder", "exists", "isRepository", "isFolder"], optional: ["typed"] },
-  GitAsk: { required: ["server", "from"], optional: [] },
-  GitCredential: { required: ["username", "password"], optional: [] },
-  GitCredentialRequest: { required: ["protocol", "host"], optional: ["path"] },
   GitTrailers: { required: ["lines"], optional: [] },
   GitTrailersRequest: { required: ["session"], optional: ["pr"] },
   Goal: { required: ["objective", "status", "at"], optional: ["iterations", "reason", "tokensUsed", "tokenBudget", "timeUsedSeconds"] },
@@ -19351,7 +19316,6 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   LeaseRequest: { required: ["token", "name"], optional: ["minutes", "wait"] },
   LeaseSnapshot: { required: ["resources", "at"], optional: [] },
   LeaseTokenRequest: { required: ["token"], optional: [] },
-  LendGit: { required: ["host", "from", "server", "allowed"], optional: [] },
   LendSignIn: { required: ["host", "from", "runtime", "allowed"], optional: [] },
   Levels: { required: [], optional: ["model", "permission", "permissionRequests"] },
   LineMember: { required: ["agentID", "askedAt", "isCallOpen"], optional: [] },
