@@ -3,6 +3,7 @@ package controlplane
 import (
 	"context"
 	"encoding/json"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -83,6 +84,24 @@ func (m *Methods) controlCapacity(ctx context.Context) (wire.ControlCapacityBoar
 		}
 		var snapshot wire.ControlCapacityCopy
 		if json.Unmarshal(capacity.Data, &snapshot) == nil {
+			// A sample kept before its copy knew its machine takes the copy record's (#6591).
+			if snapshot.Machine == nil {
+				snapshot.Machine = optional(copy.Machine)
+			}
+			board.Copies = append(board.Copies, snapshot)
+		}
+	}
+	// A single copy keeps no copy record (no mesh), so its own look is read by its key (#6591).
+	if !slices.ContainsFunc(board.Copies, func(c wire.ControlCapacityCopy) bool { return c.Copy == m.s.copyID }) {
+		capacity, err := m.s.cfg.Store.Get(ctx, controlCapacityKey(m.s.copyID))
+		if err != nil {
+			return board, err
+		}
+		var snapshot wire.ControlCapacityCopy
+		if capacity != nil && json.Unmarshal(capacity.Data, &snapshot) == nil {
+			if snapshot.Machine == nil {
+				snapshot.Machine = optional(m.s.controlMachineID())
+			}
 			board.Copies = append(board.Copies, snapshot)
 		}
 	}

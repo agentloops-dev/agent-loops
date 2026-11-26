@@ -1445,6 +1445,8 @@ final class AppModel {
     let endedConnections = EndedConnections()
     /// People (#994): the machines waiting for this person's approval, fed from the watch.
     let people = PeopleState()
+    /// The control plane's capacity, for an admin's Machines (#6591).
+    let controlCapacity = ControlCapacityState()
     /// The GitHub sign-ins waiting for this person's Approve (#995).
     let signIn = SignInState()
     /// This window's place in the person's machine lock, and the clients asking to join it (#3490).
@@ -2658,6 +2660,28 @@ final class AppModel {
 
     /// The feature flags the person has on (#6572), as the mirror keeps them.
     let flags = FeatureFlagStates(defaults: WindowDefaults.store)
+
+    /// The control plane as a machine in Machines, with its level, its page and a strip (#6591):
+    /// behind its flag, and for an admin only.
+    var showsControlPlaneMachine: Bool {
+        flags.isOn(.controlPlaneMachine) && people.you?.isAdmin == true
+    }
+
+    /// The machines that run the control plane, for matching a copy that names none (#6591).
+    var controlPlaneMachineCount: Int {
+        (controlPlaneHosts ?? []).filter { ControlPlaneMachine.runsControl($0) }.count
+    }
+
+    /// The machine runs the control plane and the person sees it as one (#6591). This Mac too,
+    /// which `hosts.controlRows` leaves out.
+    func runsControlPlane(_ host: MachineRef) -> Bool {
+        showsControlPlaneMachine && ControlPlaneMachine.runsControl(controlPlaneHosts?.first { $0.id == host })
+    }
+
+    /// The latest look of the control plane on that machine; nil when it runs none, or before the first.
+    func controlPlaneLook(_ host: MachineRef) -> DaemonAPI.ControlCapacityCopy? {
+        controlCapacity.look(for: host, controlMachines: controlPlaneMachineCount)
+    }
 
     /// The person's display choices (#1033): this Mac's host keeps them, and the window's
     /// defaults mirror them so every view reads them where it always did.

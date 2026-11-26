@@ -71,6 +71,7 @@
   },
   "ControlCapacityCopy": {
     "copy": "copy",
+    "machine": "control",
     "level": "near",
     "reason": "the control plane is near capacity: its disk is busy",
     "loadPerCore": 2.3,
@@ -89,6 +90,7 @@
   "ControlCapacityBoard": {
     "copies": [{
       "copy": "copy",
+      "machine": "control",
       "level": "near",
       "reason": "the control plane is near capacity: its disk is busy",
       "loadPerCore": 2.3,

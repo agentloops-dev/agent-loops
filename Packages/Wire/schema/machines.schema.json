@@ -1179,6 +1179,7 @@
       "description": "One live control plane copy's most recent capacity look (#6590).",
       "properties": {
         "copy": {"type": "string"},
+        "machine": {"type": "string", "description": "The id of the machine record that runs this copy (#6609, #6591): the row in Machines it is the level of. Absent from an older copy, and from a hosted copy, which has no machine record."},
         "level": {"$ref": "#/definitions/CapacityLevel"},
         "reason": {"type": "string"},
         "loadPerCore": {"type": "number"},

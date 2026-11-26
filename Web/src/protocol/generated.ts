@@ -3471,6 +3471,11 @@ export interface ControlCapacityBoard {
 /** One live control plane copy's most recent capacity look (#6590). */
 export interface ControlCapacityCopy {
   copy: string;
+  /**
+   * The id of the machine record that runs this copy (#6609, #6591): the row in Machines it is the
+   * level of. Absent from an older copy, and from a hosted copy, which has no machine record.
+   */
+  machine?: string;
   level: CapacityLevel;
   reason: string;
   loadPerCore: number;
@@ -18726,7 +18731,7 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   ContinueWhenBack: { required: ["at", "resetKnown"], optional: [] },
   ControlAuth: { required: ["id", "nonce", "mac", "kind"], optional: ["epoch", "capabilities", "page", "publicKey"] },
   ControlCapacityBoard: { required: ["copies"], optional: [] },
-  ControlCapacityCopy: { required: ["copy", "level", "reason", "loadPerCore", "loadPerCore5", "pressureMemoryFullAvg60", "pressureIOFullAvg60", "memoryAvailableBytes", "swapUsedPercent", "heapInuseBytes", "goroutines", "openFiles", "storeFiles", "storeBytes", "at"], optional: [] },
+  ControlCapacityCopy: { required: ["copy", "level", "reason", "loadPerCore", "loadPerCore5", "pressureMemoryFullAvg60", "pressureIOFullAvg60", "memoryAvailableBytes", "swapUsedPercent", "heapInuseBytes", "goroutines", "openFiles", "storeFiles", "storeBytes", "at"], optional: ["machine"] },
   ControlClientChanged: { required: [], optional: ["client", "removed"] },
   ControlCodeShown: { required: ["text", "expires"], optional: ["command"] },
   ControlCutOff: { required: ["why"], optional: ["provider"] },

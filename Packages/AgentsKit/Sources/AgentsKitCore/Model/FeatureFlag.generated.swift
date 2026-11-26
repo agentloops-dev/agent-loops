@@ -6,6 +6,8 @@
 public enum FeatureFlag: String, CaseIterable, Sendable {
     /// Commit trailers (#6373).
     case commitTrailers = "commit-trailers"
+    /// Control plane machine (#6591).
+    case controlPlaneMachine = "control-plane-machine"
     /// Dashboard (#6572).
     case dashboard = "dashboard"
     /// Docs (#6572).
@@ -25,6 +27,7 @@ public enum FeatureFlag: String, CaseIterable, Sendable {
     public var title: String {
         switch self {
         case .commitTrailers: "Commit trailers"
+        case .controlPlaneMachine: "Control plane machine"
         case .dashboard: "Dashboard"
         case .docs: "Docs"
         case .imageHosts: "Image hosts"
@@ -39,6 +42,7 @@ public enum FeatureFlag: String, CaseIterable, Sendable {
     public var about: String {
         switch self {
         case .commitTrailers: "The Commit trailers group in Agents ▸ Policy: the trailers on each agent's commits."
+        case .controlPlaneMachine: "For admins on the Mac: the control plane's machine in Machines, with its capacity level, its page, and a strip while it is near or at capacity."
         case .dashboard: "The Dashboard on the Mac: each work item with its sessions. The window opens to it."
         case .docs: "Docs in the sidebar, and the Docs section on a work item's page. On the Mac and the web page."
         case .imageHosts: "A blocked image on a Work page says its host, with Show image and Always allow; the list is in Settings ▸ Machines ▸ Image Hosts. On the Mac."
@@ -53,6 +57,7 @@ public enum FeatureFlag: String, CaseIterable, Sendable {
     public var issue: Int {
         switch self {
         case .commitTrailers: 6373
+        case .controlPlaneMachine: 6591
         case .dashboard: 6572
         case .docs: 6572
         case .imageHosts: 7136

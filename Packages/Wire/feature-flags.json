@@ -8,6 +8,12 @@
       "issue": 6373
     },
     {
+      "name": "control-plane-machine",
+      "title": "Control plane machine",
+      "about": "For admins on the Mac: the control plane's machine in Machines, with its capacity level, its page, and a strip while it is near or at capacity.",
+      "issue": 6591
+    },
+    {
       "name": "dashboard",
       "title": "Dashboard",
       "about": "The Dashboard on the Mac: each work item with its sessions. The window opens to it.",

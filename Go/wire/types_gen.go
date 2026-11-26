@@ -3696,6 +3696,9 @@ type ControlCapacityBoard struct {
 type ControlCapacityCopy struct {
 	Copy string `json:"copy"`
 
+	// The id of the machine record that runs this copy (#6609, #6591): the row in Machines it is the level of. Absent from an older copy, and from a hosted copy, which has no machine record.
+	Machine *string `json:"machine,omitzero"`
+
 	Level CapacityLevel `json:"level"`
 
 	Reason string `json:"reason"`
