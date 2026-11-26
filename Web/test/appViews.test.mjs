@@ -73,7 +73,10 @@ test("agents/start-agent is read as AppViewStart reads it (#834)", () => {
   assert.equal(refused({ prompt: "Go", labels: [" "] }).reason, "Each label is text of 1 to 24 characters.");
   assert.equal(refused({ prompt: "Go", labels: ["x".repeat(25)] }).reason, "Each label is text of 1 to 24 characters.");
   assert.equal(refused({ prompt: "Go", labels: [7] }).reason, "Each label is text of 1 to 24 characters.");
-  assert.equal(refused({ prompt: "Go", labels: Array.from({ length: 6 }, (_, i) => `l${i}`) }).reason, "A session can have at most five labels.");
+  assert.equal(refused({ prompt: "Go", labels: Array.from({ length: 6 }, (_, i) => `l${i}`) }).reason,
+    "A session can have at most five labels, apart from links (#12, P#12) and merged, closed or archived. It has l0, l1, l2, l3, l4.");
+  // Links have a room of their own (#7241): five issues, lane, the PR and merged start.
+  assert.equal(ask("agents/start-agent", { prompt: "Go", labels: ["#1", "#2", "#3", "#4", "#5", "lane", "P#6", "merged"] }).start.labels.length, 8);
   // Repeats are counted once, whatever their case, so six with a repeat are five.
   assert.equal(ask("agents/start-agent", { prompt: "Go", labels: [...Array.from({ length: 5 }, (_, i) => `l${i}`), "L0"] }).start.labels.length, 5);
   assert.equal(ask("agents/start-agent", { prompt: "Go", worktree: "w".repeat(150) }).start.worktree, "w".repeat(100));

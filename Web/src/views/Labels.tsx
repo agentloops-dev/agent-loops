@@ -7,7 +7,7 @@ import { signal, useSignal } from "@preact/signals";
 import { useEffect, useRef } from "preact/hooks";
 import type { Agent, SessionLabel } from "../protocol/generated";
 import type { Store } from "../model/store";
-import { accepted, labelClass, maximumLabels, splitTyped } from "../model/labels";
+import { accepted, hasRoom, labelClass, splitTyped } from "../model/labels";
 import { filterByLabel, filterHint, filtersBy } from "../model/sessionSearch";
 
 /** Below 760 the prompt's head is one line, as on the iPhone (#1107). */
@@ -54,7 +54,7 @@ export function LabelField({ store, host, folder, labels, add, remove, disabled,
             }}>×</button>
         </span>
       ))}
-      {labels.length < maximumLabels && (
+      {hasRoom(existing) && (
         <input class="label-field" aria-label="Add a label" placeholder={labels.length ? "" : "Add labels"} list={listID}
           disabled={disabled} value={typed.value} size={labels.length ? 6 : 10}
           onInput={(e) => {

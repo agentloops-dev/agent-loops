@@ -75,7 +75,8 @@ There's no tool for ending a turn. The app works out how each one ended: **Compl
 | `make_public_repository` | Makes a public GitHub repository (#4921), with your GitHub connection in your account or an organisation, with the files of a folder on the agent's machine as its first commit on `main`, as a template repository when `template` is true. Making something public is your choice, so the call puts a card in front of you that names the repository, the folder, its file count and its top entries, and makes and pushes nothing until you say yes; a card still open after the hold does it when you answer, and tells the agent. The files are read before the card and kept, so a yes pushes what the card counted. `.git` is left out; a link, a special file, the home folder and `~/.ssh`, `~/.gnupg` and `~/.agents/secrets` are refused; at most 2000 files and 50 MB. The push goes from a clone of its own, which is removed; the token goes to git in its environment. A repository there already is used when it is public and empty; a private one is left as it is. A runtime's own permission check (Claude Code's auto mode) refuses `gh repo create --public` even after a form's yes, so this card is the approval. The brief names it only on a machine with GitHub connected. | No. |
 
 `set_session_labels` adds or removes labels owned by the agent. `start_session` can give
-the new session up to five labels, which it owns from its first moment. Labels are
+the new session labels, which it owns from its first moment: up to five, and apart from
+them up to 20 links (`#12`, `P#12`) and `merged`, `closed` or `archived` (#7241). Labels are
 unique within a session without regard to case. An agent cannot remove or claim a
 person-owned label; the whole call is refused if it tries. See
 [Label a session](../how-to/label-a-session.md).
