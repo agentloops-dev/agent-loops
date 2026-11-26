@@ -1256,6 +1256,58 @@ export interface AutoSkip {
   reason: string;
 }
 
+/**
+ * What Autopilot starts in a folder (#5898, epic #5897). Off starts nothing; high starts only work
+ * whose priority is high; on starts any ready work. Absent is off.
+ */
+export type AutopilotMode =
+  | "off"
+  | "high"
+  | "on";
+
+export interface AutopilotRequest {
+  folder: URLString;
+}
+
+export interface AutopilotRow {
+  /** The issue or epic, as the forge names it (#123). */
+  ref: string;
+  kind: AutopilotRowKind;
+  state: AutopilotRowState;
+  /**
+   * Why it waits or is paused: one of `limit running`, `limit open-prs`, `capacity near`, `capacity
+   * full`, `on hold`, `blocked by #n`, `paused: main red`, `paused: over budget`, `mode high`.
+   * Empty when it started.
+   */
+  reason: string;
+  /** The session Autopilot started for it; absent until it started one. */
+  session?: UUID;
+  since: WireDate;
+}
+
+/** A lead is for an epic; a lane is for an issue. */
+export type AutopilotRowKind =
+  | "lead"
+  | "lane";
+
+export type AutopilotRowState =
+  | "started"
+  | "waiting"
+  | "paused";
+
+export interface AutopilotSetRequest {
+  folder: URLString;
+  mode: AutopilotMode;
+}
+
+export interface AutopilotStatus {
+  mode: AutopilotMode;
+  /** When Autopilot last looked at the folder's work; absent when it never has. */
+  lastRunAt?: WireDate;
+  /** The newest 100 rows, the newest first. */
+  rows: AutopilotRow[];
+}
+
 export interface BackgroundItem {
   id: string;
   kind: BackgroundItemKind;
@@ -5540,6 +5592,8 @@ export interface Folder {
   archivedAt?: WireDate;
   addedAt: WireDate;
   helperLimits?: HelperLimits;
+  /** What Autopilot may start in this folder (#5898). Absent is off. */
+  autopilot?: FolderAutopilot;
   diskSpace?: DiskThresholds;
   pinned?: boolean;
   /** Absent is off (#2352). */
@@ -5549,6 +5603,13 @@ export interface Folder {
    * from .agents/folder.json. Absent is 09:00-17:00, Mon-Fri. Never named.
    */
   workingHours?: WorkflowHours;
+}
+
+export interface FolderAutopilot {
+  mode: AutopilotMode;
+  /** Who chose the mode: a person's name, or the name of what set it. */
+  setBy: string;
+  setAt: WireDate;
 }
 
 export interface FolderDetection {
@@ -18771,6 +18832,10 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   AutoPreviewRequest: { required: ["cwd"], optional: ["levels", "sandbox", "needs"] },
   AutoSettings: { required: ["order", "excluded", "overrides"], optional: ["setBy"] },
   AutoSkip: { required: ["runtimeID", "reason"], optional: [] },
+  AutopilotRequest: { required: ["folder"], optional: [] },
+  AutopilotRow: { required: ["ref", "kind", "state", "reason", "since"], optional: ["session"] },
+  AutopilotSetRequest: { required: ["folder", "mode"], optional: [] },
+  AutopilotStatus: { required: ["mode", "rows"], optional: ["lastRunAt"] },
   BackgroundItem: { required: ["id", "kind", "name", "state", "canStop", "isStopping", "startedAt"], optional: ["taskType", "detail", "command", "parentID", "toolCallID", "outputFilePath", "summary", "lastToolName", "endedAt"] },
   Backup: { required: ["id", "machine", "rootID", "madeAt", "bytes", "agents", "thisMachine"], optional: [] },
   BackupMakeRequest: { required: [], optional: ["wait"] },
@@ -19092,7 +19157,8 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   FirstBuildStartRequest: { required: ["idea", "starter", "runtimeID"], optional: ["another"] },
   FleetBoard: { required: ["machines"], optional: [] },
   FleetMachine: { required: ["host", "ownerName", "bot"], optional: ["running", "heardAt"] },
-  Folder: { required: ["folder", "addedAt"], optional: ["archivedAt", "helperLimits", "diskSpace", "pinned", "prCostComment", "workingHours"] },
+  Folder: { required: ["folder", "addedAt"], optional: ["archivedAt", "helperLimits", "autopilot", "diskSpace", "pinned", "prCostComment", "workingHours"] },
+  FolderAutopilot: { required: ["mode", "setBy", "setAt"], optional: [] },
   FolderDetection: { required: ["enabled", "paths"], optional: [] },
   FolderHunk: { required: ["oldStart", "newStart", "noNewlineAtEnd", "lines"], optional: [] },
   FolderMCPServer: { required: ["name", "summary", "approval", "missingSecrets", "secretNames", "entryDigest"], optional: ["managed", "signIn", "views", "approvedFrom"] },

@@ -828,6 +828,14 @@ func (d *Daemon) registerFolders() {
 		r.Folder = store.FolderURL(folderOf(r.Folder))
 		return d.setPRCostComment(r)
 	})
+	On(d, wire.CallAutopilotSet, func(ctx context.Context, c *Client, r wire.AutopilotSetRequest) (wire.AutopilotStatus, error) {
+		r.Folder = store.FolderURL(folderOf(r.Folder))
+		return d.setAutopilot(c, r)
+	})
+	On(d, wire.CallAutopilotStatus, func(ctx context.Context, c *Client, r wire.AutopilotRequest) (wire.AutopilotStatus, error) {
+		r.Folder = store.FolderURL(folderOf(r.Folder))
+		return d.autopilotStatus(r)
+	})
 	On(d, wire.CallFoldersSetWorkingHours, func(ctx context.Context, c *Client, r wire.SetWorkingHoursRequest) (wire.FolderSummary, error) {
 		r.Folder = store.FolderURL(folderOf(r.Folder))
 		return d.setWorkingHours(r)

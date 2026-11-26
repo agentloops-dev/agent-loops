@@ -799,6 +799,84 @@
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
+          "ref": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "macOnly": false,
+      "meaning": "Autopilot started a lead or a lane in this folder (#5898): ref is the issue or epic, session the session it started.",
+      "name": "autopilot.started",
+      "payloadSchema": {
+        "properties": {
+          "ref": {
+            "type": "string"
+          },
+          "session": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "scope": "folder"
+    },
+    {
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "ref": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "macOnly": false,
+      "meaning": "Autopilot stopped starting work for an issue or epic in this folder (#5898): reason is why, as autopilot/status says it.",
+      "name": "autopilot.paused",
+      "payloadSchema": {
+        "properties": {
+          "reason": {
+            "type": "string"
+          },
+          "ref": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "scope": "folder"
+    },
+    {
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "ref": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "macOnly": false,
+      "meaning": "Autopilot may start work for an issue or epic again after a pause (#5898): reason is what was cleared.",
+      "name": "autopilot.resumed",
+      "payloadSchema": {
+        "properties": {
+          "reason": {
+            "type": "string"
+          },
+          "ref": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "scope": "folder"
+    },
+    {
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
           "any": {
             "description": "true: every branch an agent works on. A wait (not a workflow trigger) that names no branch is refused without it.",
             "type": "boolean"
