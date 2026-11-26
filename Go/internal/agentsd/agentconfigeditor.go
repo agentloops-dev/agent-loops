@@ -152,6 +152,7 @@ func (d *Daemon) saveAgentConfigEditorFile(r wire.AgentConfigEditorSaveRequest) 
 			d.reapproveUserWorkflowsLocked(approved)
 		}()
 	}
+	// store-bounds: not a store: the person's own skill or config file, written on the person's request.
 	if err := store.WriteAtomically(path, []byte(r.Content), 0o644); err != nil {
 		return fileError(CodeFileNotReadable, "The file could not be saved: "+err.Error())
 	}

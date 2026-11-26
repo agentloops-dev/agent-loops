@@ -335,6 +335,8 @@ struct ContentView: View {
         if model.controlPlaneAway { ControlAwayStrip() }
         // The control plane near or at capacity, for an admin (#6591).
         ControlCapacityStrip()
+        // The control plane moving to another machine, or just moved, for an admin (#6614).
+        ControlMoveStrip()
         // The organisation stopped all agent work, or this Mac follows no policy it can trust (#998).
         OrgPolicyStrip(state: model.policyState)
         Group {

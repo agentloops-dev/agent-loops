@@ -7,6 +7,7 @@ import (
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/records"
 	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/store"
+	"github.com/agentloops-dev/agent-loops/Go/internal/sizewords"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -30,7 +31,7 @@ const (
 // replaces, if any, makes room.
 func (l *links) room(ctx context.Context, key string, size int) error {
 	if size > linkMostBytes {
-		return fail(notPermitted, "What is kept of this link is too large: %d bytes, and the most is %d.", size, linkMostBytes)
+		return fail(notPermitted, "This link is too large to keep: %s, and the most is %s. Give it a shorter name.", sizewords.Int(size), sizewords.Int(linkMostBytes))
 	}
 	listed, err := l.s.cfg.Store.List(ctx, linksPrefix)
 	if err != nil {

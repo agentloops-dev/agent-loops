@@ -581,6 +581,7 @@ func (d *Daemon) raiseEnveloped(draft wire.EventDraft, actor *wire.AuditActor, s
 	d.tellEvents(&e)
 	d.matchWaits(e)
 	d.fireWorkflows(e)
+	d.autopilotHear(e)
 	if got := d.event(e.Position); got != nil {
 		return *got
 	}

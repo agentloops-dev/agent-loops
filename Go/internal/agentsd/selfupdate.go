@@ -2,6 +2,8 @@ package agentsd
 
 import (
 	"bufio"
+	"bytes"
+	"cmp"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -22,6 +24,7 @@ import (
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
 	"github.com/agentloops-dev/agent-loops/Go/internal/controllink"
+	"github.com/agentloops-dev/agent-loops/Go/internal/releasesig"
 	"github.com/agentloops-dev/agent-loops/Go/internal/safe"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 	"golang.org/x/sys/unix"
@@ -54,10 +57,11 @@ import (
 // A Linux machine updates itself by the same steps (#5788, epic #5785), with these
 // differences (selfupdate_linux.go):
 //
-//  1. it downloads the release's agentsd-linux-<arch>-<version>.tar.gz, and checks each
-//     program in it against its .sha256 too;
-//  2. it puts the new agentsd at bin/agentsd-<sha256>, beside this one; there is no
-//     signature to check, and the new copy says its version itself (--version);
+//  1. it checks SHA256SUMS against SHA256SUMS.sig (releasesig), whatever the source,
+//     before it downloads the release's agentsd-linux-<arch>-<version>.tar.gz, and checks
+//     each program in it against its .sha256 too;
+//  2. it puts the new agentsd at bin/agentsd-<sha256>, beside this one; the new copy says
+//     its version itself (--version);
 //  3. the "app" it swaps is bin/current, the link that systemd and the supervisor start:
 //     a link to the new agentsd takes its place in one step, and the MCP servers go in
 //     just before;
@@ -103,7 +107,8 @@ type selfUpdateMarkFile struct {
 // releaseDownloads is where the public releases' files are, by tag (#1064: the releases'
 // repository, not the source's). A self-update takes them from the control plane first
 // (#5786), and from here when it does not answer or has no such file.
-// AGENTS_RELEASE_DOWNLOADS replaces both, for a test or a mirror.
+// AGENTS_RELEASE_DOWNLOADS replaces both, for a test or a mirror. It changes only where the
+// files come from: a Linux machine checks their signature all the same.
 const releaseDownloads = "https://github.com/agentloops-dev/agents-releases/releases/download"
 
 // selfUpdater is one Mac host's updater; nil on a host that is not in an app.
@@ -125,6 +130,9 @@ type selfUpdater struct {
 	// place, when set, puts what goes beside the new copy just before the swap (a Linux
 	// machine's MCP servers).
 	place func(work string) error
+	// signed, when set, checks SHA256SUMS against its signature before anything else of
+	// the release is fetched (a Linux machine; a Mac checks the app's own signature).
+	signed func(sums, sig []byte) error
 	// control is where this Mac's control plane answers, one address after another, as
 	// {url, pin}; nil or empty when it has none.
 	control func() []releaseSource
@@ -180,8 +188,15 @@ func readSelfUpdateSettings(path string) selfUpdateSettings {
 	return s
 }
 
+// selfUpdateSettingsMost bounds the self-update settings (#7350): a switch and a version.
+const selfUpdateSettingsMost = 4 << 10
+
 func writeSelfUpdateSettings(path string, s selfUpdateSettings) error {
 	b, _ := json.Marshal(s)
+	if len(b) > selfUpdateSettingsMost {
+		return fmt.Errorf("the self-update settings are %d bytes, at most %d: %w", len(b), selfUpdateSettingsMost, store.ErrLimit)
+	}
+	// store-bounds: kind=key-value; size=4KiB; count=1; age=until-deleted; applied=on write (a larger one is refused) (#7350)
 	return store.WriteAtomically(path, b, 0o600)
 }
 
@@ -392,6 +407,7 @@ func (u *selfUpdater) putInPlace(version, work, next string) error {
 
 func writeSelfUpdateMark(work string, m selfUpdateMarkFile) error {
 	b, _ := json.Marshal(m)
+	// store-bounds: not a store: a mark in the temporary folder of one update.
 	return store.WriteAtomically(filepath.Join(work, selfUpdateMark), b, 0o600)
 }
 
@@ -421,7 +437,7 @@ func (u *selfUpdater) betweenTurns() error {
 // opens it in work. It is the new copy: on a Mac the new Agent Loops.app, which goes where
 // this copy is, whatever that is named.
 func (u *selfUpdater) download(version, work string) (string, error) {
-	var lastErr error
+	var lastErr, unsigned, refusal error
 	for _, src := range u.sources(version) {
 		file, err := u.downloadFrom(src, version, work)
 		if err == nil {
@@ -429,12 +445,20 @@ func (u *selfUpdater) download(version, work string) (string, error) {
 		}
 		var refused *refusedDownload
 		if errors.As(err, &refused) {
-			return "", err
+			if u.signed == nil {
+				return "", err
+			}
+			// Each source has to prove its own files, so the next one is safe to ask.
+			refusal = err
 		}
 		log.Printf("self-update: %s did not give release %s: %v", src.base, version, err)
 		lastErr = err
+		if errors.Is(err, errUnsigned) {
+			unsigned = err
+		}
 	}
-	return "", lastErr
+	// What a source's files were says more than a source that did not answer.
+	return "", cmp.Or(refusal, unsigned, lastErr)
 }
 
 // releaseSource is where a release's files are: a base address that ends in a slash, and
@@ -457,11 +481,32 @@ func (u *selfUpdater) sources(version string) []releaseSource {
 	return append(out, releaseSource{base: strings.TrimSuffix(u.public, "/") + "/v" + version + "/"})
 }
 
-// refusedDownload is a file that does not match its checksum: no other source is tried.
-type refusedDownload struct{ version string }
+// refusedDownload is a file that does not match its checksum, or checksums that do not
+// match their signature. No other source is tried, but for a release that is signed.
+type refusedDownload struct{ version, why string }
 
 func (e *refusedDownload) Error() string {
-	return "The download of release " + e.version + " does not match its checksum, so it was not installed."
+	return "The download of release " + e.version + " does not match its " + e.why + ", so it was not installed."
+}
+
+// errUnsigned is a source with a release's checksums and no signature of them, such as a
+// control plane that is older than signed releases: the next source is tried.
+var errUnsigned = errors.New("no signature")
+
+// checkSigned checks a source's checksums against the signature from the same source.
+func (u *selfUpdater) checkSigned(src releaseSource, version, sums string) error {
+	if u.signed == nil {
+		return nil
+	}
+	var sig bytes.Buffer
+	if err := u.fetch(u.ctx, src.base+releasesig.SigName, src.pin, &sig, releasesig.Limit); err != nil {
+		return fmt.Errorf("Agent Loops could not download release %s's signature, so it was not installed: %w (%w)", version, errUnsigned, err) //nolint:staticcheck // ST1005: the person reads it as the update's message
+	}
+	if err := u.signed([]byte(sums), sig.Bytes()); err != nil {
+		log.Printf("self-update: %s: release %s: %v", src.base, version, err)
+		return &refusedDownload{version, "signature"}
+	}
+	return nil
 }
 
 // downloadFrom fetches the release's file and its sum from one source, and checks the one
@@ -472,11 +517,15 @@ func (u *selfUpdater) downloadFrom(src releaseSource, version, work string) (str
 	if err := u.fetch(u.ctx, src.base+"SHA256SUMS", src.pin, &sums, 1<<16); err != nil {
 		return "", fmt.Errorf("Agent Loops could not download release %s's checksums: %w", version, err)
 	}
+	if err := u.checkSigned(src, version, sums.String()); err != nil {
+		return "", err
+	}
 	want := sumFor(sums.String(), name)
 	if want == "" {
 		return "", fmt.Errorf("Release %s lists no checksum for %s.", version, name)
 	}
 	zip := filepath.Join(work, name)
+	// store-bounds: not a store: an install: the download of an update.
 	f, err := os.Create(zip)
 	if err != nil {
 		return "", err
@@ -489,7 +538,7 @@ func (u *selfUpdater) downloadFrom(src releaseSource, version, work string) (str
 	}
 	if got := hex.EncodeToString(h.Sum(nil)); got != want {
 		os.Remove(zip)
-		return "", &refusedDownload{version}
+		return "", &refusedDownload{version, "checksum"}
 	}
 	return zip, nil
 }

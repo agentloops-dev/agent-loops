@@ -1,7 +1,7 @@
 // Reports ▸ Store sizes (#6907, epic #6669): the last measurement of each declared store, the control plane's
 // reports/storeSizes beside each machine's stores/list. The page joins them, not the control plane, so a machine that
 // does not answer is named and keeps the rows that this browser read from it before. Sizes and counts only.
-import type { StoreSize, StoreSizes, StoreSizesQuery, StoreSizeState } from "../protocol/generated";
+import type { StoreAtLimit, StoreSize, StoreSizes, StoreSizesQuery, StoreSizeState } from "../protocol/generated";
 import { fromWireDate } from "../protocol/dates";
 import { CallFailed } from "../wire/link";
 import { bytesInWords } from "./artifacts";
@@ -20,8 +20,10 @@ export const firstRows = 10;
 export const moreRows = 25;
 
 const hour = 3_600_000;
+/** How often a place measures its stores: each hour on a machine, every 6 h on the control plane (#6906). */
+const cadence = { machine: hour, controlPlane: 6 * hour, client: 6 * hour } as const;
 /** When a measurement is old: twice its cadence, as the place's own answer says it (`stale` in the schema). */
-const staleAfter = { machine: 2 * hour, controlPlane: 12 * hour, client: 12 * hour } as const;
+const staleAfter = { machine: 2 * cadence.machine, controlPlane: 2 * cadence.controlPlane, client: 2 * cadence.client } as const;
 const nearPercent = 90;
 
 /** A place's kept answer. */
@@ -102,6 +104,42 @@ function statusOf(store: StoreSize, state: StoreSizeState, old: boolean): StoreS
 export const statusTitle: Record<StoreStatus, string> = {
   over: "Over limit", near: "Near limit", stale: "Stale", unavailable: "Unavailable", within: "Within limit",
 };
+
+/** What happens to a store over its limit, by its declaration (#7408). */
+export const atLimitWords: Record<StoreAtLimit, string> = {
+  refuse: "New writes are refused until it is within its limit.",
+  write: "The next write removes what is past its limit.",
+  hourly: "The hourly sweep removes what is past its limit.",
+  daily: "The daily sweep removes what is past its limit.",
+};
+
+/** The words under a row's status: why it is unavailable, or what happens next when it is over its limit. */
+export function statusNote(r: StoreRow): string | undefined {
+  if (r.status === "over" && r.store.atLimit) return atLimitWords[r.store.atLimit];
+  return r.store.why;
+}
+
+/**
+ * When the next measurement is, of the places drawn: the latest of each place's measurements and its cadence,
+ * the soonest of them. A read measures nothing (#7408), so this says when the numbers can next change.
+ */
+export function nextMeasuredAt(rows: readonly StoreRow[]): number | undefined {
+  const last = new Map<string, number>();
+  for (const r of rows) {
+    if (r.measured === undefined || r.store.owner === "client") continue;
+    const place = r.key.slice(0, r.key.indexOf(" "));
+    last.set(place, Math.max(last.get(place) ?? 0, r.measured + cadence[r.store.owner]));
+  }
+  return last.size === 0 ? undefined : Math.min(...last.values());
+}
+
+/** "The next measurement is in 25 min." */
+export function nextMeasuredWords(at: number | undefined, now: number): string | undefined {
+  if (at === undefined) return undefined;
+  const minutes = Math.ceil((at - now) / 60_000);
+  if (minutes <= 1) return "The next measurement is due now.";
+  return minutes < 60 ? `The next measurement is in ${minutes} min.` : `The next measurement is in about ${Math.round(minutes / 60)} h.`;
+}
 
 /** A row's status in words: one that is over its limit says too that its measurement is old. */
 export function statusWords(r: StoreRow): string {
@@ -193,7 +231,7 @@ export function problemLines(sources: readonly Source[], now: number): string[] 
 }
 
 export const failedWords = "Some measurements could not be read.";
-export const refreshingWords = "Refreshing store measurements… Showing cached results.";
+export const refreshingWords = "Reloading the last measurements… Showing cached results.";
 export const staleWords = "Some measurements are stale or unavailable.";
 export const emptyTitle = "No store measurements yet";
 export const emptyWords = "When the first measurements are available, each store’s size, limit, and last checked time will appear here.";

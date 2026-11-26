@@ -21,6 +21,13 @@
 # The App Review gate (#3657): the `app-store` environment, for v* tags only, with the reviewer
 # (the signed-in GitHub user by default) required, and the App Store Connect key from
 # ~/.private_keys. Without a required reviewer app-store.yml submits nothing.
+#
+#   scripts/release-secrets.sh --signing-key path/to/current.pem [reviewer]
+#
+# The key that signs SHA256SUMS, from scripts/release-key.sh, as RELEASE_SIGNING_KEY in an
+# environment of its own, `release-sign`: for v* tags only, with the reviewer (the signed-in
+# GitHub user by default) required. It sets nothing unless its public half is one of this
+# checkout's two. Lease "build" first: it builds cmd/release-sign.
 set -euo pipefail
 
 # The repo is this checkout's, so it follows a transfer (#4929).
@@ -80,6 +87,29 @@ if [[ ${1:-} == --store ]]; then
     exit 0
 fi
 
+# tags_only ENVIRONMENT: only a v* tag reaches it.
+tags_only() {
+    gh api repos/$repo/environments/$1/deployment-branch-policies --jq '.branch_policies[].name' | grep -qx 'v\*' ||
+        gh api -X POST repos/$repo/environments/$1/deployment-branch-policies -f name='v*' -f type=tag --silent
+}
+
+if [[ ${1:-} == --signing-key ]]; then
+    key=${2:?usage: release-secrets.sh --signing-key current.pem [reviewer]}
+    reviewer=${3:-$(gh api user --jq .login)}
+    reviewer_id=$(gh api users/$reviewer --jq .id)
+    ${0:A:h:h}/Go/scripts/go.sh run ./cmd/release-sign check -key ${key:a}
+    print "the release-sign environment, for v* tags only, with $reviewer required…"
+    gh api -X PUT repos/$repo/environments/release-sign --silent --input - <<JSON
+{"reviewers":[{"type":"User","id":$reviewer_id}],"prevent_self_review":false,
+ "deployment_branch_policy":{"protected_branches":false,"custom_branch_policies":true}}
+JSON
+    tags_only release-sign
+    gh secret set RELEASE_SIGNING_KEY --env release-sign -R $repo < $key
+    gh secret list --env release-sign -R $repo
+    print "Done. Close the image that $key is in."
+    exit 0
+fi
+
 p8=( $keys/AuthKey_*.p8(N) )
 (( ${#p8} == 1 )) || { print -u2 "Expected one AuthKey_*.p8 in $keys."; exit 1 }
 asc_key_id=$(sed -n 's/^ASC_KEY_ID=//p' $keys/asc.env)
@@ -90,12 +120,6 @@ set_asc() {
     gh secret set ASC_KEY_P8 --env $1 -R $repo < $p8[1]
     print -rn -- $asc_key_id | gh secret set ASC_KEY_ID --env $1 -R $repo
     print -rn -- $asc_issuer_id | gh secret set ASC_ISSUER_ID --env $1 -R $repo
-}
-
-# tags_only ENVIRONMENT: only a v* tag reaches it.
-tags_only() {
-    gh api repos/$repo/environments/$1/deployment-branch-policies --jq '.branch_policies[].name' | grep -qx 'v\*' ||
-        gh api -X POST repos/$repo/environments/$1/deployment-branch-policies -f name='v*' -f type=tag --silent
 }
 
 if [[ ${1:-} == --app-store ]]; then

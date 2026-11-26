@@ -96,6 +96,7 @@ nav:
       - how-to/pin-machines-with-mdm.md
       - how-to/add-an-org-key-or-gateway.md
       - how-to/send-a-folder-to-a-machine.md
+      - how-to/set-up-machines-with-scripts.md
       - how-to/start-machines-from-agents.md
       - how-to/add-a-machine-provider.md
       - how-to/set-up-a-cloud-machine-provider.md
@@ -205,6 +206,7 @@ nav:
       - explanation/index.md
       - explanation/direction.md
       - explanation/planning.md
+      - explanation/autopilot.md
       - explanation/deploys.md
       - explanation/why-agents.md
       - explanation/data-stores.md

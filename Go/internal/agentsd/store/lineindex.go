@@ -25,11 +25,17 @@ type Lines struct {
 	start int64
 	// ends is where each whole line from first on ends, after its newline.
 	ends []int64
+	// why is what the trims took the lines before first for (#7405).
+	why TrimCause
 }
 
 // First is the number of the first line kept, and Total one past the last.
 func (l Lines) First() int { return l.first }
 func (l Lines) Total() int { return l.first + len(l.ends) }
+
+// Removed is what the trims took the lines before First for. Neither, with lines gone, is a
+// header written before #7405.
+func (l Lines) Removed() TrimCause { return l.why }
 
 // startOf is where a kept line starts, and where the last ends for Total.
 func (l Lines) startOf(line int) int64 {
@@ -42,9 +48,9 @@ func (l Lines) startOf(line int) int64 {
 // from is the lines a log with this head still has.
 func (l Lines) from(h logHead) Lines {
 	if h.lines < l.first || h.lines > l.Total() || l.startOf(h.lines) != h.bytes {
-		return Lines{first: h.lines, start: h.bytes}
+		return Lines{first: h.lines, start: h.bytes, why: h.why}
 	}
-	return Lines{first: h.lines, start: h.bytes, ends: l.ends[h.lines-l.first:]}
+	return Lines{first: h.lines, start: h.bytes, ends: l.ends[h.lines-l.first:], why: h.why}
 }
 
 type lineIndex struct {
@@ -97,7 +103,7 @@ func (s *Store) LineEnds(id wire.UUID) (Lines, error) {
 	at := lines.startOf(lines.Total())
 	// Shorter than what was indexed: some other transcript now. Look again.
 	if size < at {
-		lines, at = Lines{first: head.lines, start: head.bytes}, head.bytes
+		lines, at = Lines{first: head.lines, start: head.bytes, why: head.why}, head.bytes
 	}
 	if size > at {
 		err = scanLines(io.NewSectionReader(f, head.at(at), size-at), func(line []byte) bool {

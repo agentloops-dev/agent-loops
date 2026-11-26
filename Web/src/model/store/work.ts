@@ -130,6 +130,9 @@ export class Work {
   /** How many of the person's prompts come before `turns`, as the host counts them (#1862). Null from a host too old to say. */
   readonly firstPrompt = signal<number | null>(null);
 
+  /** The host's line for a chat whose start the 90-day or size trim took (#7405), from its last page of turns. */
+  readonly startRemoved = signal<string | null>(null);
+
   readonly openTurnStart = signal(0);
 
   readonly firstEntryIndex = signal(0);
@@ -531,6 +534,10 @@ export class Work {
     if (this.hasMoreBefore.value) return this.entries.value.length < historyEntriesCap;
     return this.firstTurn.value > 0 && this.turns.value.length < historyTurnsCap;
   });
+
+  /** The line drawn above the first turn kept, once nothing is before it in hand: the trim took the chat's start (#7405). */
+  readonly removedStartLine = computed(() =>
+    this.hasMoreBefore.value || this.firstTurn.value > 0 ? null : this.startRemoved.value);
 
   /**
    * Since when each host has not been online, as this page first heard it (#83; the window's

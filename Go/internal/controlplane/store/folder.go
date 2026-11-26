@@ -181,6 +181,7 @@ func makeLock(dir, p string) (*os.File, error) {
 		err := os.MkdirAll(dir, 0o700)
 		var lock *os.File
 		if err == nil {
+			// store-bounds: not a store: the folder store's own lock file, inside the kind's interface
 			lock, err = os.OpenFile(p+".lock", os.O_CREATE|os.O_RDWR, 0o600)
 		}
 		gone := errors.Is(err, fs.ErrNotExist) || errors.Is(err, fs.ErrExist) || errors.Is(err, syscall.EINVAL)
@@ -200,6 +201,7 @@ func flock(f *os.File, how int) error {
 }
 
 func writeSynced(path string, data []byte) error {
+	// store-bounds: not a store: the folder store's own write, inside the kind's interface
 	w, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
 	if err != nil {
 		return err

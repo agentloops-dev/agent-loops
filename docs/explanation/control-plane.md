@@ -23,6 +23,15 @@ none, shows it to admins only, and refuses to remove it. Each copy's record in
 `v1/copies/<id>.json` names its machine (`machine`). `machines/list` says each machine's
 `roles`; an older control plane does not, and a client reads that as `agents`.
 
+The control plane finds its record by its machine's id (#7399): `AGENTS_CONTROL_MACHINE_ID`, else
+the id kept in the file `AGENTS_CONTROL_MACHINE_ID_FILE` names, made there the first time, else
+the machine's own id (the Mac's hardware UUID, Linux's `/etc/machine-id`, else its host name).
+The image sets that file to `/data/machine-id`, in its data volume, because a container has no
+machine id and a new host name each time it is made: without it, each deploy was a new machine.
+A control-only record that no copy runs on any more goes away: one copy over its store drops the
+others when it starts, and several copies drop one that no live copy record has named for
+30 seconds. A record with a host's key stays.
+
 `control/eligible` (#6611, admins only) says whether a machine can take the control role, and
 each reason why it cannot. It changes nothing. A machine is refused when one of these is true:
 
@@ -52,26 +61,38 @@ where the check reached its control port (absent by a tunnel), `memoryBytes`, an
 A hosted control plane refuses the call: a customer's machine is never a copy of it.
 
 `control/move {machine}` (#6612, admins only) moves the control plane to an eligible machine in
-one call. It runs the handover below by itself, from the copy that moves, in these steps:
+one call. It runs the handover below by itself, from the copy that moves. The move goes through
+these states, in this order:
 
-1. **checking:** the checks of `control/eligible`. The machine also needs an address of its
-   own, not only its tunnel, and a key. Only one move runs at a time, and a control plane
-   with more than one copy over one store does not move.
-2. **receiving:** the copy seals the control key to the machine's own key (HPKE, as a secret
-   is sealed) and asks its host `control/receive` on channel 0. The host opens the key, keeps
-   it as `~/.agents-control/control-key` (0600), sets the copy's old store aside, and starts
-   the copy again empty, to receive, at the address that the check found
-   (`agents-control.service.d/20-receive.conf`). The key is never in clear in a store or on
-   the wire. A control-only machine answers `control/receive` too.
-3. **frozen:** the old copy changes no record.
-4. **copying:** the store goes to the new copy over a handover session, and the new copy takes
-   over.
-5. **forwarding:** when the new address is not the old one, the old copy sends each member to
-   the new one, for 30 days at most. Agent Loops changes no DNS record. **done:** the same
-   address.
+- **checking:** the checks of `control/eligible`. The machine also needs an address of its
+  own, not only its tunnel, and a key. Only one move runs at a time, and a control plane
+  with more than one copy over one store does not move.
+- **receiving:** the copy seals the control key to the machine's own key (HPKE, as a secret
+  is sealed) and asks its host `control/receive` on channel 0. The host opens the key, keeps
+  it as `~/.agents-control/control-key` (0600), sets the copy's old store aside, and starts
+  the copy again empty, to receive, at the address that the check found
+  (`agents-control.service.d/20-receive.conf`). The key is never in clear in a store or on
+  the wire. A control-only machine answers `control/receive` too.
+- **frozen:** the old copy changes no record.
+- **copying:** the store goes to the new copy over a handover session, and the new copy takes
+  over. The records go in batches of at most 1,000 records or 4 MiB (`store/putMany`), and the
+  check reads their hashes 2,000 keys a call (`store/sums`), so the time frozen is about 2 round
+  trips for each 1,000 records, not 2 for each record (#7394): 5,000 records at 50 ms a round
+  trip are frozen for under a second, and 40,000 for about 3 s, plus the time to read and send
+  the bytes.
+- **forwarding:** when the new address is not the old one, the old copy sends each member to
+  the new one, for 30 days at most. Agent Loops changes no DNS record. **done:** the same
+  address.
 
-The call answers once the checks pass. `control/moveChanged` tells the admins each step, and
-`control/moves/list` gives the newest 20 moves (`v1/moves/`, kept 90 days). A step that fails
+The call answers once the checks pass. `control/moveChanged` tells the admins each step, and,
+during the copy, the records copied and the total every 2 s at most (#7395); only the admins
+hear those counts, and the store keeps the steps. `control/eligible` says about how long a move
+keeps the control plane frozen (`frozenSeconds`), from the store's size and the measures above
+on a link of 50 ms a call and 10 MiB/s, so the confirmation says it; while it is frozen it
+refuses every change. `control/moves/list` gives the newest 20 moves (`v1/moves/`, kept 90
+days). A client reads the
+list when it connects, and then each step from `control/moveChanged`. The list writes nothing;
+each write of a move deletes the moves past those bounds. A step that fails
 before the new copy takes over leaves the old copy serving, and the move says which step failed
 and why. The audit says who started the move.
 

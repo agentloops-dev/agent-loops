@@ -8,10 +8,14 @@ public enum FeatureFlag: String, CaseIterable, Sendable {
     case commitTrailers = "commit-trailers"
     /// Control plane machine (#6591).
     case controlPlaneMachine = "control-plane-machine"
+    /// Make This the Control Plane (#6614).
+    case controlPlaneMove = "control-plane-move"
     /// Dashboard (#6572).
     case dashboard = "dashboard"
     /// Docs (#6572).
     case docs = "docs"
+    /// Machine scripts (#7151).
+    case machineScripts = "machine-scripts"
     /// Store sizes (#6907).
     case storeSizes = "store-sizes"
     /// Suggested (#6572).
@@ -26,8 +30,10 @@ public enum FeatureFlag: String, CaseIterable, Sendable {
         switch self {
         case .commitTrailers: "Commit trailers"
         case .controlPlaneMachine: "Control plane machine"
+        case .controlPlaneMove: "Make This the Control Plane"
         case .dashboard: "Dashboard"
         case .docs: "Docs"
+        case .machineScripts: "Machine scripts"
         case .storeSizes: "Store sizes"
         case .suggested: "Suggested"
         case .work: "Work"
@@ -40,8 +46,10 @@ public enum FeatureFlag: String, CaseIterable, Sendable {
         switch self {
         case .commitTrailers: "The Commit trailers group in Agents ▸ Policy: the trailers on each agent's commits."
         case .controlPlaneMachine: "For admins on the Mac: the control plane's machine in Machines, with its capacity level, its page, and a strip while it is near or at capacity."
+        case .controlPlaneMove: "For admins on the Mac and the web page: Make This the Control Plane… on a machine's page, with its checks, and a strip with the move's steps."
         case .dashboard: "The Dashboard on the Mac: each work item with its sessions. The window opens to it."
         case .docs: "Docs in the sidebar, and the Docs section on a work item's page. On the Mac and the web page."
+        case .machineScripts: "On the Mac: your root.sh and setup.sh set up each new machine. A failed Root set-up shows its last lines and what to do."
         case .storeSizes: "Reports ▸ Store sizes on the web page: how large each data store is, and how much of its limits it uses."
         case .suggested: "New Session ▸ Suggested: the epics with no lead."
         case .work: "Work in the sidebar: issues, pull requests, releases, deploys and the timeline."
@@ -54,8 +62,10 @@ public enum FeatureFlag: String, CaseIterable, Sendable {
         switch self {
         case .commitTrailers: 6373
         case .controlPlaneMachine: 6591
+        case .controlPlaneMove: 6614
         case .dashboard: 6572
         case .docs: 6572
+        case .machineScripts: 7151
         case .storeSizes: 6907
         case .suggested: 6572
         case .work: 6572

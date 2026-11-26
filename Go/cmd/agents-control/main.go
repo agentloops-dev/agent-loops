@@ -60,6 +60,9 @@
 //	                            X-Forwarded-For is a socket's source, for the per-source budget
 //	AGENTS_CONTROL_NAME, AGENTS_CONTROL_MACHINE_ID, AGENTS_CONTROL_SERVERS,
 //	AGENTS_CONTROL_TOOLSETS
+//	AGENTS_CONTROL_MACHINE_ID_FILE  a file that keeps this machine's id, made the first time,
+//	                            when there is no AGENTS_CONTROL_MACHINE_ID (the image's is
+//	                            /data/machine-id, so each new container is one machine, #7399)
 //	AGENTS_APNS_KEY_FILE, AGENTS_APNS_KEY_ID, AGENTS_APNS_TEAM_ID: the APNs key (#1460)
 //	AGENTS_WEBPUSH_KEY_FILE, AGENTS_WEBPUSH_SUBJECT: the VAPID key for Web Push to a
 //	                            browser (#1486), and the mailto: or https: address a push
@@ -701,6 +704,7 @@ func serveWeb(cfg *controlplane.Config) {
 	cfg.WebChanged = func(status web.Status) {
 		data, _ := json.Marshal(map[string]any{"pid": os.Getpid(), "status": status})
 		tmp := file + ".tmp"
+		// store-bounds: not a store: the status of this run, with its pid, for Agents Host; removed at each start.
 		if os.WriteFile(tmp, data, 0o644) == nil {
 			if err := os.Rename(tmp, file); err != nil {
 				fail("web.json: %v", err)
@@ -805,10 +809,19 @@ func code() {
 	}
 }
 
-// controlMachineID is this machine's id as the control plane says it.
+// controlMachineID is this machine's id as the control plane says it: AGENTS_CONTROL_MACHINE_ID,
+// else the one kept in AGENTS_CONTROL_MACHINE_ID_FILE (the image's is in its data volume, so a
+// new container is the same machine, #7399), else machine.ID.
 func controlMachineID() string {
 	if id := os.Getenv("AGENTS_CONTROL_MACHINE_ID"); id != "" {
 		return id
+	}
+	if file := os.Getenv("AGENTS_CONTROL_MACHINE_ID_FILE"); file != "" {
+		id, err := machine.KeptID(expand(file))
+		if err == nil {
+			return id
+		}
+		fmt.Fprintf(os.Stderr, "agents-control: AGENTS_CONTROL_MACHINE_ID_FILE: %v; the machine's own id is used\n", err)
 	}
 	return controlplane.MachineID()
 }

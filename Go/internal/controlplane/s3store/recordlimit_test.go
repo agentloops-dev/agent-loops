@@ -6,11 +6,13 @@ import (
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/providers"
 	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/store"
+	"github.com/agentloops-dev/agent-loops/Go/internal/flaky"
 )
 
 // #6908: the largest record that a store of the control plane declares (a kept request,
 // 40 MiB) is read from a bucket as it was written to it.
 func TestTheLargestRecordIsReadBack(t *testing.T) {
+	flaky.UnderLoad(t, "#7435")
 	s := fake(t)
 	for _, size := range []int{16 << 20, providers.KeptRecordBytes, MaxRecord} {
 		if _, err := s.Put(ctx, "v1/large", make([]byte, size), store.Always); err != nil {

@@ -92,6 +92,7 @@ final class VoiceTape {
 
     private func writeMarks() throws {
         let data = try JSONSerialization.data(withJSONObject: ["start": start, "marks": marks], options: [.prettyPrinted, .sortedKeys])
+        // store-bounds: not a store: a walk's tape for a video; the app does not read it back
         try data.write(to: folder.appendingPathComponent("marks.json"), options: .atomic)
     }
 

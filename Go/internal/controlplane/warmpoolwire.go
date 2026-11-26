@@ -30,9 +30,9 @@ func (b poolsBackend) Delete(person, provider, workspace string) error {
 
 func (b poolsBackend) HasProvider(provider string) bool { return b.s.providers.HasProvider(provider) }
 
-// Stage: a pool machine is ready when its set-up has done steps 1 to 6 (create to projects);
-// it fails when a step failed or it has not got so far in poolJoinGiveUp. Steps 7 and 8 are the
-// claim's.
+// Stage: a pool machine is ready when its set-up has done every step that is not the claim's
+// (create to projects, and root set-up when it has one, #7167); it fails when a step failed or
+// it has not got so far in poolJoinGiveUp. Your set-up, sign-in and smoke are the claim's.
 func (b poolsBackend) Stage(provider, workspace string, madeAt, now time.Time) poolStage {
 	late := now.Sub(madeAt) > poolJoinGiveUp
 	host := b.s.providers.PoolHost(provider, workspace)
@@ -52,7 +52,10 @@ func (b poolsBackend) Stage(provider, workspace string, madeAt, now time.Time) p
 	if stored.failed() {
 		return stageFailed
 	}
-	for _, step := range stored.Steps[:6] {
+	for _, step := range stored.Steps {
+		if step.ID == wire.MachineSetupStepIDUser || step.ID == wire.MachineSetupStepIDSignIn || step.ID == wire.MachineSetupStepIDSmoke {
+			continue
+		}
 		if step.State != wire.MachineSetupStateDone {
 			if late {
 				return stageFailed
@@ -70,8 +73,8 @@ func (b poolsBackend) Ping(provider, workspace string) bool {
 }
 
 // Bind gives a pool machine to a person: its owner and Stop when idle, then the catch-up (#5365).
-// Steps 1 to 5 were done in the pool; 6 (projects), 7 (sign in) and 8 (smoke) wait to run again
-// on the machine: its host asks for them with machine/setupWork (#6896). Step 6 brings the
+// The pool did the steps before projects (root set-up among them, #7167); the claim's steps
+// (projects, your set-up, sign in and smoke) wait to run again on the machine: its host asks for them with machine/setupWork (#6896). Step 6 brings the
 // pool's projects up to their last commit, and gets those the pool did not have yet.
 func (b poolsBackend) Bind(person, provider, workspace string, stopWhenIdle *int, projects []string) (string, error) {
 	host := b.s.providers.PoolHost(provider, workspace)
@@ -83,7 +86,7 @@ func (b poolsBackend) Bind(person, provider, workspace string, stopWhenIdle *int
 	}
 	_, err := b.s.changeMachineSetup(context.Background(), host.ID, true, func(st *storedSetup) error {
 		for i := range st.Steps {
-			if i < 5 {
+			if !claimSteps[st.Steps[i].ID] {
 				st.Steps[i].FromPool = true
 				continue
 			}

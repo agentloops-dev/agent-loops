@@ -245,6 +245,7 @@ func writePublicFiles(dir string, files map[string][]byte, exec map[string]bool)
 		if exec[p] {
 			mode = 0o755
 		}
+		// store-bounds: not a store: a file of the person's new public repository.
 		if err := os.WriteFile(full, b, mode); err != nil {
 			return err
 		}

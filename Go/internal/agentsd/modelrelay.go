@@ -107,6 +107,7 @@ func (d *Daemon) relay() (*modelRelay, error) {
 		return nil, err
 	}
 	caFile := filepath.Join(dir, relayCAFile)
+	// store-bounds: not a store: a launch file: the relay's CA, made again at each start.
 	if err := os.WriteFile(caFile, caPEM, 0o600); err != nil {
 		return nil, err
 	}

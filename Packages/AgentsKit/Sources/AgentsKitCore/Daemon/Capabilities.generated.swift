@@ -20,6 +20,7 @@ public enum Capability {
     public static let auditSinks1 = "audit.sinks/1"
     public static let autoMachine1 = "auto-machine/1"
     public static let auto1 = "auto/1"
+    public static let autopilot1 = "autopilot/1"
     public static let backupsStore1 = "backups.store/1"
     public static let backups1 = "backups/1"
     public static let bots1 = "bots/1"
@@ -116,6 +117,7 @@ public enum Capability {
     public static let hostLock2 = "host.lock/2"
     public static let hostLock3 = "host.lock/3"
     public static let hostLock4 = "host.lock/4"
+    public static let hostMachineSetup1 = "host.machine-setup/1"
     public static let hostOrgRoutes1 = "host.org-routes/1"
     public static let hostOrgRoutes2 = "host.org-routes/2"
     public static let hostPolicyLayers1 = "host.policy-layers/1"
@@ -231,6 +233,7 @@ public enum Capability {
     public static let sandbox1 = "sandbox/1"
     public static let sealing1 = "sealing/1"
     public static let send1 = "send/1"
+    public static let sessionSummary1 = "session-summary/1"
     public static let sessionsElsewhere1 = "sessions.elsewhere/1"
     public static let sessionsMove1 = "sessions.move/1"
     public static let sessionsMoving1 = "sessions.moving/1"
@@ -316,6 +319,7 @@ public enum Capability {
         "agents/startNow": "agents.start-now/1",
         "agents/stop": "agents/1",
         "agents/stopBackground": "agents/1",
+        "agents/summarise": "session-summary/1",
         "agents/touchedPaths": "agents/1",
         "agents/transcript": "agents/1",
         "agents/turns": "agents/1",
@@ -329,6 +333,8 @@ public enum Capability {
         "auto/preview": "auto/1",
         "auto/set": "auto/1",
         "auto/state": "auto/1",
+        "autopilot/set": "autopilot/1",
+        "autopilot/status": "autopilot/1",
         "backups/configure": "backups/1",
         "backups/make": "backups/1",
         "backups/restore": "backups/1",
@@ -636,7 +642,9 @@ public enum Capability {
         "sessions/list": "sessions/1",
         "settings/passThrough": "host.policy/1",
         "settings/userPart": "host.user-settings/4",
+        "setup/approve": "host.machine-setup/1",
         "setup/projects": "machine.setup/1",
+        "setup/scripts": "host.machine-setup/1",
         "shell/attach": "shell/1",
         "shell/close": "shell/1",
         "shell/detach": "shell/1",

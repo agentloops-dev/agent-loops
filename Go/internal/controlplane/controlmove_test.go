@@ -7,6 +7,7 @@ import (
 	"errors"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -245,28 +246,187 @@ func TestControlMoveThatFailsLeavesTheOldCopyServing(t *testing.T) {
 	}
 }
 
-// At most 20 moves are kept, and none older than 90 days; one that no copy runs any more
-// failed at its step.
+// movesStore counts the calls on the moves' records.
+type movesStore struct {
+	store.Store
+	lists, gets, writes atomic.Int64
+}
+
+func (m *movesStore) List(ctx context.Context, prefix string) ([]store.Key, error) {
+	if prefix == movesPrefix {
+		m.lists.Add(1)
+	}
+	return m.Store.List(ctx, prefix)
+}
+
+func (m *movesStore) Get(ctx context.Context, key string) (*store.Object, error) {
+	if strings.HasPrefix(key, movesPrefix) {
+		m.gets.Add(1)
+	}
+	return m.Store.Get(ctx, key)
+}
+
+func (m *movesStore) Put(ctx context.Context, key string, data []byte, when store.Condition) (string, error) {
+	if strings.HasPrefix(key, movesPrefix) {
+		m.writes.Add(1)
+	}
+	return m.Store.Put(ctx, key, data, when)
+}
+
+func (m *movesStore) Delete(ctx context.Context, key string) error {
+	if strings.HasPrefix(key, movesPrefix) {
+		m.writes.Add(1)
+	}
+	return m.Store.Delete(ctx, key)
+}
+
+// At most 20 moves are kept, and none older than 90 days, pruned on write from the keys; one
+// that no copy runs any more failed at its step. A read is one list and a get for each of the
+// 20, and writes nothing (#7396); the next move writes the left one failed.
 func TestControlMovesAreBounded(t *testing.T) {
 	t.Parallel()
-	p := startPlane(t, store.NewMemory(), controllink.NewPrivateKey())
+	st := &movesStore{Store: store.NewMemory()}
+	p := startPlane(t, st, controllink.NewPrivateKey())
 	ctx := context.Background()
-	old := dateOf(time.Now().Add(-91 * 24 * time.Hour))
-	must(t, p.s.putMove(ctx, wire.ControlMove{ID: "0000000000001-aa", Phase: wire.ControlMovePhaseDone, UpdatedAt: old}))
+	must(t, p.s.putMove(ctx, wire.ControlMove{ID: "0000000000001-aa", Phase: wire.ControlMovePhaseDone, UpdatedAt: dateOf(time.Now())}))
+	if keys, err := p.store.List(ctx, movesPrefix); err != nil || len(keys) != 0 {
+		t.Fatal("a move that started 90 days ago is kept", keys, err)
+	}
 	for i := range 22 {
 		must(t, p.s.putMove(ctx, wire.ControlMove{ID: newMoveID(), Phase: wire.ControlMovePhaseDone, UpdatedAt: dateOf(time.Now()), By: itoa(i)}))
 		time.Sleep(2 * time.Millisecond)
 	}
 	stuck := wire.ControlMove{ID: newMoveID(), Phase: wire.ControlMovePhaseCopying, UpdatedAt: dateOf(time.Now())}
 	must(t, p.s.putMove(ctx, stuck))
+	keys, err := p.store.List(ctx, movesPrefix)
+	must(t, err)
+	if len(keys) != movesKept {
+		t.Fatal(len(keys))
+	}
+	lists, gets, writes := st.lists.Load(), st.gets.Load(), st.writes.Load()
 	moves := p.s.listMoves(ctx)
 	if len(moves) != movesKept || moves[0].ID != stuck.ID || moves[0].Phase != wire.ControlMovePhaseFailed ||
 		*moves[0].FailedPhase != wire.ControlMovePhaseCopying {
 		t.Fatalf("%d %+v", len(moves), moves[0])
 	}
-	keys, err := p.store.List(ctx, movesPrefix)
+	if l, g, w := st.lists.Load()-lists, st.gets.Load()-gets, st.writes.Load()-writes; l != 1 || g != movesKept || w != 0 {
+		t.Fatalf("a read made %d lists, %d gets and %d writes", l, g, w)
+	}
+	held, err := p.store.Get(ctx, moveKey(stuck.ID))
 	must(t, err)
-	if len(keys) != movesKept {
+	var kept wire.ControlMove
+	must(t, json.Unmarshal(held.Data, &kept))
+	if kept.Phase != wire.ControlMovePhaseCopying {
+		t.Fatal("the read wrote the move", kept.Phase)
+	}
+	p.s.failLeftMoves(ctx)
+	held, err = p.store.Get(ctx, moveKey(stuck.ID))
+	must(t, err)
+	must(t, json.Unmarshal(held.Data, &kept))
+	if kept.Phase != wire.ControlMovePhaseFailed || *kept.FailedPhase != wire.ControlMovePhaseCopying {
+		t.Fatalf("%+v", kept)
+	}
+}
+
+// The store goes across in batches (#7394): with a link between two machines, 25 ms a call,
+// 2,000 records are frozen for a fraction of a second, not the 100 s that two calls a record
+// took. The bound leaves room for a loaded runner under -race.
+func TestControlMoveCopiesALargeStoreInBatches(t *testing.T) {
+	t.Parallel()
+	r := newMoveRig(t)
+	ctx := context.Background()
+	const many = 2000
+	body := bytes.Repeat([]byte("x"), 200)
+	for i := range many {
+		_, err := r.p.store.Put(ctx, "v1/test-load/"+itoa(i)+".json", body, store.Absent)
+		must(t, err)
+	}
+	r.p.s.moving.linkDelay = 25 * time.Millisecond
+	began := time.Now()
+	r.move()
+	for r.p.s.moving.now() != "" {
+		if time.Since(began) > 30*time.Second {
+			t.Fatalf("the move still runs after %v: two calls a record would be 100 s", time.Since(began))
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	ended := r.waitEnded()
+	if ended.Phase != wire.ControlMovePhaseForwarding || ended.Error != nil {
+		t.Fatalf("%+v", ended)
+	}
+	r.mu.Lock()
+	fresh := r.fresh
+	r.mu.Unlock()
+	keys, err := fresh.cfg.Store.List(ctx, "v1/test-load/")
+	must(t, err)
+	if len(keys) != many {
 		t.Fatal(len(keys))
+	}
+}
+
+// The admins hear the copy's count during the copy, not one note for the whole step (#7395):
+// the records copied and the total, as the copy starts, between its batches and as it ends.
+func TestControlMoveSaysTheCopysCount(t *testing.T) {
+	t.Parallel()
+	r := newMoveRig(t)
+	ctx := context.Background()
+	const many = 2500
+	for i := range many {
+		_, err := r.p.store.Put(ctx, "v1/test-load/"+itoa(i)+".json", []byte("{}"), store.Absent)
+		must(t, err)
+	}
+	r.p.s.moving.progressEvery = time.Nanosecond
+	r.move()
+	var counts []wire.ControlMove
+	deadline := time.After(30 * time.Second)
+	for ended := false; !ended; {
+		select {
+		case n, ok := <-r.window.Notes:
+			if !ok {
+				ended = true
+				break
+			}
+			if n.Method != wire.NotifyControlMoveChanged.Name {
+				continue
+			}
+			var move wire.ControlMove
+			must(t, json.Unmarshal(n.Params, &move))
+			if move.Phase == wire.ControlMovePhaseCopying && move.Copied != nil {
+				counts = append(counts, move)
+			}
+			ended = move.Phase == wire.ControlMovePhaseForwarding || move.Phase == wire.ControlMovePhaseFailed
+		case <-deadline:
+			t.Fatal("the move did not end")
+		}
+	}
+	if len(counts) < 3 {
+		t.Fatalf("%d counts", len(counts))
+	}
+	first, last := counts[0], counts[len(counts)-1]
+	if *first.Copied != 0 || *first.Total < many || *last.Copied != *last.Total || *last.Total != *first.Total {
+		t.Fatalf("first %d of %d, last %d of %d", *first.Copied, *first.Total, *last.Copied, *last.Total)
+	}
+	if between := counts[1]; *between.Copied == 0 || *between.Copied >= *between.Total {
+		t.Fatalf("%d of %d", *between.Copied, *between.Total)
+	}
+}
+
+// The confirmation's time comes from the store's size and the copy's batches (#7395): a small
+// store is frozen for seconds, a large one for minutes.
+func TestFrozenSecondsFollowsTheStoresSize(t *testing.T) {
+	t.Parallel()
+	for _, c := range []struct {
+		records, bytes, want int64
+	}{
+		{0, 0, 5},
+		{1000, 1 << 20, 6},     // 5 s, 3 calls, 0.1 s of reads, 0.1 s of bytes
+		{5000, 20 << 20, 9},    // 5 s, 13 calls, 0.5 s of reads, 2 s of bytes
+		{40000, 200 << 20, 35}, // 5 s, 110 calls, 4 s of reads, 20 s of bytes
+		{200000, 2 << 30, 271}, // 5 s, 812 calls, 20 s of reads, 205 s of bytes
+		{-1, -1, 5},
+	} {
+		if got := frozenSeconds(c.records, c.bytes); got != c.want {
+			t.Errorf("frozenSeconds(%d, %d) = %d, want %d", c.records, c.bytes, got, c.want)
+		}
 	}
 }

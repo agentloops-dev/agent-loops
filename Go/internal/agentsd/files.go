@@ -345,6 +345,7 @@ func filesSaveSettingsText(r wire.FilesSaveTextRequest) (wire.Empty, error) {
 	if _, err := os.Stat(path); err == nil && r.OnlyIfAbsent != nil && *r.OnlyIfAbsent {
 		return wire.Empty{}, nil
 	}
+	// store-bounds: not a store: the person's own settings file, written on the person's request, at most 1 MB.
 	if err := store.WriteAtomically(path, []byte(r.Text), 0o644); err != nil {
 		return wire.Empty{}, fileError(CodeFileNotReadable, err.Error())
 	}

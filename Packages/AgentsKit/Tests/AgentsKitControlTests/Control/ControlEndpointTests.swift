@@ -35,6 +35,27 @@ struct ControlEndpointTests {
         #expect(try host.resourceValues(forKeys: [.isExcludedFromBackupKey]).isExcludedFromBackup == false)
     }
 
+    /// A pairing over its limit is refused with words, and the one before stays (#7351); a file
+    /// too large to read is left as it is. No limit unpairs a device.
+    @Test func aPairingOverItsLimitIsRefusedAndTheOneBeforeStays() throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let file = folder.appendingPathComponent("control-client.json")
+        try membership().save(file, backedUp: false)
+        var big = membership()
+        big.addresses = Array(repeating: String(repeating: "a", count: 1024), count: ControlMembership.mostBytes / 1024)
+        #expect(throws: ControlMembership.TooLarge.self) { try big.save(file, backedUp: false) }
+        #expect(ControlMembership.load(file) == membership())
+
+        let large = folder.appendingPathComponent("large.json")
+        let bytes = Data(repeating: 0x20, count: ControlMembership.mostReadBytes + 1)
+        try bytes.write(to: large)
+        #expect(ControlMembership.read(large) == nil)
+        #expect(throws: ControlMembership.TooLarge.self) { try ControlMembership.write(bytes, to: file, backedUp: false) }
+        #expect(try Data(contentsOf: large).count == bytes.count)
+        #expect(ControlMembership.load(file) == membership())
+    }
+
     @Test func aMembershipFromBeforeTheListDialsItsOneAddress() throws {
         // Written by a build with no endpoints: the version 2 fields only.
         let old = #"{"host":"abcd1234","controlKey":"BAEB","addresses":[],"name":"home","url":"https://mac.local:8791","pin":"\#(pin)"}"#

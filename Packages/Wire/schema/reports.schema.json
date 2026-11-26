@@ -3102,6 +3102,16 @@
       "required": [],
       "additionalProperties": false
     },
+    "StoreAtLimit": {
+      "type": "string",
+      "enum": [
+        "refuse",
+        "write",
+        "hourly",
+        "daily"
+      ],
+      "description": "What happens to a store over its limit (#7408), by its declaration: refuse, a new write is refused until it is within its limit again; write, the next write removes what is past the limit; hourly or daily, the sweep removes what is past the limit each hour or each day."
+    },
     "StoreOwner": {
       "type": "string",
       "enum": [
@@ -3172,6 +3182,10 @@
         "measuredAt": {
           "$ref": "core.schema.json#/definitions/WireDate",
           "description": "When this store's measurement ended."
+        },
+        "atLimit": {
+          "$ref": "#/definitions/StoreAtLimit",
+          "description": "What happens to the store when it is over its limit (#7408). Absent from a host too old to say."
         }
       },
       "required": [

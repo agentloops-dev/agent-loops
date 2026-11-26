@@ -324,6 +324,7 @@ func writeStarter(dir string, files map[string][]byte) error {
 		if strings.HasSuffix(p, ".sh") {
 			mode = 0o755
 		}
+		// store-bounds: not a store: a file of the person's new app repository.
 		if err := os.WriteFile(full, files[p], mode); err != nil {
 			return err
 		}

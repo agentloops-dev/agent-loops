@@ -119,7 +119,7 @@ func AcceptableEndpoint(e wire.ControlEndpoint) bool {
 type MachineHello = wire.MachineHello
 
 func LoadMembership(root string) (*Membership, error) {
-	b, err := os.ReadFile(filepath.Join(root, "control-host.json"))
+	b, err := readAtMost(filepath.Join(root, "control-host.json"), "control-host.json", MembershipMostBytes)
 	if err != nil {
 		return nil, err
 	}
@@ -129,7 +129,11 @@ func LoadMembership(root string) (*Membership, error) {
 
 func (m *Membership) Save(root string) error {
 	b, _ := json.Marshal(m)
+	if err := fits("This machine's membership", b, MembershipMostBytes); err != nil {
+		return err
+	}
 	tmp := filepath.Join(root, ".control-host.json.tmp")
+	// store-bounds: kind=key-value; count=1; size=256KiB; age=until-deleted; applied=on write (refused, and the one before stays), a new enrolment replaces it
 	if err := os.WriteFile(tmp, b, 0o600); err != nil {
 		return err
 	}
@@ -242,7 +246,11 @@ type LockInvite struct {
 // SaveLockInvite keeps an invite in the root.
 func SaveLockInvite(root string, invite LockInvite) error {
 	b, _ := json.Marshal(invite)
+	if err := fits("The lock's invite", b, LockInviteMostBytes); err != nil {
+		return err
+	}
 	tmp := filepath.Join(root, "."+LockInviteFile+".tmp")
+	// store-bounds: kind=secret; count=1; size=4KiB; age=until-deleted; applied=on write (refused), dropped once spent, expired or not this lock's
 	if err := os.WriteFile(tmp, b, 0o600); err != nil {
 		return err
 	}
@@ -251,7 +259,7 @@ func SaveLockInvite(root string, invite LockInvite) error {
 
 // LoadLockInvite is the invite kept in the root, or nil.
 func LoadLockInvite(root string) *LockInvite {
-	b, err := os.ReadFile(filepath.Join(root, LockInviteFile))
+	b, err := readAtMost(filepath.Join(root, LockInviteFile), LockInviteFile, LockInviteMostBytes)
 	if err != nil {
 		return nil
 	}

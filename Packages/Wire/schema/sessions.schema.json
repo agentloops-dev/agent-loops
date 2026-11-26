@@ -304,6 +304,10 @@
         "project": {
           "type": "string",
           "description": "The project its folder is in (#3276), as the folder's .agents/folder.json names it now. Absent for a folder in no project."
+        },
+        "summary": {
+          "$ref": "#/definitions/SessionSummary",
+          "description": "What is going on in the session, in a few sentences, written by a short call to the runtime's fastest model when a client opens the session in summary mode (#7321, epic #7318), not by the agent. Absent until one is written."
         }
       },
       "required": [
@@ -1368,6 +1372,38 @@
         "none"
       ],
       "description": "Where a session's priority comes from (#5846): set on it, its issue's, its starter's, or none."
+    },
+    "SessionSummary": {
+      "type": "object",
+      "description": "A session's summary (#7321): at most 600 characters of text, when it was written, the last turn it read, and the model that wrote it.",
+      "properties": {
+        "text": {
+          "type": "string",
+          "description": "What is going on: two to four sentences, at most 600 characters. Empty until the first is written."
+        },
+        "at": {
+          "$ref": "core.schema.json#/definitions/WireDate",
+          "description": "When the text was written: the view's Last update."
+        },
+        "throughTurn": {
+          "$ref": "core.schema.json#/definitions/UUID",
+          "description": "The TurnSummary.id of the last turn the text read, so a turn is not read twice."
+        },
+        "state": {
+          "$ref": "#/definitions/SessionSummaryState"
+        },
+        "model": {
+          "type": "string",
+          "description": "The model that wrote the text."
+        }
+      },
+      "required": ["text", "state"],
+      "additionalProperties": false
+    },
+    "SessionSummaryState": {
+      "type": "string",
+      "enum": ["writing", "written", "failed"],
+      "description": "Where a session's summary is: being written; written; or the last try failed, and the text of the one before it stays."
     },
     "SessionsListRequest": {
       "type": "object",
@@ -2636,6 +2672,10 @@
         },
         "firstPrompt": {
           "type": "integer"
+        },
+        "startRemoved": {
+          "type": "string",
+          "description": "When the 90-day or size trim took the start of this chat (#7405): the line every client shows where its start was, once it shows the first turn kept. Absent when nothing was removed."
         }
       },
       "required": [

@@ -8,6 +8,12 @@ public extension DaemonAPI {
         case machine, controlPlane, client
     }
 
+    /// What happens to a store over its limit (#7408): a write refused, the next write, or
+    /// the hourly or daily sweep removes what is past it.
+    enum StoreAtLimit: String, Codable, Sendable, Hashable, CaseIterable {
+        case refuse, write, hourly, daily
+    }
+
     enum StoreSizeState: String, Codable, Sendable, Hashable, CaseIterable {
         case current, over, stale, unavailable
     }
@@ -30,6 +36,7 @@ public extension DaemonAPI {
         public var percentBytes: Double?
         public var percentRecords: Double?
         public var measuredAt: Date?
+        public var atLimit: StoreAtLimit?
     }
 
     /// A page of at most 100, by id. `cursor` asks for the next; nil on the last.

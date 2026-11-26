@@ -60,7 +60,7 @@ func TestAnAgentStartsASessionOnAnotherMachine(t *testing.T) {
 	})
 
 	if text, _ := m.tool(3, "list_machines", map[string]any{}); !strings.HasSuffix(text,
-		"The person's machines, where start_session with machine starts a session, in this project's folder there or in folder, once the person says yes:\n  - pc: online\n  - laptop: offline") {
+		"The person's machines, where start_session with machine starts a session, in this project's folder there or in folder, once the person says yes:\n  - pc: online (no figure)\n  - laptop: offline (no figure)") {
 		t.Fatal(text)
 	}
 	if text, isErr := m.tool(4, "start_session", map[string]any{"prompt": "x", "machine": "pc"}); !isErr ||

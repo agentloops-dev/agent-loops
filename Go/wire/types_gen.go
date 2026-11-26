@@ -353,6 +353,9 @@ type Agent struct {
 
 	// The project its folder is in (#3276), as the folder's .agents/folder.json names it now. Absent for a folder in no project.
 	Project *string `json:"project,omitzero"`
+
+	// What is going on in the session, in a few sentences, written by a short call to the runtime's fastest model when a client opens the session in summary mode (#7321, epic #7318), not by the agent. Absent until one is written.
+	Summary *SessionSummary `json:"summary,omitzero"`
 }
 
 type AgentArchivedReason string
@@ -460,6 +463,15 @@ type AgentMachinesHost struct {
 	Name string `json:"name"`
 
 	State string `json:"state"`
+
+	// The machine's capacity level as it last pushed it (#5875), so an agent does not start heavy work on a full machine. Absent before its first push.
+	Capacity *CapacityLevel `json:"capacity,omitzero"`
+
+	// Its 5-minute load per core when it last pushed.
+	LoadPerCore5 *float64 `json:"loadPerCore5,omitzero"`
+
+	// When the control plane last heard its capacity. A figure older than 2 minutes is no figure (Auto's rule).
+	CapacityAt *Date `json:"capacityAt,omitzero"`
 }
 
 type AgentMachinesMachine struct {
@@ -1311,6 +1323,62 @@ type AutoSkip struct {
 	RuntimeID string `json:"runtimeID"`
 
 	Reason string `json:"reason"`
+}
+
+// What Autopilot starts in a folder (#5898, epic #5897). Off starts nothing; high starts only work whose priority is high; on starts any ready work. Absent is off.
+type AutopilotMode string
+
+const AutopilotModeOff AutopilotMode = "off"
+const AutopilotModeHigh AutopilotMode = "high"
+const AutopilotModeOn AutopilotMode = "on"
+
+type AutopilotRequest struct {
+	Folder URL `json:"folder"`
+}
+
+type AutopilotRow struct {
+	// The issue or epic, as the forge names it (#123).
+	Ref string `json:"ref"`
+
+	Kind AutopilotRowKind `json:"kind"`
+
+	State AutopilotRowState `json:"state"`
+
+	// Why it waits or is paused: one of `limit running`, `limit open-prs`, `capacity near`, `capacity full`, `on hold`, `blocked by #n`, `paused: main red`, `paused: over budget`, `mode high`. Empty when it started.
+	Reason string `json:"reason"`
+
+	// The session Autopilot started for it; absent until it started one.
+	Session *UUID `json:"session,omitzero"`
+
+	Since Date `json:"since"`
+}
+
+// A lead is for an epic; a lane is for an issue.
+type AutopilotRowKind string
+
+const AutopilotRowKindLead AutopilotRowKind = "lead"
+const AutopilotRowKindLane AutopilotRowKind = "lane"
+
+type AutopilotRowState string
+
+const AutopilotRowStateStarted AutopilotRowState = "started"
+const AutopilotRowStateWaiting AutopilotRowState = "waiting"
+const AutopilotRowStatePaused AutopilotRowState = "paused"
+
+type AutopilotSetRequest struct {
+	Folder URL `json:"folder"`
+
+	Mode AutopilotMode `json:"mode"`
+}
+
+type AutopilotStatus struct {
+	Mode AutopilotMode `json:"mode"`
+
+	// When Autopilot last looked at the folder's work; absent when it never has.
+	LastRunAt *Date `json:"lastRunAt,omitzero"`
+
+	// The newest 100 rows, the newest first.
+	Rows []AutopilotRow `json:"rows"`
 }
 
 type BackgroundItem struct {
@@ -3766,6 +3834,9 @@ type ControlEligible struct {
 
 	// The free space on its fullest disk, as it said it (#7313). Absent when it did not say.
 	DiskFreeBytes *int64 `json:"diskFreeBytes,omitzero"`
+
+	// About how long a move to the machine keeps the control plane frozen, in seconds, from the store's size and the copy's batches (#7395). Changes are refused while it is frozen. Absent from a control plane before #7395.
+	FrozenSeconds *int64 `json:"frozenSeconds,omitzero"`
 }
 
 // One reason a machine cannot take the control role (#6611), with its words for the person.
@@ -3903,6 +3974,12 @@ type ControlMove struct {
 
 	// Where the new copy answers, once it said so.
 	Address *string `json:"address,omitzero"`
+
+	// With copying: the records copied so far (#7395). control/moveChanged says it every few seconds during the copy.
+	Copied *int64 `json:"copied,omitzero"`
+
+	// With copying: the records the copy takes (#7395).
+	Total *int64 `json:"total,omitzero"`
 
 	// With forwarding: until when the old copy sends members to the new one (30 days at most).
 	ForwardingUntil *Date `json:"forwardingUntil,omitzero"`
@@ -5917,6 +5994,9 @@ type Folder struct {
 
 	HelperLimits *HelperLimits `json:"helperLimits,omitzero"`
 
+	// What Autopilot may start in this folder (#5898). Absent is off.
+	Autopilot *FolderAutopilot `json:"autopilot,omitzero"`
+
 	DiskSpace *DiskThresholds `json:"diskSpace,omitzero"`
 
 	Pinned *bool `json:"pinned,omitzero"`
@@ -5926,6 +6006,15 @@ type Folder struct {
 
 	// The project's working hours (#4821), for a workflow's hours: working and hours: not-working, from .agents/folder.json. Absent is 09:00-17:00, Mon-Fri. Never named.
 	WorkingHours *WorkflowHours `json:"workingHours,omitzero"`
+}
+
+type FolderAutopilot struct {
+	Mode AutopilotMode `json:"mode"`
+
+	// Who chose the mode: a person's name, or the name of what set it.
+	SetBy string `json:"setBy"`
+
+	SetAt Date `json:"setAt"`
 }
 
 type FolderDetection struct {
@@ -9920,6 +10009,12 @@ type MachineSetupReport struct {
 
 	// The digits the host shows for its join token (controllink.TokenCode), said with the compare step: the control plane compares them with the ones it made (#5359).
 	Code *string `json:"code,omitzero"`
+
+	// The SHA-256, in lower-case hexadecimal, of the script that the root or user step runs (#7167).
+	Hash *string `json:"hash,omitzero"`
+
+	// The step is done with a warning in its detail, such as a provider that cannot run root set-up (#7167).
+	Warning *bool `json:"warning,omitzero"`
 }
 
 type MachineSetupSource struct {
@@ -9955,9 +10050,15 @@ type MachineSetupStep struct {
 	FromPool *bool `json:"fromPool,omitzero"`
 
 	Slower *bool `json:"slower,omitzero"`
+
+	// The SHA-256, in lower-case hexadecimal, of the script that the root or user step runs (#7167).
+	Hash *string `json:"hash,omitzero"`
+
+	// The step is done with a warning in its detail, such as a provider that cannot run root set-up (#7167).
+	Warning *bool `json:"warning,omitzero"`
 }
 
-// The eight steps, in order: create machine, join machine, install Agents, compare digits, install runtimes, send projects, sign in to runtimes, smoke session.
+// The steps: create machine, join machine, install Agents, compare digits, install runtimes, send projects, sign in to runtimes, smoke session (#5353), and root set-up and your set-up, each only when its script was sent (#7167). The control plane reads a set-up by step id: a client that does not know an id shows it as its name.
 type MachineSetupStepID string
 
 const MachineSetupStepIDCreate MachineSetupStepID = "create"
@@ -9968,6 +10069,8 @@ const MachineSetupStepIDRuntimes MachineSetupStepID = "runtimes"
 const MachineSetupStepIDProjects MachineSetupStepID = "projects"
 const MachineSetupStepIDSignIn MachineSetupStepID = "signIn"
 const MachineSetupStepIDSmoke MachineSetupStepID = "smoke"
+const MachineSetupStepIDRoot MachineSetupStepID = "root"
+const MachineSetupStepIDUser MachineSetupStepID = "user"
 
 // machine/setupWork: what the set-up of the machine that asks has left (#6890, #6896). pool: a warm pool made it. claimed: a person claimed it, and from is the first of steps 6 to 8 that waits to run (absent: none does now). done: nothing is left to ask for. projects: the project folders to get, at their last commit. An unclaimed machine does step 6 and stops.
 type MachineSetupWork struct {
@@ -15356,6 +15459,30 @@ type SessionSecrets struct {
 	Secrets []SessionSecret `json:"secrets"`
 }
 
+// A session's summary (#7321): at most 600 characters of text, when it was written, the last turn it read, and the model that wrote it.
+type SessionSummary struct {
+	// What is going on: two to four sentences, at most 600 characters. Empty until the first is written.
+	Text string `json:"text"`
+
+	// When the text was written: the view's Last update.
+	At *Date `json:"at,omitzero"`
+
+	// The TurnSummary.id of the last turn the text read, so a turn is not read twice.
+	ThroughTurn *UUID `json:"throughTurn,omitzero"`
+
+	State SessionSummaryState `json:"state"`
+
+	// The model that wrote the text.
+	Model *string `json:"model,omitzero"`
+}
+
+// Where a session's summary is: being written; written; or the last try failed, and the text of the one before it stays.
+type SessionSummaryState string
+
+const SessionSummaryStateWriting SessionSummaryState = "writing"
+const SessionSummaryStateWritten SessionSummaryState = "written"
+const SessionSummaryStateFailed SessionSummaryState = "failed"
+
 type SessionsListRequest struct {
 	RuntimeID string `json:"runtimeID"`
 
@@ -15502,11 +15629,48 @@ type SettleUntrustedYourPolicyRequest struct {
 	Sign bool `json:"sign"`
 }
 
+// setup/approve (#7167): a client of the person's lock approves the text of one of this machine's set-up scripts as it is now, for machines as they are made (scope made) or for one machine (m:<id>). approval is a setup.script record whose subject is script and whose content is the script's hash and size; empty content takes the approval of that scope away. The machine keeps the text and the approval only when the record checks against its lock, its number is not lower than the last of its scope, and the file is that text.
+type SetupApprove struct {
+	Script string `json:"script"`
+
+	Approval LockRecord `json:"approval"`
+}
+
+// One set-up script on this machine (#7167): root (root.sh) or setup (setup.sh) in ~/.agents/machine-setup/. present: the file is there. text, hash and size are the file as it is now (hash: SHA-256 in lower-case hexadecimal); problem says why they are absent from a file that is there (over its limit, or unreadable). approvedText and approvedHash are the text a client approved last, and approvals the records in force for it, one a scope. changed: the file is not the approved text, so it is not used until a client approves it. nextSeq is the number to sign the next approval with.
+type SetupScript struct {
+	Name string `json:"name"`
+
+	Present bool `json:"present"`
+
+	Text *string `json:"text,omitzero"`
+
+	Hash *string `json:"hash,omitzero"`
+
+	Size *int64 `json:"size,omitzero"`
+
+	Problem *string `json:"problem,omitzero"`
+
+	ApprovedText *string `json:"approvedText,omitzero"`
+
+	ApprovedHash *string `json:"approvedHash,omitzero"`
+
+	Approvals []LockRecord `json:"approvals"`
+
+	Changed bool `json:"changed"`
+
+	NextSeq int64 `json:"nextSeq"`
+}
+
 // The content of a setup.script record (#7167): the script's SHA-256 in lower-case hexadecimal, and its length in bytes (at least 1).
 type SetupScriptApproval struct {
 	Hash string `json:"hash"`
 
 	Size int64 `json:"size"`
+}
+
+// setup/scripts (#7167): this machine's two set-up scripts, root then setup, as a client reads them to approve one.
+type SetupScripts struct {
+	Scripts []SetupScript `json:"scripts"`
 }
 
 type SharedInstructions struct {
@@ -16336,6 +16500,14 @@ type StopBackgroundRequest struct {
 	ItemID string `json:"itemID"`
 }
 
+// What happens to a store over its limit (#7408), by its declaration: refuse, a new write is refused until it is within its limit again; write, the next write removes what is past the limit; hourly or daily, the sweep removes what is past the limit each hour or each day.
+type StoreAtLimit string
+
+const StoreAtLimitRefuse StoreAtLimit = "refuse"
+const StoreAtLimitWrite StoreAtLimit = "write"
+const StoreAtLimitHourly StoreAtLimit = "hourly"
+const StoreAtLimitDaily StoreAtLimit = "daily"
+
 type StoreNotes struct {
 	Notes []string `json:"notes"`
 }
@@ -16391,6 +16563,9 @@ type StoreSize struct {
 
 	// When this store's measurement ended.
 	MeasuredAt *Date `json:"measuredAt,omitzero"`
+
+	// What happens to the store when it is over its limit (#7408). Absent from a host too old to say.
+	AtLimit *StoreAtLimit `json:"atLimit,omitzero"`
 }
 
 // over: past a limit, whatever the measurement's age. stale: older than twice the cadence (2 h on a machine, 12 h on the control plane). unavailable: not measured, or with no measure that a limit can be compared with; why says which.
@@ -16997,6 +17172,9 @@ type TurnsPage struct {
 	OpenStart int64 `json:"openStart"`
 
 	FirstPrompt *int64 `json:"firstPrompt,omitzero"`
+
+	// When the 90-day or size trim took the start of this chat (#7405): the line every client shows where its start was, once it shows the first turn kept. Absent when nothing was removed.
+	StartRemoved *string `json:"startRemoved,omitzero"`
 }
 
 type TurnsRequest struct {

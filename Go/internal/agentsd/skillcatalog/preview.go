@@ -292,6 +292,7 @@ func writeStaged(folder string, inMemory []File, wanted []wantedFile) error {
 		if wanted[i].entry.Mode == "100755" {
 			mode = 0o755
 		}
+		// store-bounds: not a store: a file in a temporary preview folder.
 		if err := os.WriteFile(path, f.Data, mode); err != nil {
 			return Failed("could not stage " + f.Path)
 		}

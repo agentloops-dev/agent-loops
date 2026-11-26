@@ -43,6 +43,8 @@ func fakeHost(t *testing.T, l Layout, started *int) Deps {
 	t.Helper()
 	return Deps{
 		Poll: time.Millisecond, JoinWait: time.Second, RuntimeWait: time.Second,
+		// No root.sh: a test of Root set-up writes one here.
+		RootFolder: t.TempDir(),
 		StartHost: func(binary, root, name string) (string, error) {
 			*started++
 			return "in the background", os.WriteFile(filepath.Join(root, "control-host.json"), []byte("{}"), 0o600)

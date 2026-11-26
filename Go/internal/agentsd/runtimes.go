@@ -372,6 +372,7 @@ func (d *Daemon) launchOn(r *runtimeDef, dir string, account *wire.AccountProfil
 		if err := os.MkdirAll(filepath.Dir(file), 0o700); err != nil {
 			return acp.Launch{}, err
 		}
+		// store-bounds: not a store: a launch file: the runtime's tool policy, written again at each launch.
 		if err := os.WriteFile(file, []byte(f.contents), 0o600); err != nil {
 			return acp.Launch{}, err
 		}
@@ -463,7 +464,7 @@ outer:
 func (d *Daemon) needsSignIn(runtimeID string) error {
 	// A Mac's own agents use the Mac's own sign-in (in the Keychain for Claude): nothing is
 	// lent to them, and nothing is wanted (DaemonCore+Credentials, onServer false; #1138).
-	if d.Tunneler == nil || macToolsHome != "" || d.relayFor(runtimeID) != nil {
+	if d.tunnels() == nil || macToolsHome != "" || d.relayFor(runtimeID) != nil {
 		return nil
 	}
 	switch runtimeID {

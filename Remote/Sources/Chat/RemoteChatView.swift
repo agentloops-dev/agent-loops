@@ -138,6 +138,7 @@ struct RemoteChatView: View {
                                isComingBack: model.isComingBack(agent),
                                lastEntryAt: page.lastEntryAt,
                                loadFailure: page.transcriptLoadFailure,
+                               removedStart: page.removedStartLine,
                                settleKey: model.chatID(popped),
                                loadEarlier: { [popped] in
                                    if let popped { await model.loadEarlier(of: popped) } else { await model.loadEarlier() }

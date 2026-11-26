@@ -218,6 +218,9 @@ public enum DaemonAPI {
         public static let agentsTouchedPaths = "agents/touchedPaths"
         /// The conversation's finished turns, each as its ask and its last block.
         public static let agentsTurns = "agents/turns"
+        /// Writes the session's summary again when a turn ended since it last read (#7321):
+        /// answers at once with the summary as it is; `agents/changed` brings the new text.
+        public static let agentsSummarise = "agents/summarise"
         /// What an agent changed: the files its runtime reported editing, and — where its
         /// folder is in git — what git sees changed since it started (035). Built by the
         /// daemon because a window holds only a page of the transcript, and the list has
@@ -2646,6 +2649,10 @@ public enum DaemonAPI {
         /// `forge/image` did not read a host that the person chose, as it is not at a public address
         /// (#7139): reading it again does not help.
         public static let imageNotPublic = -32110
+        /// A set-up script on the machine that sends it is not the text a client of the lock
+        /// approved last, or no approval is in force for where it would go (#7167): the client
+        /// shows the change and, on yes, signs a new approval with `setup/approve`.
+        public static let setupScriptChanged = -32111
     }
 
     // MARK: Workflows
