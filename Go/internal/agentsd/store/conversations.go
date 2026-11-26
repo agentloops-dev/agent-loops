@@ -12,6 +12,7 @@ import (
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/diskjson"
 	kinds "github.com/agentloops-dev/agent-loops/Go/internal/controlplane/store"
+	"github.com/agentloops-dev/agent-loops/Go/internal/sizewords"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -96,10 +97,10 @@ func boundEntry(e *wire.TranscriptEntry, line []byte) ([]byte, error) {
 
 // tooLarge is the notice in place of an entry of size bytes, with its id and time.
 func tooLarge(id wire.UUID, at wire.Date, size int64) wire.TranscriptEntry {
-	detail := "The most one entry of a chat can be is 4 MB."
+	detail := fmt.Sprintf("A chat keeps entries of at most %s. To keep it, send a smaller file, or ask the agent for a shorter output.", sizewords.Of(transcriptRecord))
 	log.Printf("store: an entry of %d bytes is over the limit of %d, so a notice is kept in its place", size, transcriptRecord)
 	return wire.TranscriptEntry{ID: id, At: at, Kind: wire.TranscriptEntryKind{Notice: &wire.TranscriptEntryKindNotice{Value: wire.SessionNotice{
-		Severity: "warning", Title: fmt.Sprintf("An entry of %d MB was too large to keep", size>>20), Detail: &detail}}}}
+		Severity: "warning", Title: fmt.Sprintf("An entry of %s was too large to keep", sizewords.Of(size)), Detail: &detail}}}}
 }
 
 // removeLeftTrims removes the temporary files of trims that a stop cut off. One

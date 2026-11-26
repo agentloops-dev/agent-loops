@@ -24,7 +24,7 @@ export const draftTooBig = "This draft is not saved: it is over 1 MB. It stays u
 /** Said when the browser's own quota refuses a draft. */
 export const draftNoRoom = "This draft is not saved: the browser has no room for it. It stays until this page closes. Send or empty another draft to save it.";
 /** Said when a draft's words are kept without its attachments. */
-export const attachmentsCut = "This draft's attachments are not saved: they are over 256 KB. They stay until this page closes.";
+export const attachmentsCut = "This draft's attachments are not saved: they are over 256 KB. They stay until this page closes. Send the draft, or remove an attachment to save them.";
 /** The most bytes a draft's attachments may take, as JSON, to be kept with it. */
 export const attachmentsKept = 256 * 1024;
 
