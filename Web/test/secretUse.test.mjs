@@ -66,6 +66,15 @@ test("a terminal's agents-secret has no session: once, for 1 hour or deny, and i
   assert.equal(words.secretUseWhere(use), "Terminal: zsh · Agent Loops cannot tell a terminal from an agent outside its session.");
 });
 
+test("loops with no pairing is a terminal's request that the web page can only deny: its Mac approves it (#6875)", () => {
+  const pairing = { ...request({ name: "loops on mac", use: "pairing", place: "zsh", client: "C1", key: "AA==" }), askedBy: undefined };
+  assert.equal(words.isTerminalRequest(pairing), true);
+  const use = words.secretUseOf(pairing);
+  assert.deepEqual(words.secretUseActions(use), ["deny"]);
+  assert.equal(words.secretUseTitle(use), "Wants to pair loops on mac");
+  assert.equal(words.secretUseWhere(use), `Terminal: zsh · ${words.pairOnTheMac}`);
+});
+
 test("a session's secret uses are its chat's cards, Later's too; another's, a question's and a terminal's are not (#4918)", () => {
   const use = { name: "T", use: "fill", place: "a.com" };
   const first = { ...request(use), id: "1", askedBy: "S" };

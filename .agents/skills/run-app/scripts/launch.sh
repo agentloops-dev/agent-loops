@@ -19,6 +19,7 @@ FIRST_RUN=0
 LAN=0
 HOST_FIRST=0
 EXTRA_ENV=()
+WINDOW_ENV=()
 CONTROL_ARGS=()
 CONTROL_ENV=()
 APP_ARGS=()
@@ -37,6 +38,7 @@ while [ $# -gt 0 ]; do
     --web-port)  WEB_PORT="$2"; shift ;;   # the web remote's port, e.g. one held already (071 R3)
     --seeded)    SEEDED=1 ;;         # the root exists, filled beforehand (scripts/seed-archived.swift), with no control/ yet
     --env)       EXTRA_ENV+=("$2"); shift ;;   # KEY=VALUE for the host, e.g. AGENTS_TEST_…=…
+    --window-env) WINDOW_ENV+=("$2"); shift ;; # KEY=VALUE for the window, e.g. AGENTS_TEST_HOME=… (#6875)
     --control-env) CONTROL_ENV+=("$2"); shift ;;  # KEY=VALUE for the control plane, e.g. AGENTS_SSH=…
     --control-arg) CONTROL_ARGS+=("$2"); shift ;;  # an argument for agents-control serve, e.g. --restartable (#4252)
     --appearance) APP_ARGS+=(--appearance "$2"); shift ;;  # light|dark|system for the window, no setting changed
@@ -46,7 +48,7 @@ while [ $# -gt 0 ]; do
     --fake-azure-devops) FAKE_AZURE_DEVOPS=1 ;;  # Azure Repos and Azure Boards for the host (scripts/fake-azure-devops.py, #4063)
     --fake-bitbucket) FAKE_BITBUCKET=1 ;;  # Bitbucket Cloud for the host (scripts/fake-bitbucket.py, #4136)
     --fake-forgejo) FAKE_FORGEJO=1 ;;      # a Forgejo for the host (scripts/fake-forgejo.py, #4136)
-    *) echo "usage: launch.sh [--slug NAME] [--config Debug|Live] [--seeded] [--no-build] [--front] [--place WHERE] [--no-window] [--first-run] [--lan] [--host-first] [--web-port N] [--env KEY=VALUE]… [--control-env KEY=VALUE]… [--control-arg ARG]… [--appearance light|dark] [--app-arg ARG]… [--outside-checkout] [--person NAME] [--fake-azure-devops] [--fake-bitbucket] [--fake-forgejo]" >&2; exit 2 ;;
+    *) echo "usage: launch.sh [--slug NAME] [--config Debug|Live] [--seeded] [--no-build] [--front] [--place WHERE] [--no-window] [--first-run] [--lan] [--host-first] [--web-port N] [--env KEY=VALUE]… [--window-env KEY=VALUE]… [--control-env KEY=VALUE]… [--control-arg ARG]… [--appearance light|dark] [--app-arg ARG]… [--outside-checkout] [--person NAME] [--fake-azure-devops] [--fake-bitbucket] [--fake-forgejo]" >&2; exit 2 ;;
   esac
   shift
 done
@@ -258,6 +260,7 @@ if [ "$WINDOW" = 1 ]; then
     OPEN_FLAGS+=(--env AGENTS_CONTROL="$(code --client)")
   fi
   [ -n "${PERSON:-}" ] && OPEN_FLAGS+=(--env AGENTS_PERSON_NAME="$PERSON")
+  for kv in ${WINDOW_ENV[@]+"${WINDOW_ENV[@]}"}; do OPEN_FLAGS+=(--env "$kv"); done
   if [ "${OUTSIDE:-0}" = 1 ]; then
     # A window inside a checkout puts the worktree's name in its title (AppCheckout).
     ditto "$APP" "$ROOT/app/Agent Loops.app"

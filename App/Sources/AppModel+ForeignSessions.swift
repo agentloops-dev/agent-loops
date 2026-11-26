@@ -118,6 +118,12 @@ extension AppModel {
     func answerSecretUse(_ request: NeedRequest, _ action: NeedRequest.Action) async -> Bool {
         let host = host(ofAgent: request.askedBy)
         var approval: DaemonAPI.LockDelivery?
+        var pairingCode: String?
+        // loops with no pairing (#6875): Approve makes its code here, and puts its key in the lock.
+        if let use = request.secretUse, use.isPairing, action == .once {
+            guard let code = await terminalPairingCode(use) else { return false }
+            pairingCode = code
+        }
         // A Linux machine opens the value only for an answer this Mac signed (#4149).
         if let use = request.secretUse, use.signs(action) {
             guard let signer = await lock.channelSigner(),
@@ -128,12 +134,39 @@ extension AppModel {
             }
             approval = signed
         }
-        let answer = DaemonAPI.RequestsAnswer(id: request.id, secretUse: action, approval: approval)
+        let answer = DaemonAPI.RequestsAnswer(id: request.id, secretUse: action, approval: approval, pairingCode: pairingCode)
         return await attempt(on: host) {
             let update = try await self.client(forAgent: request.askedBy)
                 .call(DaemonAPI.Method.requestsAnswer, answer, returning: DaemonAPI.RequestUpdate.self)
             self.work.replaceRequests(self.work.requests.filter { $0.id != update.request.id })
         }
+    }
+
+    /// A one-use client code for the terminal that asks (#6875), from this Mac's control plane,
+    /// with its key put in the person's lock first. Nil, with the problem said, when either fails.
+    func terminalPairingCode(_ use: NeedRequest.SecretUse) async -> String? {
+        guard let control = controlRequests else {
+            problem = "Not paired — this Mac is not connected to its control plane. Try again once it is."
+            return nil
+        }
+        if let key = use.key, let client = use.client {
+            do {
+                try await lock.addTerminal(key: key, client: client, name: use.name, on: control)
+            } catch {
+                problem = "Not paired — the terminal's key could not be put in your machine lock (\(error.localizedDescription))."
+                return nil
+            }
+        }
+        do {
+            let shown = try await control.call(DaemonAPI.Method.clientsStartPairing, JSONValue.object([:]),
+                                               returning: DaemonAPI.ControlCodeShown.self)
+            return shown.text
+        } catch let error as JSONRPCError {
+            problem = "Not paired — " + HostProblem.controlRefusal(error)
+        } catch {
+            problem = "Not paired — the control plane can’t be reached."
+        }
+        return nil
     }
 
     /// Later on a request (#4234), from its Needs you row or its card: to the host of the

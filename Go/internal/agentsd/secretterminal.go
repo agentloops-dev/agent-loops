@@ -111,6 +111,20 @@ func (d *Daemon) terminalSecret(ctx context.Context, name, command string, hold 
 	if err != nil {
 		return wire.SecretTerminalValue{}, err
 	}
+	d.holdOnTerminalRequest(ctx, id, hold)
+	if d.terminalAllowed(name) {
+		return d.terminalValue(home, name)
+	}
+	if rec := d.request(id); rec != nil && rec.State == wire.RequestStateOpen {
+		words := "Waiting for a person to allow " + name + " in Needs you (Approve, Approve for 1 Hour or Deny)."
+		return wire.SecretTerminalValue{Request: &id, Words: &words}, nil
+	}
+	return wire.SecretTerminalValue{}, Invalid("A person denied %s to this terminal.", name)
+}
+
+// holdOnTerminalRequest holds a terminal's call on its open request, up to hold: until it
+// ends, the call gives up, or agentsd stops. Several calls may wait on one request.
+func (d *Daemon) holdOnTerminalRequest(ctx context.Context, id wire.UUID, hold time.Duration) {
 	held := make(chan struct{}, 1)
 	d.secretUseMu.Lock()
 	if d.terminalHeld == nil {
@@ -133,24 +147,17 @@ func (d *Daemon) terminalSecret(ctx context.Context, name, command string, hold 
 		}
 		d.secretUseMu.Unlock()
 	}()
-	if rec := d.request(id); rec == nil || rec.State == wire.RequestStateOpen {
-		timer := time.NewTimer(hold)
-		defer timer.Stop()
-		select {
-		case <-held:
-		case <-timer.C:
-		case <-ctx.Done():
-		case <-d.ctx.Done():
-		}
+	if rec := d.request(id); rec != nil && rec.State != wire.RequestStateOpen {
+		return
 	}
-	if d.terminalAllowed(name) {
-		return d.terminalValue(home, name)
+	timer := time.NewTimer(hold)
+	defer timer.Stop()
+	select {
+	case <-held:
+	case <-timer.C:
+	case <-ctx.Done():
+	case <-d.ctx.Done():
 	}
-	if rec := d.request(id); rec != nil && rec.State == wire.RequestStateOpen {
-		words := "Waiting for a person to allow " + name + " in Needs you (Approve, Approve for 1 Hour or Deny)."
-		return wire.SecretTerminalValue{Request: &id, Words: &words}, nil
-	}
-	return wire.SecretTerminalValue{}, Invalid("A person denied %s to this terminal.", name)
 }
 
 // terminalValue is name's value, with the read recorded: no session, the place terminal.

@@ -148,6 +148,20 @@ public enum ControlPlaneMachine {
 
     public static let noReading = "No capacity reading yet"
     public static let noReadingDetail = "The first reading will appear after the control plane checks itself."
+    /// The line when no reading will come by waiting (#7364): the read failed, or the answers stay empty.
+    public static let noReadingNow = "No capacity reading"
+    public static let readFailedDetail = "The capacity read failed. There is no reading to show."
+    public static let emptyDetail = "The control plane gives no capacity reading. It may need an update."
+
+    /// Why there is no reading (#7364), from the state of the reads: before the first read and
+    /// after an empty answer, that one will come; after a first read that failed, that it
+    /// failed; when the answers stay empty for one look or more, that the control plane gives
+    /// none. `emptyFor` is the time from the first empty answer to the last one.
+    public static func noReadingWords(failed: Bool, emptyFor: TimeInterval?) -> (line: String, detail: String) {
+        if failed { return (noReadingNow, readFailedDetail) }
+        if let emptyFor, emptyFor >= Double(lookSeconds) { return (noReadingNow, emptyDetail) }
+        return (noReading, noReadingDetail)
+    }
     public static let foot = "Reading every \(lookSeconds) seconds. The control plane keeps serving requests at every level."
     public static let refreshFailed = "Capacity could not refresh. Showing the last reading."
 
