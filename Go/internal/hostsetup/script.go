@@ -147,19 +147,32 @@ func RunScript(ctx context.Context, project, machine string, fromPool bool, time
 	defer scriptMu.Unlock()
 	// The hash is of the text that runs: a send that changes it while this runs runs it again.
 	hash, _ := ScriptHash(project)
+	if err := runBash(ctx, script, project, scriptEnv(project, machine, fromPool), SetupScript, timeout, log, progress); err != nil {
+		return true, err
+	}
+	if hash != "" {
+		markRan(project, hash)
+	}
+	return true, nil
+}
+
+// runBash runs script with `bash -e`, with no stdin, in dir with env, for at most timeout. Its
+// output goes to log and, line by line, to progress. A non-zero exit, or more than timeout, is
+// an error that holds the last lines of output, naming the script as name.
+func runBash(ctx context.Context, script, dir string, env []string, name string, timeout time.Duration, log io.Writer, progress func(string)) error {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "bash", "-e", script)
-	cmd.Dir = project
-	cmd.Env = scriptEnv(project, machine, fromPool)
+	cmd.Dir = dir
+	cmd.Env = env
 	procgroup.Own(cmd)
 	out, err := cmd.StdoutPipe()
 	if err != nil {
-		return true, err
+		return err
 	}
 	cmd.Stderr = cmd.Stdout
 	if err := cmd.Start(); err != nil {
-		return true, fmt.Errorf("could not start bash: %w", err)
+		return fmt.Errorf("could not start bash: %w", err)
 	}
 	seen := &tail{each: progress}
 	sc := bufio.NewScanner(out)
@@ -174,14 +187,48 @@ func RunScript(ctx context.Context, project, machine string, fromPool bool, time
 	procgroup.End(cmd)
 	switch {
 	case errors.Is(ctx.Err(), context.DeadlineExceeded):
-		return true, fmt.Errorf("%s ran longer than %s and was stopped.\n%s", SetupScript, timeout, seen.last())
+		return &ScriptError{Text: fmt.Sprintf("%s ran longer than %s and was stopped.", name, timeout), Last: seen.last()}
 	case err != nil:
-		return true, fmt.Errorf("%s failed (%v).\n%s", SetupScript, err, seen.last())
+		return &ScriptError{Text: fmt.Sprintf("%s failed (%v).", name, err), Last: seen.last(), Code: exitCode(err)}
 	}
-	if hash != "" {
-		markRan(project, hash)
+	return nil
+}
+
+// ScriptError is a run that did not end well: what happened, the last lines of output, and the
+// exit code (-1 when it did not exit).
+type ScriptError struct {
+	Text, Last string
+	Code       int
+}
+
+func (e *ScriptError) Error() string {
+	if e.Last == "" {
+		return e.Text
 	}
-	return true, nil
+	return e.Text + "\n" + e.Last
+}
+
+func exitCode(err error) int {
+	var exit *exec.ExitError
+	if errors.As(err, &exit) {
+		return exit.ExitCode()
+	}
+	return -1
+}
+
+// UserScriptEnv is the environment the person's own setup.sh runs in (#7155, gate 1 of #7151,
+// section 1): the machine user's basics and AGENTS_SETUP, AGENTS_MACHINE and AGENTS_FROM_POOL.
+func UserScriptEnv(machine string, fromPool bool) []string {
+	env := scriptEnv("", machine, fromPool)
+	return append(env[:1:1], env[2:]...) // no AGENTS_PROJECT
+}
+
+// RunUserScript runs the person's setup.sh at script as this user, in home, after any other run
+// on this machine ends (one at a time, beside no project's script).
+func RunUserScript(ctx context.Context, script, home, machine string, fromPool bool, timeout time.Duration, log io.Writer, progress func(string)) error {
+	scriptMu.Lock()
+	defer scriptMu.Unlock()
+	return runBash(ctx, script, home, UserScriptEnv(machine, fromPool), "setup.sh", timeout, log, progress)
 }
 
 // OpenScriptLog is the log of project's script in logs, cut at scriptLogMost, and the function
@@ -190,6 +237,22 @@ func OpenScriptLog(logs, project string) (io.Writer, func()) {
 	_ = os.MkdirAll(logs, 0o700)
 	// store-bounds: kind=log; count=100 projects; size=1MiB a project; age=7d; applied=on write (the rest is not kept), and hourly sweep
 	f, err := os.OpenFile(filepath.Join(logs, "setup-"+filepath.Base(project)+".log"), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+	if err != nil {
+		return nil, func() {}
+	}
+	return &scriptLog{file: f, left: scriptLogMost}, func() { _ = f.Close() }
+}
+
+// UserScriptLog is the file the person's setup.sh writes its output to, in the host's logs
+// (#7155): one run's, replaced by the next.
+const UserScriptLog = "user-setup.log"
+
+// OpenUserScriptLog is that log, cut at scriptLogMost, and the function that closes it. With no
+// file it is nil, and the run still goes on.
+func OpenUserScriptLog(logs string) (io.Writer, func()) {
+	_ = os.MkdirAll(logs, 0o700)
+	// store-bounds: kind=log; count=1; size=1MiB; age=90d; applied=on write (the rest is not kept), replaced by the next run, and hourly sweep
+	f, err := os.OpenFile(filepath.Join(logs, UserScriptLog), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
 	if err != nil {
 		return nil, func() {}
 	}

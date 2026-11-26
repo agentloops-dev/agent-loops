@@ -119,10 +119,12 @@ func TestRootAndYourSetUpWaitForTheirSteps(t *testing.T) {
 	if _, _, err := st.report(rep(wire.MachineSetupStepIDUser, wire.MachineSetupStateRunning), now); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := st.report(rep(wire.MachineSetupStepIDProjects, wire.MachineSetupStateRunning), now); err == nil {
-		t.Fatal("the projects began before your set-up was done")
+	// #7155: your set-up runs on the host beside the installer's steps, so none waits for it.
+	runSteps(t, st, now, wire.MachineSetupStepIDProjects)
+	if st.Ready != nil {
+		t.Fatal("ready while your set-up runs")
 	}
-	runSteps(t, st, now, wire.MachineSetupStepIDUser, wire.MachineSetupStepIDProjects)
+	runSteps(t, st, now, wire.MachineSetupStepIDUser)
 	want := []wire.MachineSetupStepID{wire.MachineSetupStepIDCreate, wire.MachineSetupStepIDJoin, wire.MachineSetupStepIDInstall,
 		wire.MachineSetupStepIDCompare, wire.MachineSetupStepIDRoot, wire.MachineSetupStepIDRuntimes, wire.MachineSetupStepIDUser,
 		wire.MachineSetupStepIDProjects, wire.MachineSetupStepIDSignIn, wire.MachineSetupStepIDSmoke}
@@ -141,12 +143,22 @@ func TestRootAndYourSetUpWaitForTheirSteps(t *testing.T) {
 	// A step said after one that waits for it began came too late to run first.
 	late := newStoredSetup(now)
 	runSteps(t, late, now, setupSteps[:4]...)
-	runSteps(t, late, now, wire.MachineSetupStepIDProjects)
-	if _, _, err := late.report(rep(wire.MachineSetupStepIDUser, wire.MachineSetupStateRunning), now); err == nil {
-		t.Fatal("your set-up was taken after the projects")
+	runSteps(t, late, now, wire.MachineSetupStepIDRuntimes)
+	runSteps(t, late, now, wire.MachineSetupStepIDRoot, wire.MachineSetupStepIDProjects, wire.MachineSetupStepIDSignIn)
+	if _, _, err := late.report(rep(wire.MachineSetupStepIDUser, wire.MachineSetupStateRunning), now); err != nil {
+		t.Fatalf("your set-up was refused after sign-in: %v", err)
 	}
-	if len(late.Steps) != 8 {
-		t.Fatalf("a refused step was kept: %v", stepIDs(late))
+	tooLate := newStoredSetup(now)
+	runSteps(t, tooLate, now, setupSteps[:4]...)
+	runSteps(t, tooLate, now, wire.MachineSetupStepIDRuntimes, wire.MachineSetupStepIDProjects, wire.MachineSetupStepIDSignIn)
+	if _, _, err := tooLate.report(rep(wire.MachineSetupStepIDSmoke, wire.MachineSetupStateRunning), now); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := tooLate.report(rep(wire.MachineSetupStepIDRoot, wire.MachineSetupStateRunning), now); err == nil {
+		t.Fatal("root set-up was taken after smoke began")
+	}
+	if len(tooLate.Steps) != 8 {
+		t.Fatalf("a refused step was kept: %v", stepIDs(tooLate))
 	}
 	warning := true
 	if _, _, err := late.report(wire.MachineSetupReport{Step: wire.MachineSetupStepIDRoot, State: wire.MachineSetupStateDone, Warning: &warning}, now); err != nil {
@@ -229,5 +241,67 @@ func TestAPoolMachineNeedsRootSetUpAndItsClaimKeepsIt(t *testing.T) {
 	ids := stepIDs(stored)
 	if stored.Ready == nil || slices.Index(ids, wire.MachineSetupStepIDUser) != slices.Index(ids, wire.MachineSetupStepIDProjects)+1 {
 		t.Fatalf("%v %v", ids, stored.Ready)
+	}
+}
+
+// #7155: Run Again, Send Set-up and Try Again run your set-up again after it ended, and a ready
+// set-up stays ready while it runs. Its failure stops none of the installer's steps.
+func TestYourSetUpRunsAgainAndItsFailureStopsNoOtherStep(t *testing.T) {
+	t.Parallel()
+	now := time.Now()
+	st := newStoredSetup(now)
+	runSteps(t, st, now, setupSteps[:4]...)
+	if _, _, err := st.report(rep(wire.MachineSetupStepIDUser, wire.MachineSetupStateRunning), now); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := st.report(rep(wire.MachineSetupStepIDUser, wire.MachineSetupStateFailed), now); err != nil {
+		t.Fatal(err)
+	}
+	runSteps(t, st, now, wire.MachineSetupStepIDRuntimes, wire.MachineSetupStepIDProjects, wire.MachineSetupStepIDSignIn, wire.MachineSetupStepIDSmoke)
+	if st.Ready != nil || !st.failed() {
+		t.Fatalf("a failed set-up is ready, or not failed: %v %v", st.Ready, st.failed())
+	}
+	// Try Again: it runs again from failed, and the set-up is ready when it ends well.
+	runSteps(t, st, now, wire.MachineSetupStepIDUser)
+	if st.Ready == nil || st.failed() {
+		t.Fatal("not ready once your set-up ran well")
+	}
+	ready := *st.Ready
+	later := now.Add(time.Hour)
+	if _, _, err := st.report(rep(wire.MachineSetupStepIDUser, wire.MachineSetupStateRunning), later); err != nil {
+		t.Fatalf("Run Again was refused: %v", err)
+	}
+	step := st.step(wire.MachineSetupStepIDUser)
+	if step.State != wire.MachineSetupStateRunning || !step.Started.Equal(later) || step.Ended != nil || st.Ready == nil || !st.Ready.Equal(ready) {
+		t.Fatalf("Run Again: %+v ready %v", step, st.Ready)
+	}
+	if _, _, err := st.report(rep(wire.MachineSetupStepIDUser, wire.MachineSetupStateDone), later); err != nil {
+		t.Fatal(err)
+	}
+	// Another step that is done does not run again.
+	if _, _, err := st.report(rep(wire.MachineSetupStepIDSmoke, wire.MachineSetupStateRunning), later); err == nil {
+		t.Fatal("smoke ran again")
+	}
+}
+
+// #7155: a machine that no installer set up (a server joined by hand) is sent setup.sh: its
+// set-up is Your set-up alone, which reads back and is ready when it ran well.
+func TestAMachineWithNoInstallerHasYourSetUpAlone(t *testing.T) {
+	t.Parallel()
+	now := time.Now()
+	st := &storedSetup{Started: now, ScriptOnly: true}
+	runSteps(t, st, now, wire.MachineSetupStepIDUser)
+	if !st.readable() || st.Ready == nil || len(st.Steps) != 1 {
+		t.Fatalf("%v %v %v", stepIDs(st), st.readable(), st.Ready)
+	}
+	b, err := json.Marshal(st)
+	must(t, err)
+	var back storedSetup
+	must(t, json.Unmarshal(b, &back))
+	if !back.readable() {
+		t.Fatal("a set-up of Your set-up alone does not read back")
+	}
+	if (&storedSetup{ScriptOnly: true}).readable() {
+		t.Fatal("an empty set-up reads")
 	}
 }

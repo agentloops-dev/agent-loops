@@ -117,6 +117,7 @@ public enum Capability {
     public static let hostLock3 = "host.lock/3"
     public static let hostLock4 = "host.lock/4"
     public static let hostMachineSetup1 = "host.machine-setup/1"
+    public static let hostMachineSetup2 = "host.machine-setup/2"
     public static let hostOrgRoutes1 = "host.org-routes/1"
     public static let hostOrgRoutes2 = "host.org-routes/2"
     public static let hostPolicyLayers1 = "host.policy-layers/1"
@@ -162,6 +163,7 @@ public enum Capability {
     public static let machineUsage1 = "machine.usage/1"
     public static let machine1 = "machine/1"
     public static let machinesAll1 = "machines.all/1"
+    public static let machinesSetupDeliver1 = "machines.setup-deliver/1"
     public static let machines1 = "machines/1"
     public static let machines2 = "machines/2"
     public static let mailbox1 = "mailbox/1"
@@ -638,8 +640,11 @@ public enum Capability {
         "settings/passThrough": "host.policy/1",
         "settings/userPart": "host.user-settings/4",
         "setup/approve": "host.machine-setup/1",
+        "setup/deliver": "host.machine-setup/2",
         "setup/projects": "machine.setup/1",
+        "setup/run": "host.machine-setup/2",
         "setup/scripts": "host.machine-setup/1",
+        "setup/send": "host.machine-setup/2",
         "shell/attach": "shell/1",
         "shell/close": "shell/1",
         "shell/detach": "shell/1",
@@ -908,6 +913,7 @@ public enum Capability {
         "machines/sessionEnded": "sessions.elsewhere/1",
         "machines/setLabels": "machines/2",
         "machines/setMachineOptions": "machines/1",
+        "machines/setupDeliver": "machines.setup-deliver/1",
         "machines/sshHosts": "machines/1",
         "machines/start": "machines/1",
         "machines/startEnroll": "machines/1",
@@ -1083,6 +1089,7 @@ public enum Capability {
         "machine/user": "bots/1",
         "machine/userSettings": "host.user-settings/2",
         "notices/delivered": "notices/1",
+        "setup/wanted": "host.machine-setup/2",
         "user/suspended": "host.suspend/1",
     ]
 

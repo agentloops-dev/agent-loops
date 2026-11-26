@@ -9884,6 +9884,12 @@ type MachineSetup struct {
 	ReadyAt *Date `json:"readyAt,omitzero"`
 }
 
+// machines/setupDeliver through machine/machines (#7155): one of the person's machines, the sender, gives another of theirs a set-up script. The control plane sends that machine's setup/deliver as the sender signed it, and keeps nothing of the text.
+type MachineSetupDeliver struct {
+	// The machine's id, as the person's lock names it.
+	Host string `json:"host"`
+}
+
 // A project folder a pool machine gets: path is the folder on its sources, project the project id it joins there, and sources the person's machines that have it, those online first.
 type MachineSetupProject struct {
 	Path string `json:"path"`
@@ -15523,6 +15529,17 @@ type SetupApprove struct {
 	Approval LockRecord `json:"approval"`
 }
 
+// setup/deliver (#7155, gate 1 of #7151, section 3): a machine of the person's lock, the sender, gives this machine a set-up script with its approval, signed for this machine. This machine takes it only by the four rules of section 3 (setupdelivery.go), keeps it in <root>/machine-setup.json, and runs it as its user, as the step user (Your set-up). made: an automatic send to a machine as it is made or claimed, with an approval of scope made, which a machine takes once.
+type SetupDeliver struct {
+	Script string `json:"script"`
+
+	Text string `json:"text"`
+
+	Approval LockRecord `json:"approval"`
+
+	Made *bool `json:"made,omitzero"`
+}
+
 // One set-up script on this machine (#7167): root (root.sh) or setup (setup.sh) in ~/.agents/machine-setup/. present: the file is there. text, hash and size are the file as it is now (hash: SHA-256 in lower-case hexadecimal); problem says why they are absent from a file that is there (over its limit, or unreadable). approvedText and approvedHash are the text a client approved last, and approvals the records in force for it, one a scope. changed: the file is not the approved text, so it is not used until a client approves it. nextSeq is the number to sign the next approval with.
 type SetupScript struct {
 	Name string `json:"name"`
@@ -15558,6 +15575,19 @@ type SetupScriptApproval struct {
 // setup/scripts (#7167): this machine's two set-up scripts, root then setup, as a client reads them to approve one.
 type SetupScripts struct {
 	Scripts []SetupScript `json:"scripts"`
+}
+
+// setup/send (#7155, gate 1 of #7151, section 3): Send Set-up. A client of the person's lock asks this machine, the sender, to send its setup.sh to the machine host and run it there. approval is a setup.script record of setup, scope m:<host>, of the file as it is now: the sender keeps it as setup/approve does, then sends the approved text, signed by this machine for host, through the control plane (machines/setupDeliver). It answers when host took it, which then runs it.
+type SetupSend struct {
+	// The machine's id, as the person's lock names it.
+	Host string `json:"host"`
+
+	Approval LockRecord `json:"approval"`
+}
+
+// setup/wanted (#7155): the control plane tells the machine that carries a provider that a machine it made (or a warm pool's machine that a person claimed) is ready for the person's setup.sh. It carries no text; the sender sends it only with an approval of scope made, and the target takes one such send.
+type SetupWanted struct {
+	Host string `json:"host"`
 }
 
 type SharedInstructions struct {

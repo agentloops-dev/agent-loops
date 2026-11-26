@@ -660,6 +660,27 @@
       }
     },
     {
+      "name": "setup/deliver",
+      "x-capability": "host.machine-setup/2",
+      "description": "A machine of the person's lock gives this one a set-up script, signed for it (#7155, gate 1 of #7151, section 3). Taken only by the rules of section 3; then this machine runs it as its user, as the step user. Signed by a machine only.",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "schema/machines.schema.json#/definitions/SetupDeliver"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema/core.schema.json#/definitions/Empty"
+        }
+      }
+    },
+    {
       "name": "setup/projects",
       "x-capability": "machine.setup/1",
       "description": "The installer on this machine (#6890): gets the pool's projects from the machines that have them, in the background, and says how it stands. Asked again until finished.",
@@ -681,6 +702,27 @@
       }
     },
     {
+      "name": "setup/run",
+      "x-capability": "host.machine-setup/2",
+      "description": "Run Again, and Try Again of the step user (#7155): runs the setup.sh this machine was sent last again, as its user. Refused when it was sent none, and when one runs now.",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "schema/core.schema.json#/definitions/Empty"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema/core.schema.json#/definitions/Empty"
+        }
+      }
+    },
+    {
       "name": "setup/scripts",
       "x-capability": "host.machine-setup/1",
       "description": "This machine's two set-up scripts, as a client reads them to approve one (#7167): each file's text and hash now, the text approved last and its approvals, and the number to sign the next one with.",
@@ -698,6 +740,27 @@
         "name": "result",
         "schema": {
           "$ref": "schema/machines.schema.json#/definitions/SetupScripts"
+        }
+      }
+    },
+    {
+      "name": "setup/send",
+      "x-capability": "host.machine-setup/2",
+      "description": "Send Set-up (#7155): a client of the person's lock asks this machine, the sender, to send setup.sh to another of the person's machines and run it there, with an approval for that machine. Refused with setupScriptChanged when the file is not the approved text, notInLock when this machine holds no lock or the target does not take it, and hostOffline when the target is offline.",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "schema/machines.schema.json#/definitions/SetupSend"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema/core.schema.json#/definitions/Empty"
         }
       }
     },

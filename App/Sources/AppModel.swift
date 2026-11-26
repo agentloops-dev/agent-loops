@@ -2659,6 +2659,9 @@ final class AppModel {
     /// The feature flags the person has on (#6572), as the mirror keeps them.
     let flags = FeatureFlagStates(defaults: WindowDefaults.store)
 
+    /// Send Set-up's sends that wait for a machine to be online (#7155).
+    let setupSends = SetupSendState()
+
     /// The control plane as a machine in Machines, with its level, its page and a strip (#6591):
     /// behind its flag, and for an admin only.
     var showsControlPlaneMachine: Bool {

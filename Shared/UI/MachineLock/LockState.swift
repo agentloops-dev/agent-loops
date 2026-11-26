@@ -118,6 +118,13 @@ final class LockState {
         return LockChannel.Signer(key: key, state: state)
     }
 
+    /// Signs a record of the lock with this device's key (#7155): the approval of a set-up
+    /// script. Nil when this device is not a client of a checked lock.
+    func signRecord(kind: String, subject: String, scope: String, seq: Int64, content: Data) -> DaemonAPI.LockRecord? {
+        guard let state = checked, let key = signingKey(), state.members[key.publicKey]?.isClient == true else { return nil }
+        return try? LockRecords.sign(key, state: state, kind: kind, subject: subject, scope: scope, seq: seq, content: content)
+    }
+
     /// Takes a lock this device checked: kept, with its pin.
     private func took(_ state: MachineLock.State, _ lock: DaemonAPI.Lock) {
         checked = state

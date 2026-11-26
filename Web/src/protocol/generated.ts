@@ -9435,6 +9435,16 @@ export interface MachineSetup {
 }
 
 /**
+ * machines/setupDeliver through machine/machines (#7155): one of the person's machines, the sender,
+ * gives another of theirs a set-up script. The control plane sends that machine's setup/deliver as
+ * the sender signed it, and keeps nothing of the text.
+ */
+export interface MachineSetupDeliver {
+  /** The machine's id, as the person's lock names it. */
+  host: string;
+}
+
+/**
  * A project folder a pool machine gets: path is the folder on its sources, project the project id
  * it joins there, and sources the person's machines that have it, those online first.
  */
@@ -14887,6 +14897,20 @@ export interface SetupApprove {
 }
 
 /**
+ * setup/deliver (#7155, gate 1 of #7151, section 3): a machine of the person's lock, the sender,
+ * gives this machine a set-up script with its approval, signed for this machine. This machine takes
+ * it only by the four rules of section 3 (setupdelivery.go), keeps it in <root>/machine-setup.json,
+ * and runs it as its user, as the step user (Your set-up). made: an automatic send to a machine as
+ * it is made or claimed, with an approval of scope made, which a machine takes once.
+ */
+export interface SetupDeliver {
+  script: "setup";
+  text: string;
+  approval: LockRecord;
+  made?: boolean;
+}
+
+/**
  * One set-up script on this machine (#7167): root (root.sh) or setup (setup.sh) in
  * ~/.agents/machine-setup/. present: the file is there. text, hash and size are the file as it is
  * now (hash: SHA-256 in lower-case hexadecimal); problem says why they are absent from a file that
@@ -14924,6 +14948,29 @@ export interface SetupScriptApproval {
  */
 export interface SetupScripts {
   scripts: SetupScript[];
+}
+
+/**
+ * setup/send (#7155, gate 1 of #7151, section 3): Send Set-up. A client of the person's lock asks
+ * this machine, the sender, to send its setup.sh to the machine host and run it there. approval is
+ * a setup.script record of setup, scope m:<host>, of the file as it is now: the sender keeps it as
+ * setup/approve does, then sends the approved text, signed by this machine for host, through the
+ * control plane (machines/setupDeliver). It answers when host took it, which then runs it.
+ */
+export interface SetupSend {
+  /** The machine's id, as the person's lock names it. */
+  host: string;
+  approval: LockRecord;
+}
+
+/**
+ * setup/wanted (#7155): the control plane tells the machine that carries a provider that a machine
+ * it made (or a warm pool's machine that a person claimed) is ready for the person's setup.sh. It
+ * carries no text; the sender sends it only with an approval of scope made, and the target takes
+ * one such send.
+ */
+export interface SetupWanted {
+  host: string;
 }
 
 export interface SharedInstructions {
@@ -19380,6 +19427,7 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   MachineSessionCall: { required: ["host", "call"], optional: [] },
   MachineSessionStart: { required: ["host", "start"], optional: [] },
   MachineSetup: { required: ["steps", "startedAt"], optional: ["readyAt"] },
+  MachineSetupDeliver: { required: ["host"], optional: [] },
   MachineSetupProject: { required: ["path", "sources"], optional: ["project"] },
   MachineSetupProjects: { required: ["pool", "finished", "folders"], optional: ["detail", "problem"] },
   MachineSetupReport: { required: ["step", "state"], optional: ["detail", "error", "fromPool", "code", "hash", "warning"] },
@@ -19813,9 +19861,12 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   SetYourPolicyRequest: { required: ["rules", "revision"], optional: [] },
   SettleUntrustedYourPolicyRequest: { required: ["file", "revision", "sign"], optional: [] },
   SetupApprove: { required: ["script", "approval"], optional: [] },
+  SetupDeliver: { required: ["script", "text", "approval"], optional: ["made"] },
   SetupScript: { required: ["name", "present", "approvals", "changed", "nextSeq"], optional: ["text", "hash", "size", "problem", "approvedText", "approvedHash"] },
   SetupScriptApproval: { required: ["hash", "size"], optional: [] },
   SetupScripts: { required: ["scripts"], optional: [] },
+  SetupSend: { required: ["host", "approval"], optional: [] },
+  SetupWanted: { required: ["host"], optional: [] },
   SharedInstructions: { required: ["path", "exists", "reach"], optional: [] },
   SharedLook: { required: ["kind", "page", "item", "text"], optional: [] },
   SharedMCP: { required: ["file", "servers", "app", "runtimeOnly"], optional: ["problem"] },

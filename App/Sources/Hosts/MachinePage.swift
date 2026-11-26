@@ -58,7 +58,7 @@ struct MachinePage: View {
                 Form {
                     if let row = model.hosts.controlRows[host], let setup = row.setup {
                         MachineSetupSection(row: row, setup: setup,
-                                            onRetry: { Task { await model.retrySetup(host) } },
+                                            onRetry: { Task { await retry(setup) } },
                                             onDelete: { Task { await model.deleteMachine(host) } }) {
                             MachineSignInCards(host: host)
                         }
@@ -66,6 +66,10 @@ struct MachinePage: View {
                         if let note = model.machinePoolNotes[row.name], !MachineSetupWords.foldedAway(setup) {
                             Section { Text(note).appText(.supporting).foregroundStyle(.secondary) }
                         }
+                    }
+                    // The person's setup.sh: what it ran, Send Set-up… and Run Again (#7155).
+                    if let row = model.hosts.controlRows[host], model.showsMachineScripts(host) {
+                        MachineScriptsSection(host: host, row: row)
                     }
                     // It runs the control plane too: its level and figures, for an admin (#6591).
                     if model.runsControlPlane(host) { ControlPlaneSection(host: host) }
@@ -129,6 +133,16 @@ struct MachinePage: View {
                 if !offline { await read() }
                 try? await Task.sleep(for: .seconds(3))
             }
+        }
+    }
+
+    /// Try Again: your set-up runs on the machine itself (#7155), so it runs its copy again there;
+    /// any other step is the control plane's to run again.
+    private func retry(_ setup: DaemonAPI.MachineSetup) async {
+        if MachineSetupWords.failedStep(setup)?.id == "user" {
+            await model.runSetupAgain(host)
+        } else {
+            await model.retrySetup(host)
         }
     }
 

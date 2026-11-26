@@ -262,7 +262,7 @@ public extension DaemonAPI {
             case needsYou = "needs-you"
         }
 
-        /// `create`, `join`, `install`, `compare`, `runtimes`, `projects`, `signIn` or `smoke`.
+        /// `create`, `join`, `install`, `compare`, `root`, `runtimes`, `user`, `projects`, `signIn` or `smoke`.
         public var id: String
         public var state: State
         public var startedAt: Date?
@@ -273,9 +273,14 @@ public extension DaemonAPI {
         public var error: String?
         public var fromPool: Bool?
         public var slower: Bool?
+        /// The script that root set-up or your set-up ran (#7167, #7155): its SHA-256 in hexadecimal.
+        public var hash: String?
+        /// Done with a warning in its words (#7167).
+        public var warning: Bool?
 
         public init(id: String, state: State, startedAt: Date? = nil, endedAt: Date? = nil, detail: String? = nil,
-                    error: String? = nil, fromPool: Bool? = nil, slower: Bool? = nil) {
+                    error: String? = nil, fromPool: Bool? = nil, slower: Bool? = nil, hash: String? = nil,
+                    warning: Bool? = nil) {
             self.id = id
             self.state = state
             self.startedAt = startedAt
@@ -284,6 +289,8 @@ public extension DaemonAPI {
             self.error = error
             self.fromPool = fromPool
             self.slower = slower
+            self.hash = hash
+            self.warning = warning
         }
     }
 

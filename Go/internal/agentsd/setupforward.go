@@ -26,6 +26,7 @@ const setupForwardTries = 5
 // root, #5356) to the control plane as machine/setupStep. The installer starts this host, so
 // what it said before the host had joined is sent when the host has.
 func (d *Daemon) StartSetupReports() {
+	d.resumeUserSetup()
 	d.goJob("setup reports", func() {
 		d.forwardSetupReports(d.ctx, filepath.Join(d.Store.Loc.Root, hostsetup.ReportsFile), setupForwardEvery)
 	})
@@ -101,7 +102,9 @@ func (d *Daemon) forwardSetupReportLines(ctx context.Context, ask askControl, da
 			offset += int64(end) + 1
 			continue
 		}
-		if !prelude {
+		// Your set-up and root set-up are the host's own steps (#7155): a machine that joined by
+		// hand, with no installer, says them with no create or join before them.
+		if !prelude && report.Step != wire.MachineSetupStepIDUser && report.Step != wire.MachineSetupStepIDRoot {
 			// This host has joined, so its machine was made and reached: an installer
 			// pasted on a machine the control plane did not make says so too. A step said
 			// again, or done already, is not an error to the control plane.

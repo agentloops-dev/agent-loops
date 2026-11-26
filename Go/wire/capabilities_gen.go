@@ -116,6 +116,7 @@ const CapHostLock2 = "host.lock/2"
 const CapHostLock3 = "host.lock/3"
 const CapHostLock4 = "host.lock/4"
 const CapHostMachineSetup1 = "host.machine-setup/1"
+const CapHostMachineSetup2 = "host.machine-setup/2"
 const CapHostOrgRoutes1 = "host.org-routes/1"
 const CapHostOrgRoutes2 = "host.org-routes/2"
 const CapHostPolicyLayers1 = "host.policy-layers/1"
@@ -161,6 +162,7 @@ const CapMachineSetup1 = "machine.setup/1"
 const CapMachineUsage1 = "machine.usage/1"
 const CapMachine1 = "machine/1"
 const CapMachinesAll1 = "machines.all/1"
+const CapMachinesSetupDeliver1 = "machines.setup-deliver/1"
 const CapMachines1 = "machines/1"
 const CapMachines2 = "machines/2"
 const CapMailbox1 = "mailbox/1"
@@ -637,8 +639,11 @@ var HostCapabilities = pairs([][2]string{
 	{"settings/passThrough", "host.policy/1"},
 	{"settings/userPart", "host.user-settings/4"},
 	{"setup/approve", "host.machine-setup/1"},
+	{"setup/deliver", "host.machine-setup/2"},
 	{"setup/projects", "machine.setup/1"},
+	{"setup/run", "host.machine-setup/2"},
 	{"setup/scripts", "host.machine-setup/1"},
+	{"setup/send", "host.machine-setup/2"},
 	{"shell/attach", "shell/1"},
 	{"shell/close", "shell/1"},
 	{"shell/detach", "shell/1"},
@@ -970,6 +975,7 @@ var ControlCapabilities = pairs([][2]string{
 	{"machines/sessionEnded", "sessions.elsewhere/1"},
 	{"machines/setLabels", "machines/2"},
 	{"machines/setMachineOptions", "machines/1"},
+	{"machines/setupDeliver", "machines.setup-deliver/1"},
 	{"machines/sshHosts", "machines/1"},
 	{"machines/start", "machines/1"},
 	{"machines/startEnroll", "machines/1"},
@@ -1145,6 +1151,7 @@ var ControlCapabilities = pairs([][2]string{
 	{"machine/user", "bots/1"},
 	{"machine/userSettings", "host.user-settings/2"},
 	{"notices/delivered", "notices/1"},
+	{"setup/wanted", "host.machine-setup/2"},
 	{"user/suspended", "host.suspend/1"},
 })
 
@@ -1205,6 +1212,7 @@ var ControlNotifications = set([]string{
 	"machine/user",
 	"machine/userSettings",
 	"notices/delivered",
+	"setup/wanted",
 	"user/suspended",
 })
 
