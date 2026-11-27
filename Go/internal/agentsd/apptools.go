@@ -424,11 +424,30 @@ func offeredTools(movesItself, bot, desktopControl, checks bool) []json.RawMessa
 			name == "drive_screen" && !desktopControl || name == "check_folders" && !checks {
 			continue
 		}
+		if alwaysLoadedTools[name] {
+			t["_meta"] = alwaysLoadMeta
+		}
 		b, _ := json.Marshal(t)
 		out = append(out, b)
 	}
 	return out
 }
+
+// alwaysLoadedTools are the tools nearly every lane calls. tools/list marks them so that
+// Claude Code keeps their schemas in the prompt and does not defer them behind tool search.
+// Without the mark, a lane called them before it loaded them and was refused, about 61
+// times on 2026-11-26 (#5187). Other runtimes ignore `_meta`.
+var alwaysLoadedTools = map[string]bool{
+	"set_session_labels": true,
+	"lease_resource":     true,
+	"release_resource":   true,
+	"wait_for_event":     true,
+	"message_session":    true,
+	"commit_trailers":    true,
+}
+
+// alwaysLoadMeta is Claude Code's per-tool mark: a tool with it is never deferred.
+var alwaysLoadMeta = json.RawMessage(`{"anthropic/alwaysLoad":true}`)
 
 // appToolsHandle is AppService.handle: one MCP request.
 func (d *Daemon) appToolsHandle(ctx context.Context, g *appGrant, method string, params json.RawMessage) (any, *Error) {
