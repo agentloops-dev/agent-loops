@@ -159,6 +159,13 @@ extension AppModel {
                                  })
     }
 
+    /// A machine's failed Root set-up or Your set-up, behind the flag (#7558): a new session
+    /// starts there all the same, with a warning, and does not wait for the set-up.
+    func failedSetupScript(_ host: MachineRef) -> DaemonAPI.MachineSetupStep? {
+        guard flags.isOn(.machineScripts) else { return nil }
+        return MachineSetupWords.failedScript(hosts.controlRows[host]?.setup)
+    }
+
     /// Run Again, and Try Again of a failed Your set-up (#7155): the machine runs its copy again.
     func runSetupAgain(_ host: MachineRef) async {
         do {
