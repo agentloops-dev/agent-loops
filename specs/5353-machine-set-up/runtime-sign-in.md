@@ -78,4 +78,11 @@ the link and code: #7470, #7471), and from the `sign-up` skill. The issue's thre
 
 ### Build steps
 
-Filed as orphans for the standing epic #4208, linked in #5493's decision comment.
+Alex chose these on 2026-11-27: Claude by `setup-token` made once, Codex by an agent
+answering the device-code page, and Copilot, Cursor and Grok by a key made once. Each is an
+orphan for the standing epic #4208:
+
+- #7515: an agent makes a Copilot, Cursor or Grok key once and saves it for step 7.
+- #7516: an agent makes the Claude `setup-token` once and saves it as `CLAUDE_CODE_OAUTH_TOKEN`.
+- #7517: an agent answers the Codex device-code card (blocked by #7471).
+- #7518: renew a sign-in secret before it expires (blocked by #7515 and #7516).
