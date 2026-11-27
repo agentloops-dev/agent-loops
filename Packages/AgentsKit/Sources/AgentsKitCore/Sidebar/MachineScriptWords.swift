@@ -178,9 +178,10 @@ public extension MachineScriptWords {
     }
 
     /// The line under a file's name: what it does and when it runs, whether it is approved,
-    /// and the secrets setup.sh reads. A file that can't be read says why.
+    /// and the secrets setup.sh reads. A file that can't be read says why (with its size and
+    /// limit when it is too large), what new machines get now, and why there is no Review (#7548).
     static func filesLine(_ script: DaemonAPI.SetupScript) -> String {
-        if let problem = script.problem { return problem }
+        if let problem = script.problem { return "\(problem) \(filesProblemResult(script.name))" }
         guard script.present else {
             return script.name == "root" ? "None. Make one for the packages of each new machine."
                 : "None. Make one for your tools and sign-ins on each new machine."
@@ -190,6 +191,14 @@ public extension MachineScriptWords {
         let secrets = declaredSecrets(script.text ?? "")
         if !secrets.isEmpty { line += " Reads \(ListFormatter.localizedString(byJoining: secrets))." }
         return line
+    }
+
+    /// What a script that can't be read does to new machines, as `scriptsBeforeMake` and
+    /// `setupWanted` in `Go/internal/agentsd` do: a root.sh stops each make, and a setup.sh is not
+    /// sent, also when an older text was approved. Review comes back when the file can be read.
+    static func filesProblemResult(_ name: String) -> String {
+        name == "root" ? "New machines can’t be made until you fix it. Then you can review it."
+            : "New machines get no setup.sh until you fix it. Then you can review it."
     }
 
     /// The names in the `# secrets:` lines of the comment lines at the top of a setup.sh (#7156),
