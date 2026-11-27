@@ -201,3 +201,48 @@ func TestForkingAConversation(t *testing.T) {
 		t.Fatalf("%+v", e)
 	}
 }
+
+// #6870: a session in a worktree made from a base shows only its branch's own files, not what
+// main gained between its starting point and the worktree, nor what a merge of main brought in.
+func TestChangesOfAWorktreeLeaveOutWhatMainBrought(t *testing.T) {
+	t.Parallel()
+
+	d, _ := start(t, t.TempDir())
+	defer d.Shutdown()
+	dir := repo(t)
+	commit := func(at, name string) {
+		must(t, os.WriteFile(filepath.Join(at, name), []byte(name+"\n"), 0o644)) //nolint:gosec // G306: test file
+		must(t, errOnly(git(at, "add", name)))
+		must(t, errOnly(git(at, "commit", "-q", "-m", name)))
+	}
+	commit(dir, "base.txt")
+	start0, _ := git(dir, "rev-parse", "HEAD")
+	main, _ := git(dir, "rev-parse", "--abbrev-ref", "HEAD")
+	commit(dir, "other-pr-1.txt") // another PR lands before the move
+	wtRoot := filepath.Join(t.TempDir(), "wt")
+	must(t, errOnly(git(dir, "worktree", "add", "-b", "work", wtRoot, "HEAD")))
+	branch := "work"
+	a := seeded(t, d, wtRoot, func(a *wire.Agent) {
+		a.StartingPoint = &wire.StartingPoint{Repository: store.FolderURL(wtRoot), Commit: start0}
+		a.Worktree = &wire.AgentWorktree{Name: "wt", Root: store.FolderURL(wtRoot), Branch: &branch, Base: &main, MadeByApp: true}
+	})
+	names := func() []string {
+		ctx, _ := d.gitContext(&a)
+		got, err := changedSince(ctx)
+		must(t, err)
+		var out []string
+		for _, c := range got {
+			out = append(out, c.path)
+		}
+		return out
+	}
+	if got := names(); len(got) != 0 {
+		t.Fatalf("after the move the pane shows %v, want nothing", got)
+	}
+	commit(wtRoot, "own.txt")
+	commit(dir, "other-pr-2.txt") // main moves on, and the lane merges it
+	must(t, errOnly(git(wtRoot, "merge", "-q", "--no-edit", main)))
+	if got := names(); len(got) != 1 || got[0] != "own.txt" {
+		t.Fatalf("after the merge of main the pane shows %v, want [own.txt]", got)
+	}
+}
