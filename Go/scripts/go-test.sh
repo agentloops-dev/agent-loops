@@ -47,6 +47,11 @@ done < <("$go_sh" list ./...)
 sampler=
 if [[ -n ${GO_TEST_LOG_DIR:-} ]]; then
 	sample() {
+		if [[ $(uname) == Darwin ]]; then
+			echo "cores $(sysctl -n hw.ncpu), memory $(($(sysctl -n hw.memsize) / 1048576)) MB"
+		else
+			echo "cores $(nproc), $(grep MemTotal /proc/meminfo)"
+		fi
 		while :; do
 			echo "== $(date -u +%H:%M:%S) load $(uptime | sed 's/.*load averages*: //')"
 			if [[ $(uname) == Darwin ]]; then
@@ -55,6 +60,8 @@ if [[ -n ${GO_TEST_LOG_DIR:-} ]]; then
 			else
 				grep -E '^(MemAvailable|SwapTotal|SwapFree):' /proc/meminfo || true
 			fi
+			# The largest processes: which test binaries and compilers hold the memory and cores.
+			ps -Ao rss=,pcpu=,comm= | sort -nr | head -n 8 | awk '{ printf "  %6d MB %5s%% %s\n", $1 / 1024, $2, $NF }' || true
 			sleep 30
 		done
 	}
@@ -65,9 +72,10 @@ fi
 
 pids=() logs=() shard_names=() codes=()
 start() { # name, then the go test arguments
-	local log="$out/$1.log"
+	local name=$1 log="$out/$1.log"
 	shard_names+=("$1")
 	shift
+	echo "go-test.sh: shard $name starts at $(date -u +%H:%M:%S)" >&2
 	"$go_sh" test "$@" >"$log" 2>&1 &
 	pids+=("$!")
 	logs+=("$log")
