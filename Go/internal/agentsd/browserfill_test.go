@@ -303,6 +303,31 @@ func TestACardIsFilledAPartAtATime(t *testing.T) {
 	assertNotUnder(t, d.Store.Loc.Root, `"cvc":"737"`)
 }
 
+// #5569: a card's billing address is filled a part at a time, as its number is, and a card
+// with no address says which part it has not.
+func TestACardsBillingAddressIsFilledAPartAtATime(t *testing.T) {
+	card := `{"number":"4242424242424242","expiry":"09/31","cvc":"737","name":"Sam Lee","zip":"94110",` +
+		`"line1":"1 Scratch Street","line2":"Unit 9","city":"Testville","state":"CA","country":"United States"}`
+	m, page, _ := fillSetUp(t, map[string]string{"SHOP_CARD": card, "BARE_CARD": `{"number":"4242424242424242","zip":"94110"}`})
+	for i, c := range []struct{ part, typed string }{
+		{"name", "Sam Lee"}, {"line1", "1 Scratch Street"}, {"line2", "Unit 9"}, {"city", "Testville"}, {"state", "CA"},
+		{"zip", "94110"}, {"country", "United States"},
+	} {
+		r := m.browserTool(2+i, "fill_secret", map[string]any{"secret": "SHOP_CARD", "part": c.part, "target": "e7"})
+		if r.IsError || replyText(r) != "SHOP_CARD "+c.part+" filled." || page.value != c.typed {
+			t.Fatalf("%s: %+v %q", c.part, r, page.value)
+		}
+	}
+	page.value = "1 Scratch Street, Testville"
+	if got := replyText(m.browserTool(20, "browser_snapshot", nil)); got != "- textbox \"Password\": <secret SHOP_CARD.line1>, <secret SHOP_CARD.city>" {
+		t.Fatalf("got %q", got)
+	}
+	r := m.browserTool(21, "fill_secret", map[string]any{"secret": "BARE_CARD", "part": "line1", "target": "e7"})
+	if !r.IsError || !strings.Contains(replyText(r), "BARE_CARD has no line1") {
+		t.Fatalf("%+v", r)
+	}
+}
+
 func TestAPartIsOnlyForACard(t *testing.T) {
 	m, page, _ := fillSetUp(t, map[string]string{"GITLAB_PASSWORD": filledValue})
 	r := m.browserTool(2, "fill_secret", map[string]any{"secret": "GITLAB_PASSWORD", "part": "cvc", "target": "e7"})

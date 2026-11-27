@@ -38,6 +38,9 @@ dialog.sheet:has(.settings-sheet) { width: min(760px, calc(100vw - 32px)); max-h
 .sheet-body .sheet-note { margin: 0; }
 /* A secret's Description (#4167): the sheet's own font, not a textarea's monospace. */
 .sheet-body textarea { font: inherit; resize: vertical; }
+/* A card's optional billing address (#5569). */
+.sheet-body .card-address { display: flex; flex-direction: column; gap: 10px; margin: 0; padding: 8px 0 0; border: none; border-top: 1px solid var(--paper-rule); }
+.sheet-body .card-address legend { padding: 0; font-size: 0.8125rem; font-weight: 600; }
 .sheet-note.failure { color: var(--tint-failure); opacity: 1; }
 /* The Add Folder sheet's Project (#2671). */
 .new-folder-project { display: flex; flex-direction: column; gap: 4px; margin-top: 10px; }
