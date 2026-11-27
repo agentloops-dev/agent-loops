@@ -575,7 +575,7 @@ func (d *Daemon) noteSignIn(s *wire.RuntimeStatus) {
 	case "codex":
 		in.SignedIn = ownCodexSignIn()
 	}
-	if d.relayFor(s.Runtime.ID) != nil && !(s.Runtime.ID == "claude" && d.storedClaudeSignIn() != "") {
+	if d.relayFor(s.Runtime.ID) != nil && (s.Runtime.ID != "claude" || d.storedClaudeSignIn() == "") {
 		relayed := true
 		in.Relayed = &relayed
 	}
