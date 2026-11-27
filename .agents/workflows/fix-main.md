@@ -9,7 +9,7 @@ on:
       anyone: true
 agent: standing
 labels: [fix-main, ci]
-when-done: keep
+when-done: archive
 permission-mode: approve-for-me
 ---
 
@@ -18,8 +18,11 @@ or timed out (the workflow starts on no other run, #5775); the note at the end o
 prompt has its details. Every run comes to this one session (`agent: standing`, #5778):
 a run that comes while you work waits for its turn. When it is a bisect step, or a run
 that is part of the spell you work already, you add it to that spell or end the turn at
-once. Else you make `main` green again, with nobody watching. Never archive this
-session: the next run comes to it.
+once. Else you make `main` green again, with nobody watching. Do not archive this
+session yourself. When a spell ends with `main` green, end the run **Complete**: the
+workflow archives the session (`when-done: archive`), and the next failure starts a new
+one. While a bisect or a fix PR is still open, end the run **Partly done** or
+**Waiting**, so the session stays and the next run comes to it.
 
 Follow the `fix-main` skill (`.agents/skills/fix-main/SKILL.md`) from its step 1. Its rules
 are the limits of this run: never rerun a failed job; run a test that looks flaky alone 20
