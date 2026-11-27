@@ -42,11 +42,40 @@ while IFS= read -r pkg; do
 	grep -qxF "$pkg" <<<"$slow_paths" || rest+=("$pkg")
 done < <("$go_sh" list ./...)
 
+# With a log folder (CI), the machine's load, memory and swap every 30 s in load.log, so a slow
+# run shows whether it waited on the cores, on memory or on neither (#7480).
+sampler=
+if [[ -n ${GO_TEST_LOG_DIR:-} ]]; then
+	sample() {
+		if [[ $(uname) == Darwin ]]; then
+			echo "cores $(sysctl -n hw.ncpu), memory $(($(sysctl -n hw.memsize) / 1048576)) MB"
+		else
+			echo "cores $(nproc), $(grep MemTotal /proc/meminfo)"
+		fi
+		while :; do
+			echo "== $(date -u +%H:%M:%S) load $(uptime | sed 's/.*load averages*: //')"
+			if [[ $(uname) == Darwin ]]; then
+				sysctl -n vm.swapusage
+				vm_stat | grep -E '^(Pages (free|active|wired down|occupied by compressor)|Pageouts|Swapouts)' || true
+			else
+				grep -E '^(MemAvailable|SwapTotal|SwapFree):' /proc/meminfo || true
+			fi
+			# The largest processes: which test binaries and compilers hold the memory and cores.
+			ps -Ao rss=,pcpu=,comm= | sort -nr | head -n 8 | awk '{ printf "  %6d MB %5s%% %s\n", $1 / 1024, $2, $NF }' || true
+			sleep 30
+		done
+	}
+	sample >"$out/load.log" 2>&1 &
+	sampler=$!
+	trap 'kill "$sampler" 2>/dev/null || true' EXIT
+fi
+
 pids=() logs=() shard_names=() codes=()
 start() { # name, then the go test arguments
-	local log="$out/$1.log"
+	local name=$1 log="$out/$1.log"
 	shard_names+=("$1")
 	shift
+	echo "go-test.sh: shard $name starts at $(date -u +%H:%M:%S)" >&2
 	"$go_sh" test "$@" >"$log" 2>&1 &
 	pids+=("$!")
 	logs+=("$log")
@@ -76,14 +105,14 @@ n=0
 for pkg in "${slow_pkgs[@]}"; do
 	# The test binary is built here, with the same flags, so the shards find it in the cache.
 	if ! list=$("$go_sh" test "$@" -list '.*' "$pkg"); then
-		wait
+		wait "${pids[@]}" || true
 		cat "${logs[@]}"
 		exit 1
 	fi
 	names=$(grep -E '^(Test|Example|Fuzz)' <<<"$list" || true)
 	if [[ -z $names ]]; then
 		echo "go-test.sh: $pkg lists no tests" >&2
-		wait
+		wait "${pids[@]}" || true
 		exit 1
 	fi
 	listed=$(wc -l <<<"$names" | tr -d ' ')
@@ -97,7 +126,7 @@ for pkg in "${slow_pkgs[@]}"; do
 	done
 	if ((dealt != listed)); then
 		echo "go-test.sh: $pkg listed $listed tests but dealt $dealt" >&2
-		wait
+		wait "${pids[@]}" || true
 		exit 1
 	fi
 done
@@ -111,6 +140,11 @@ for i in "${!pids[@]}"; do
 	cat "${logs[$i]}"
 	shard_summary "$i"
 done
+
+if [[ -n $sampler ]]; then
+	kill "$sampler" 2>/dev/null || true
+	wait "$sampler" 2>/dev/null || true
+fi
 
 # Again, all together at the end, and in summary.txt for CI's own step.
 {

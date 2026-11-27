@@ -291,8 +291,9 @@ jobs:
       - name: Go test summary
         if: ${{ failure() && steps.nx.outcome == 'failure' }}
         run: bash scripts/ci-go-test-summary.sh
+      # On every run, as in test-go (#7480).
       - name: Upload the Go test logs
-        if: ${{ failure() && steps.nx.outcome == 'failure' }}
+        if: ${{ always() && steps.nx.outcome != 'skipped' }}
         uses: actions/upload-artifact@v5
         with:
           name: go-test-logs-linux-${{ github.run_attempt }}
@@ -1115,8 +1116,10 @@ jobs:
       - name: Go test summary
         if: ${{ failure() && steps.go-nx.outcome == 'failure' }}
         run: bash scripts/ci-go-test-summary.sh
+      # On every run, not only a failed one: load.log shows how near a green run came to its
+      # limit, and what it waited on (#7480).
       - name: Upload the Go test logs
-        if: ${{ failure() && steps.go-nx.outcome == 'failure' }}
+        if: ${{ always() && steps.go-nx.outcome != 'skipped' }}
         uses: actions/upload-artifact@v5
         with:
           name: go-test-logs-mac-${{ github.run_attempt }}
