@@ -1,6 +1,10 @@
 package agentsd
 
 import (
+	"bytes"
+	"context"
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -106,4 +110,92 @@ func theCard(t *testing.T, d *Daemon) wire.ElicitationRequest {
 		return len(got) > 0
 	})
 	return card
+}
+
+// #7506: a server that still uses the Mac's Claude shows a card with the link and a field for
+// the code; the code signs it in only after one check turn passes, and then the lend closes.
+func TestAServersClaudeCardChecksBeforeTheLendCloses(t *testing.T) {
+	fakeRuntimes(t)
+	home := fakeSignInTools(t)
+	root := t.TempDir()
+	d, c := start(t, root)
+	defer d.Shutdown()
+	asAServer(t)
+	id := startAgent(t, c, 1, t.TempDir(), "")
+	d.SetTunneler(&fakeTunnels{})
+
+	d.raiseSignInCard(id, "claude")
+	if len(d.pendingElicitations()) != 0 {
+		t.Fatal("a card for a Claude with no lend")
+	}
+	lend(t, d, "claude", "agents-relay-claude")
+	d.raiseSignInCard(id, "claude")
+	card := theCard(t, d)
+	if card.Mode.Form == nil || len(card.Mode.Form.Value.Properties) != 1 || card.Message == nil ||
+		!strings.Contains(*card.Message, "https://claude.ai/oauth/authorize") {
+		t.Fatalf("%+v", card)
+	}
+	answer := func(code string) error {
+		_, err := d.answerRequest(wire.RequestsAnswer{ID: card.ID, Answer: wire.RequestAnswer{Form: &wire.RequestFormAnswer{
+			Action: wire.AnswerElicitationRequestActionAccept, Content: map[string]wire.JSONValue{signInCodeField: wire.JSONValue(`"` + code + `"`)}}}}, nil)
+		return err
+	}
+	// The check turn fails: nothing is kept, the lend stays.
+	setFor(t, &claudeCheckTurn, func(context.Context, []string) error { return errors.New("401 Invalid bearer token") })
+	err := answer("good")
+	if err == nil || !strings.Contains(err.Error(), "check turn") || !strings.Contains(err.Error(), "401") {
+		t.Fatalf("a failed check: %v", err)
+	}
+	if d.storedClaudeSignIn() != "" || d.relayFor("claude") == nil {
+		t.Fatal("a failed check closed the lend or kept the sign-in")
+	}
+	// It passes, with the server's own token alone.
+	var env []string
+	setFor(t, &claudeCheckTurn, func(_ context.Context, e []string) error { env = e; return nil })
+	// The failed code is used up: the next turn shows a new card in the old one's place.
+	d.raiseSignInCard(id, "claude")
+	waitFor(t, "a new card", func() bool {
+		got := d.pendingElicitations()
+		if len(got) == 1 && got[0].ID != card.ID {
+			card = got[0]
+			return true
+		}
+		return false
+	})
+	if err := answer("good"); err != nil {
+		t.Fatal(err)
+	}
+	if !hasVariable(env, "CLAUDE_CODE_OAUTH_TOKEN") || hasVariable(env, "ANTHROPIC_BASE_URL") {
+		t.Fatalf("the check turn: %q", env)
+	}
+	if d.storedClaudeSignIn() == "" || d.relayFor("claude") != nil || len(d.pendingElicitations()) != 0 {
+		t.Fatal("not signed in on the server after a passing check")
+	}
+	assertNoClaudeSignInLeak(t, []string{root, home}, d.claudeSignInFile())
+}
+
+func assertNoClaudeSignInLeak(t *testing.T, roots []string, signInFile string) {
+	t.Helper()
+	for _, dir := range roots {
+		files, err := os.OpenRoot(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = filepath.WalkDir(dir, func(path string, e fs.DirEntry, err error) error {
+			if err != nil || e.IsDir() || path == signInFile || strings.HasSuffix(path, ".local/bin/claude") {
+				return nil
+			}
+			rel, err := filepath.Rel(dir, path)
+			if err != nil {
+				return err
+			}
+			if b, err := files.ReadFile(rel); err == nil && (bytes.Contains(b, []byte("sk-ant-oat01-abc_DEF-123")) || bytes.Contains(b, []byte(`"good"`))) {
+				t.Errorf("the token or the code is in %s", path)
+			}
+			return nil
+		})
+		if err := files.Close(); err != nil {
+			t.Fatal(err)
+		}
+	}
 }
