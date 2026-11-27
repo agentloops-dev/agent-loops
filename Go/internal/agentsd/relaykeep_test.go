@@ -226,3 +226,41 @@ func TestTheKeptLendsAreBounded(t *testing.T) {
 		t.Fatal("a runtime that is never lent was taken")
 	}
 }
+
+// #7470: a sign-in made on the server wins over the Mac's lend. Making it closes the gate and
+// forgets the offer; a later offer, or a restart, does not open it; Claude starts with its own
+// token and the status no longer says it uses the Mac's.
+func TestAServersOwnSignInWinsOverTheLend(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("CLAUDE_CODE_OAUTH_TOKEN", "")
+	root := t.TempDir()
+	d, _ := start(t, root)
+	d.SetTunneler(&fakeTunnels{})
+	lend(t, d, "claude", "agents-relay-claude")
+	if d.relayFor("claude") == nil {
+		t.Fatal("the lend did not open")
+	}
+
+	if err := d.keepClaudeSignIn("CLAUDE_CODE_OAUTH_TOKEN", "sk-ant-oat01-own"); err != nil {
+		t.Fatal(err)
+	}
+	d.closeRelayForOwnSignIn("claude")
+	if d.relayFor("claude") != nil {
+		t.Fatal("the gate stayed open after the server's own sign-in")
+	}
+	if _, kept := d.keptRelays()["claude"]; kept {
+		t.Fatal("the lend stayed kept over a restart")
+	}
+	lend(t, d, "claude", "agents-relay-claude-2")
+	if d.relayFor("claude") != nil {
+		t.Fatal("a new lend opened over the server's own sign-in")
+	}
+	env, err := d.withRuntimeOwnEnv(runtimeByID("claude"), t.TempDir(), nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	joined := strings.Join(env, "\n")
+	if !strings.Contains(joined, "CLAUDE_CODE_OAUTH_TOKEN=sk-ant-oat01-own") || strings.Contains(joined, "ANTHROPIC_BASE_URL") {
+		t.Fatalf("Claude does not start with the server's own token alone: %q", env)
+	}
+}

@@ -82,6 +82,11 @@ func (d *Daemon) offerRelay(o wire.RelayOffer) error {
 	if !lentRuntimes[o.Runtime] {
 		return Invalid("relay/offer: %s's sign-in is not lent", o.Runtime)
 	}
+	if o.Runtime == "claude" && d.storedClaudeSignIn() != "" {
+		// This server has its own sign-in, which wins (#7470): the lend is not opened.
+		log.Printf("relay: claude's lent sign-in is not opened: this server has its own")
+		return nil
+	}
 	if err := d.openRelay(o); err != nil {
 		return err
 	}
@@ -206,6 +211,10 @@ func (d *Daemon) keepRelay(runtime string, k *keptRelay) error {
 // connected; the lender's kept hash answers the kept stand-in (#7170).
 func (d *Daemon) reopenRelays() {
 	for runtime, k := range d.keptRelays() {
+		if runtime == "claude" && d.storedClaudeSignIn() != "" {
+			d.dropRelay(runtime, "this server has its own sign-in")
+			continue
+		}
 		if err := d.openRelay(wire.RelayOffer{Runtime: runtime, StandIn: k.StandIn, CaCertificate: k.CaCertificate}); err != nil {
 			log.Printf("relay: %s's lent sign-in could not be opened again: %v", runtime, err)
 			continue

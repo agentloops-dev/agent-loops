@@ -276,6 +276,7 @@ func (d *Daemon) finishHeadlessSignIn(ctx context.Context, r wire.RuntimeSignInF
 		if err := d.keepClaudeSignIn("CLAUDE_CODE_OAUTH_TOKEN", token); err != nil {
 			return wire.RuntimeStatus{}, err
 		}
+		d.closeRelayForOwnSignIn("claude")
 		return d.signedInHere(rt), nil
 	}
 	// Codex has been waiting for the person to type the code; it ends when they have.
@@ -315,6 +316,7 @@ func (d *Daemon) signInWithKey(ctx context.Context, runtimeID, key string) (wire
 		if err := d.keepClaudeSignIn(variable, key); err != nil {
 			return wire.RuntimeStatus{}, err
 		}
+		d.closeRelayForOwnSignIn("claude")
 		return d.signedInHere(rt), nil
 	}
 	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
@@ -335,6 +337,15 @@ func (d *Daemon) signInWithKey(ctx context.Context, runtimeID, key string) (wire
 		return wire.RuntimeStatus{}, &Error{Code: wire.FailureNeedsSignIn, Message: "Codex did not take that key" + lastLine(out.text())}
 	}
 	return d.signedInHere(rt), nil
+}
+
+// closeRelayForOwnSignIn closes the gate of the Mac's lent sign-in once this server has its
+// own (#7470, 056 D7 replaced): the server's own sign-in wins, so it keeps working with the
+// Mac away. Nothing of the Mac's own sign-in is touched.
+func (d *Daemon) closeRelayForOwnSignIn(runtimeID string) {
+	if d.relayFor(runtimeID) != nil {
+		d.dropRelay(runtimeID, "this server signed in on itself")
+	}
 }
 
 // signedInHere is the runtime's status once it has signed in, told to every client.
@@ -564,7 +575,7 @@ func (d *Daemon) noteSignIn(s *wire.RuntimeStatus) {
 	case "codex":
 		in.SignedIn = ownCodexSignIn()
 	}
-	if d.relayFor(s.Runtime.ID) != nil {
+	if d.relayFor(s.Runtime.ID) != nil && (s.Runtime.ID != "claude" || d.storedClaudeSignIn() == "") {
 		relayed := true
 		in.Relayed = &relayed
 	}
