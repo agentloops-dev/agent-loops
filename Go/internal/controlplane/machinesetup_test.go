@@ -524,3 +524,71 @@ func TestYourSetUpWithNoAskTimeCountsFromTheCompare(t *testing.T) {
 		t.Fatal("a late Your set-up, which the projects do not wait for, was failed")
 	}
 }
+
+// #7545: Try Again on a Your set-up that never got a script asks its sender again, as the
+// automatic send does, and does not refuse as Run Again's setup/run would. A sender that does
+// not send it fails the step again, with words; a step that ran a script keeps the refusal.
+func TestTryAgainOnAYourSetUpWithNoScriptAsksTheSenderAgain(t *testing.T) {
+	t.Parallel()
+	p := startPlane(t, store.NewMemory(), controllink.NewPrivateKey())
+	ctx := context.Background()
+	made := func(host string) {
+		t.Helper()
+		for _, id := range setupSteps[:4] {
+			p.s.madeStep(host, rep(id, wire.MachineSetupStateRunning))
+			p.s.madeStep(host, rep(id, wire.MachineSetupStateDone))
+		}
+		p.s.setupAsked(ctx, host, true)
+	}
+	stored := func(host string) *storedSetup {
+		t.Helper()
+		st, _, err := p.s.readMachineSetup(ctx, host)
+		if err != nil || st == nil {
+			t.Fatal(err)
+		}
+		return st
+	}
+
+	const silent = "silent"
+	made(silent)
+	_, err := p.s.changeMachineSetup(ctx, silent, false, func(st *storedSetup) error {
+		at := time.Now().Add(-userSendPatience - time.Minute)
+		st.UserAskedAt = &at
+		return nil
+	})
+	must(t, err)
+	p.s.endUserNeverBegan(ctx, silent)
+	if u := stored(silent).step(wire.MachineSetupStepIDUser); u.State != wire.MachineSetupStateFailed {
+		t.Fatalf("not failed after 15 minutes: %+v", u)
+	}
+	before := time.Now()
+	if err := p.s.retrySetup(ctx, silent); err != nil {
+		t.Fatalf("Try Again refused: %v", err)
+	}
+	st := stored(silent)
+	if st.UserAskedAt == nil || st.UserAskedAt.Before(before) {
+		t.Fatalf("the sender was not asked again: %v", st.UserAskedAt)
+	}
+	// This plane has no sender for the machine, so nothing is sent: the step says so.
+	if u := st.step(wire.MachineSetupStepIDUser); u.State != wire.MachineSetupStateFailed ||
+		!strings.Contains(u.Error, "setup.sh was not sent again") || !strings.Contains(u.Error, "Use Send Set-up") {
+		t.Fatalf("a sender that does not send: %+v", u)
+	}
+	// The other steps are as they were.
+	for _, id := range setupSteps[:4] {
+		if s := st.step(id); s.State != wire.MachineSetupStateDone {
+			t.Fatalf("Try Again changed %s: %+v", id, s)
+		}
+	}
+
+	// A Your set-up that ran a script and failed runs on the machine: Run Again, not this.
+	const ran = "ran"
+	made(ran)
+	hash := strings.Repeat("b", 64)
+	for _, state := range []wire.MachineSetupState{wire.MachineSetupStateRunning, wire.MachineSetupStateFailed} {
+		must(t, p.s.setupStep(ctx, ran, wire.MachineSetupReport{Step: wire.MachineSetupStepIDUser, State: state, Hash: &hash}))
+	}
+	if err := p.s.retrySetup(ctx, ran); err == nil || !strings.Contains(err.Error(), "Run Again") {
+		t.Fatalf("a script that ran: %v", err)
+	}
+}

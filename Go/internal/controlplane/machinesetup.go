@@ -851,10 +851,19 @@ func (s *Service) madeAndCompared(ctx context.Context, host string) bool {
 
 // retrySetup is machines/retrySetup.
 func (s *Service) retrySetup(ctx context.Context, host string) error {
-	retried, root := false, false
+	retried, root, askAgain := false, false, false
 	stored, err := s.changeMachineSetup(ctx, host, false, func(st *storedSetup) error {
 		if failed := st.failedStep(); failed != nil {
 			if failed.ID == wire.MachineSetupStepIDUser {
+				if failed.Hash == "" {
+					// It never got a script (#7545): the sender is asked again, as at the compare
+					// step, and the 15 minutes of #7544 count from now.
+					now := time.Now()
+					*failed = storedSetupStep{ID: failed.ID, State: wire.MachineSetupStateWaiting}
+					st.UserAskedAt, st.Ready = &now, nil
+					askAgain = true
+					return nil
+				}
 				// Your set-up runs on the machine (#7155): its client runs it again there, with setup/run.
 				return fail(invalidParams, "Your set-up runs on the machine: run it again with Run Again on its page.")
 			}
@@ -874,6 +883,14 @@ func (s *Service) retrySetup(ctx context.Context, host string) error {
 	}
 	if stored == nil {
 		return fail(noSuchHost, "This machine has no set-up.")
+	}
+	if askAgain {
+		s.setupChanged(ctx, host)
+		if !s.setupWanted(ctx, host) {
+			s.userNotSentAgain(ctx, host)
+		}
+		s.setupChanged(ctx, host)
+		return nil
 	}
 	if root {
 		// The machine reads root.sh's result again (#7159): the person may have run the copied
@@ -1096,4 +1113,26 @@ func (s *Service) setupSender(ctx context.Context, host string) string {
 		return ""
 	}
 	return sender.Name
+}
+
+// userNotSentAgain fails Your set-up again when Try Again asked its sender for setup.sh and the
+// sender does not send it (#7545): it is offline, has no setup.sh approved for machines as they
+// are made, or there is none. A setup.sh that came in the meantime is left as it is.
+func (s *Service) userNotSentAgain(ctx context.Context, host string) {
+	words := "setup.sh was not sent again. The machine that sends it may be offline, or it has no setup.sh approved for new machines. Use Send Set-up to send it."
+	if sender := s.setupSender(ctx, host); sender != "" {
+		words = "setup.sh was not sent again: " + sender + " may be offline, or it has no setup.sh approved for new machines. Use Send Set-up to send it."
+	}
+	report := wire.MachineSetupReport{Step: wire.MachineSetupStepIDUser, State: wire.MachineSetupStateFailed, Error: new(words)}
+	_, err := s.changeMachineSetup(ctx, host, false, func(st *storedSetup) error {
+		user := st.step(wire.MachineSetupStepIDUser)
+		if user == nil || user.Hash != "" || user.State != wire.MachineSetupStateWaiting {
+			return errSetupBegun
+		}
+		_, _, err := st.report(report, time.Now())
+		return err
+	})
+	if err != nil && !errors.Is(err, errSetupBegun) {
+		s.log("machine " + host + ": its set-up could not say that setup.sh was not sent again: " + err.Error())
+	}
 }
