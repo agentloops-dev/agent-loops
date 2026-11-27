@@ -257,7 +257,7 @@ func (s *Service) setupWork(ctx context.Context, host string) (wire.MachineSetup
 		return wire.MachineSetupWork{UserFailed: new(true), Projects: []wire.MachineSetupProject{}}, nil
 	}
 	if s.pools == nil {
-		return none, nil
+		return madeWork(stored, none), nil
 	}
 	if err != nil {
 		return none, fail(storeUnavailable, "The machine's set-up could not be read: %v", err)
@@ -272,11 +272,23 @@ func (s *Service) setupWork(ctx context.Context, host string) (wire.MachineSetup
 		return none, fail(storeUnavailable, "The warm pools could not be read: %v", err)
 	}
 	if p == nil {
-		return none, nil
+		return madeWork(stored, none), nil
 	}
 	work := wire.MachineSetupWork{Pool: true}
 	work.Projects, err = s.setupProjects(ctx, p.Owner, host, p.Projects)
 	return work, err
+}
+
+// madeWork is machine/setupWork for a machine that no pool made: none, or the step its host runs
+// when no installer asks for its projects (#7559).
+func madeWork(stored *storedSetup, none wire.MachineSetupWork) wire.MachineSetupWork {
+	if stored == nil {
+		return none
+	}
+	if from := stored.madeNext(); from != nil {
+		return wire.MachineSetupWork{From: from, Projects: []wire.MachineSetupProject{}}
+	}
+	return none
 }
 
 // startPools starts the reconcile loop, on a control plane that has providers.

@@ -244,6 +244,22 @@ func (st *storedSetup) userFailed() bool {
 	return user != nil && user.State == wire.MachineSetupStateFailed
 }
 
+// madeNext is machine/setupWork's from for a machine that no pool made (#7559): Your set-up is
+// done, after a failure or not, and the projects step it held has not begun. The installer that
+// waited for it may be gone (a reboot during a long failure of Your set-up), so the host runs
+// steps 6 to 8 itself once no installer asks for the projects. A failed step waits for Try Again.
+func (st *storedSetup) madeNext() *wire.MachineSetupStepID {
+	if st.claimed() || st.ScriptOnly || st.UserLate || st.failed() {
+		return nil
+	}
+	user, projects := st.step(wire.MachineSetupStepIDUser), st.step(wire.MachineSetupStepIDProjects)
+	if user == nil || user.State != wire.MachineSetupStateDone || projects == nil || projects.State != wire.MachineSetupStateWaiting {
+		return nil
+	}
+	id := wire.MachineSetupStepIDProjects
+	return &id
+}
+
 // notStartedWords are what a step that waits for a failed Your set-up says (#7546).
 const notStartedWords = "Not started: Your set-up failed. It starts when Run Again or Send Set-up runs setup.sh well."
 

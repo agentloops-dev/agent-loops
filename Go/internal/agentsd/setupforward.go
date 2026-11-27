@@ -40,10 +40,17 @@ func (d *Daemon) forwardSetupReports(ctx context.Context, file string, every tim
 	tries := 0
 	prelude := offset > 0
 	watch, next := true, time.Time{}
+	// An installer that still runs asks setup/projects within setupInstallerGone (#7559).
+	d.projectsAskedAt.Store(time.Now().UnixNano())
+	again := d.userSetupChanges()
 	for {
 		select {
 		case <-ctx.Done():
 			return
+		case <-again:
+			// Your set-up began or ended here (Run Again, Send Set-up): a machine whose installer
+			// is gone has the steps after it to run (#7559).
+			again, watch, next = d.userSetupChanges(), true, time.Time{}
 		case <-time.After(every):
 		}
 		ask := d.askControl.Load()

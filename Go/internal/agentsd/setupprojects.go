@@ -49,6 +49,11 @@ const (
 // (#7546), when it does not run again here: a run here wakes it at once. A test sets it shorter.
 var setupUserFailedEvery = 10 * time.Minute
 
+// setupInstallerGone is how long no installer has asked setup/projects before the host takes a
+// made machine's steps 6 to 8 as its own (#7559): the installer asks once a second while it waits
+// for Your set-up, and a host that starts waits as long for an installer that still runs.
+const setupInstallerGone = time.Minute
+
 // setupUserSettle is how long after setup.sh began or ended here the projects step still asks
 // as it does while Your set-up runs: the control plane can say the last run's end until this
 // host's report of the new one reaches it.
@@ -62,6 +67,21 @@ type machineSetupBook struct {
 	setupRuns atomic.Bool
 	// poolHome is the folder the projects go in; "" is the home folder. A test sets it.
 	poolHome string
+	// projectsAskedAt is when the installer last asked setup/projects, or this host began to
+	// forward its set-up's reports (#7559), in Unix nanoseconds.
+	projectsAskedAt atomic.Int64
+	// installerPatience is setupInstallerGone; a test sets it shorter.
+	installerPatience time.Duration
+}
+
+// installerGone says no installer waits for this machine's projects (#7559): none asked
+// setup/projects for setupInstallerGone, as after a reboot while Your set-up had failed.
+func (d *Daemon) installerGone() bool {
+	patience := d.installerPatience
+	if patience == 0 {
+		patience = setupInstallerGone
+	}
+	return time.Since(time.Unix(0, d.projectsAskedAt.Load())) >= patience
 }
 
 func (d *Daemon) poolFolder(name string) (string, error) {
@@ -75,6 +95,7 @@ func (d *Daemon) poolFolder(name string) (string, error) {
 // setupProjects is setup/projects: it starts a get when none is under way, and says how it
 // stands. An end is said once; the next call begins again.
 func (d *Daemon) setupProjects() wire.MachineSetupProjects {
+	d.projectsAskedAt.Store(time.Now().UnixNano())
 	d.poolGetMu.Lock()
 	defer d.poolGetMu.Unlock()
 	if d.setupGet == nil {
@@ -386,7 +407,7 @@ func (d *Daemon) seedHere(folder, origin string, say func(string)) ([]string, *w
 }
 
 // continueSetup asks what the machine's set-up has left, and runs it. It says false when
-// nothing is left to ask for: no pool made the machine, or it is ready.
+// nothing is left to ask for: no pool made the machine and nothing waits, or it is ready.
 func (d *Daemon) continueSetup(ctx context.Context) bool {
 	if d.setupRuns.Load() {
 		return true
@@ -395,10 +416,15 @@ func (d *Daemon) continueSetup(ctx context.Context) bool {
 	if err != nil {
 		return !noSetupWork(err)
 	}
-	if !work.Pool || work.Done {
+	made := !work.Pool && work.From != nil
+	if made && !d.installerGone() {
+		// Its installer may still wait for the projects: it gets them, or it is gone soon.
+		return true
+	}
+	if !made && (!work.Pool || work.Done) {
 		return false
 	}
-	if !work.Claimed || work.From == nil || d.setupRuns.Swap(true) {
+	if !made && !work.Claimed || work.From == nil || d.setupRuns.Swap(true) {
 		return true
 	}
 	from := *work.From
@@ -409,7 +435,8 @@ func (d *Daemon) continueSetup(ctx context.Context) bool {
 			log.Printf("set-up: no home folder: %v", err)
 			return
 		}
-		o := hostsetup.Options{Name: d.ownName(), Home: home, FromPool: true}
+		// A machine that no pool made has the steps its installer did not run (#7559).
+		o := hostsetup.Options{Name: d.ownName(), Home: home, FromPool: !made}
 		for _, p := range work.Projects {
 			if folder, err := d.poolFolder(filepath.Base(p.Path)); err == nil && isDir(folder) {
 				o.Projects = append(o.Projects, folder)

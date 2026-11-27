@@ -9676,7 +9676,9 @@ export type MachineSetupStepID =
  * get, at their last commit. An unclaimed machine does step 6 and stops. waitUser (#7416): Your
  * set-up is on its way to this machine or runs there, and its projects wait for it: ask again, less
  * often each time. userFailed (#7546): Your set-up failed, so the projects, sign-in and smoke do
- * not start: ask again only when Your set-up runs again (Run Again, Send Set-up).
+ * not start: ask again only when Your set-up runs again (Run Again, Send Set-up). from on a machine
+ * that no pool made (pool false, #7559): Your set-up is done and the projects step has not begun,
+ * so the host runs steps 6 to 8 when no installer asks for the projects (a reboot ended it).
  */
 export interface MachineSetupWork {
   pool: boolean;
