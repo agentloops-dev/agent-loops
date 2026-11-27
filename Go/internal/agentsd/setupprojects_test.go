@@ -330,3 +330,66 @@ func TestAFailedYourSetUpHoldsTheProjectsUntilItRunsAgain(t *testing.T) {
 		t.Fatalf("%s", mustJSON(got))
 	}
 }
+
+// #7559: on a machine that no pool made, whose installer is gone (a reboot while Your set-up had
+// failed), a Run Again that goes well has the host run the projects step itself. While an
+// installer asks for the projects, the host leaves the step to it.
+func TestARunAgainAfterTheInstallerIsGoneStartsTheProjects(t *testing.T) {
+	t.Parallel()
+	d, p, _, _ := setupMachine(t)
+	defer d.Shutdown()
+	d.installerPatience = 50 * time.Millisecond
+	file := filepath.Join(d.Store.Loc.Root, hostsetup.ReportsFile)
+	rep, err := hostsetup.NewReporter(d.Store.Loc.Root)
+	must(t, err)
+	rep.Say(wire.MachineSetupStepIDUser, wire.MachineSetupStateFailed, "", "exit 1")
+	p.set(func() { p.work = wire.MachineSetupWork{UserFailed: new(true), Projects: []wire.MachineSetupProject{}} })
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go d.forwardSetupReports(ctx, file, time.Millisecond)
+	waitFor(t, "asked once", func() bool {
+		p.mu.Lock()
+		defer p.mu.Unlock()
+		return p.asked >= 1
+	})
+	projectsSaid := func() bool {
+		said := false
+		p.set(func() {
+			for _, r := range p.said {
+				said = said || r.Step == wire.MachineSetupStepIDProjects
+			}
+		})
+		return said
+	}
+	// An installer that still asks for the projects keeps the step.
+	from := wire.MachineSetupStepIDProjects
+	p.set(func() { p.work = wire.MachineSetupWork{From: &from, Projects: []wire.MachineSetupProject{}} })
+	d.projectsAskedAt.Store(time.Now().Add(time.Hour).UnixNano())
+	d.userSetupMu.Lock()
+	d.userSetupChangedLocked()
+	d.userSetupMu.Unlock()
+	asked := 0
+	p.set(func() { asked = p.asked })
+	waitFor(t, "asked again when setup.sh ended", func() bool {
+		p.mu.Lock()
+		defer p.mu.Unlock()
+		return p.asked > asked
+	})
+	if projectsSaid() {
+		t.Fatal("the host ran the projects beside an installer that asks for them")
+	}
+	// No installer asks: the host runs the projects step, and the ones after it.
+	d.projectsAskedAt.Store(time.Now().Add(-time.Hour).UnixNano())
+	d.userSetupMu.Lock()
+	d.userSetupChangedLocked()
+	d.userSetupMu.Unlock()
+	waitFor(t, "the projects step", func() bool {
+		done := false
+		p.set(func() {
+			for _, r := range p.said {
+				done = done || r.Step == wire.MachineSetupStepIDProjects && r.State == wire.MachineSetupStateDone
+			}
+		})
+		return done
+	})
+}
