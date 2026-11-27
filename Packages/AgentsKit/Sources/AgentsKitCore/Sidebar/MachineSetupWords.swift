@@ -65,6 +65,20 @@ public enum MachineSetupWords {
     /// Why a new session on `name` cannot be sent yet, in a tooltip.
     public static func noSessionYet(_ name: String) -> String { "\(name) is still setting up" }
 
+    /// A failed Root set-up or Your set-up (#7558; #7151, gate 1, section 1, "Failure"): the
+    /// person's own script failed, and a person can still start sessions there, with a warning.
+    public static func failedScript(_ setup: DaemonAPI.MachineSetup?) -> DaemonAPI.MachineSetupStep? {
+        guard let setup, let failed = failedStep(setup), failed.id == "root" || failed.id == "user" else { return nil }
+        return failed
+    }
+
+    /// The warning above a new session on a machine whose script failed (#7558): which step,
+    /// and that the session starts all the same.
+    public static func startsDespiteFailure(_ step: DaemonAPI.MachineSetupStep, machine: String) -> String {
+        let script = step.id == "root" ? "root.sh" : "setup.sh"
+        return "\(name(step)) failed on \(machine). The session starts, but what \(script) installs can be missing."
+    }
+
     /// 7 of 8: the step that is on, which is the number of the first step not done.
     public static func position(_ setup: DaemonAPI.MachineSetup) -> Int {
         min(doneCount(setup) + 1, max(setup.steps.count, 1))
