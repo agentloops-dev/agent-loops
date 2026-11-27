@@ -179,8 +179,8 @@ importers:
         specifier: 2.11.4
         version: 2.11.4(preact@11.0.0)
       lucide-static:
-        specifier: 1.72.0
-        version: 1.72.0
+        specifier: 1.77.0
+        version: 1.77.0
       markdown-it:
         specifier: 15.0.3
         version: 15.0.3
@@ -1027,8 +1027,8 @@ packages:
     resolution: {integrity: sha512-8XPvpAA8uyhfteu8pIvQxpJZ7SYYdpUivZpGy6sFsBuKRY/7rQGavedeB8aK+Zkyq6upMFVL/9AW6vOYzfRyLg==}
     engines: {node: '>=10'}
 
-  lucide-static@1.72.0:
-    resolution: {integrity: sha512-QhdZ60O7Zcs/e8gw40uMfEn055xZTHBZoNi0xb+/1R2dTd0v4FXS46VL6rKSwC+V92tLBiqsAbCcijy7Wy4j4w==}
+  lucide-static@1.77.0:
+    resolution: {integrity: sha512-v+BzpQrjlwDRWPDzzAu5IFhOkI6jVKb91fsjw1ZSS7Tsb2YvRX5olRN0DXGW99LF2wV4fycuTf5aPOMC62ZW0g==}
 
   markdown-it@15.0.3:
     resolution: {integrity: sha512-+Az7Ojz3iRGu8KYMvJ6xVhvrxP3eE+vEtJX75Ow88XBpcQNV/0lGX5ZynIIBftREo4DC2jsveAMDaeltmm8QvQ==}
@@ -1817,7 +1817,7 @@ snapshots:
       chalk: 4.1.2
       is-unicode-supported: 0.1.0
 
-  lucide-static@1.72.0: {}
+  lucide-static@1.77.0: {}
 
   markdown-it@15.0.3:
     dependencies:
