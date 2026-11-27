@@ -419,3 +419,108 @@ func TestYourSetUpSaysWhyItsAutomaticSendFailed(t *testing.T) {
 		t.Fatalf("an offline target: %+v", u)
 	}
 }
+
+// #7544: the sender said it sends a made machine's setup.sh, then said nothing more (it stopped,
+// could not sign, or lost its link). After userSendPatience, machine/setupWork fails Your set-up
+// with words and ends the host's wait. A step that began, or one still in time, waits on. A
+// setup.sh that comes after still runs.
+func TestYourSetUpThatNeverBeganFailsWithWords(t *testing.T) {
+	t.Parallel()
+	p := startPlane(t, store.NewMemory(), controllink.NewPrivateKey())
+	ctx := context.Background()
+	made := func(host string) {
+		t.Helper()
+		for _, id := range setupSteps[:4] {
+			p.s.madeStep(host, rep(id, wire.MachineSetupStateRunning))
+			p.s.madeStep(host, rep(id, wire.MachineSetupStateDone))
+		}
+		p.s.setupAsked(ctx, host, true)
+	}
+	askedAgo := func(host string, ago time.Duration) {
+		t.Helper()
+		_, err := p.s.changeMachineSetup(ctx, host, false, func(st *storedSetup) error {
+			at := time.Now().Add(-ago)
+			st.UserAskedAt = &at
+			return nil
+		})
+		must(t, err)
+	}
+	user := func(host string) storedSetupStep {
+		t.Helper()
+		stored, _, err := p.s.readMachineSetup(ctx, host)
+		if err != nil || stored == nil {
+			t.Fatal(err)
+		}
+		return *stored.step(wire.MachineSetupStepIDUser)
+	}
+	work := func(host string) wire.MachineSetupWork {
+		t.Helper()
+		got, err := p.s.setupWork(ctx, host)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return got
+	}
+
+	const silent = "silent"
+	made(silent)
+	if got := work(silent); got.WaitUser == nil || !*got.WaitUser {
+		t.Fatalf("in time, the host does not wait: %+v", got)
+	}
+	askedAgo(silent, userSendPatience)
+	got := work(silent)
+	if got.UserFailed == nil || !*got.UserFailed || got.WaitUser != nil {
+		t.Fatalf("after the limit, the host still waits: %+v", got)
+	}
+	if u := user(silent); u.State != wire.MachineSetupStateFailed || !strings.Contains(u.Error, "setup.sh did not come in 15 minutes") || !strings.Contains(u.Error, "Use Send Set-up") {
+		t.Fatalf("no words: %+v", u)
+	}
+	stored, _, _ := p.s.readMachineSetup(ctx, silent)
+	if projects := stored.step(wire.MachineSetupStepIDProjects); projects.Detail != notStartedWords {
+		t.Fatalf("the projects do not say why: %+v", projects)
+	}
+	// setup.sh comes after all: it runs, and the host waits for it again.
+	hash := strings.Repeat("a", 64)
+	must(t, p.s.setupStep(ctx, silent, wire.MachineSetupReport{Step: wire.MachineSetupStepIDUser, State: wire.MachineSetupStateRunning, Hash: &hash}))
+	if got := work(silent); got.WaitUser == nil || !*got.WaitUser || user(silent).State != wire.MachineSetupStateRunning {
+		t.Fatalf("a late setup.sh: %+v %+v", got, user(silent))
+	}
+
+	// One that waits for the lock, as the sender said (#7528), and then hears no more, fails too.
+	const locked = "locked"
+	made(locked)
+	p.s.setupNotSent(locked, "mac", &providers.Failure{Code: wire.FailureNotInLock, Message: "This machine is not in your lock."}, false)
+	askedAgo(locked, userSendPatience+time.Minute)
+	if got := work(locked); got.UserFailed == nil || user(locked).State != wire.MachineSetupStateFailed {
+		t.Fatalf("a Your set-up that waits for the lock for ever: %+v %+v", got, user(locked))
+	}
+
+	// One that began on the machine is never failed by the limit: it has its own.
+	const began = "began"
+	made(began)
+	must(t, p.s.setupStep(ctx, began, wire.MachineSetupReport{Step: wire.MachineSetupStepIDUser, State: wire.MachineSetupStateNeedsYou, Hash: &hash}))
+	askedAgo(began, time.Hour)
+	if got := work(began); got.WaitUser == nil || user(began).State != wire.MachineSetupStateNeedsYou {
+		t.Fatalf("a Your set-up that began was failed: %+v %+v", got, user(began))
+	}
+}
+
+// #7544: a record from before userAskedAt counts from the compare step's end.
+func TestYourSetUpWithNoAskTimeCountsFromTheCompare(t *testing.T) {
+	t.Parallel()
+	now := time.Now()
+	st := newStoredSetup(now.Add(-time.Hour))
+	runSteps(t, st, now.Add(-time.Hour), setupSteps[:4]...)
+	st.Expect, st.UserAsked = "123456", true
+	must(t, st.add(wire.MachineSetupStepIDUser))
+	if !st.userNeverBegan(now) {
+		t.Fatal("an old record never ends its wait")
+	}
+	if st.userNeverBegan(now.Add(-time.Hour)) {
+		t.Fatal("it ended in time")
+	}
+	st.UserLate = true
+	if st.userNeverBegan(now) {
+		t.Fatal("a late Your set-up, which the projects do not wait for, was failed")
+	}
+}

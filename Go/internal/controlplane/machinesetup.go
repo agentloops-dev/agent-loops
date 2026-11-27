@@ -129,6 +129,9 @@ type storedSetup struct {
 	// machine that was set up): they do not wait for it.
 	UserAsked bool `json:"userAsked,omitempty"`
 	UserLate  bool `json:"userLate,omitempty"`
+	// UserAskedAt is when the sender was asked last (#7544): the clock of userSendPatience. A
+	// record from before it has none, and the compare step's end, when it was asked, is used.
+	UserAskedAt *time.Time `json:"userAskedAt,omitempty"`
 }
 
 // claimed says that a person claimed the machine from a warm pool: the claim marks the steps
@@ -202,6 +205,32 @@ func (st *storedSetup) waitUser(now time.Time) bool {
 		return false
 	}
 	return compare.Ended == nil || now.Sub(*compare.Ended) < userAskPatience
+}
+
+// userSendPatience is how long a made machine's Your set-up may wait to begin after its sender
+// said that it sends setup.sh (#7544). The sender tries 12 times, 10 s apart, each for up to a
+// minute (setupDeliverTries in agentsd), so a send that is still on its way began before this.
+const userSendPatience = 15 * time.Minute
+
+// userNeverBegan says that the sender said it sends setup.sh userSendPatience ago and Your set-up
+// never began on the machine (#7544): the sender stopped, could not sign, has no control plane, or
+// lost its link after it said so, and said nothing more. Each report from the machine has the
+// script's hash, so a step with none never began there.
+func (st *storedSetup) userNeverBegan(now time.Time) bool {
+	if !st.UserAsked || st.userAfterProjects() {
+		return false
+	}
+	user := st.step(wire.MachineSetupStepIDUser)
+	if user == nil || user.Hash != "" || user.State != wire.MachineSetupStateWaiting && user.State != wire.MachineSetupStateNeedsYou {
+		return false
+	}
+	asked := st.UserAskedAt
+	if asked == nil {
+		if compare := st.step(wire.MachineSetupStepIDCompare); compare != nil {
+			asked = compare.Ended
+		}
+	}
+	return asked != nil && now.Sub(*asked) >= userSendPatience
 }
 
 // userFailed is machine/setupWork's userFailed (#7546, gate 1 of #7151, section 1, "Failure"):
@@ -964,7 +993,8 @@ func (s *Service) setupWanted(ctx context.Context, host string) bool {
 // set-up, waiting, and its projects wait for it.
 func (s *Service) setupAsked(ctx context.Context, host string, sending bool) {
 	_, err := s.changeMachineSetup(ctx, host, false, func(st *storedSetup) error {
-		st.UserAsked = true
+		now := time.Now()
+		st.UserAsked, st.UserAskedAt = true, &now
 		if sending && st.index(wire.MachineSetupStepIDUser) < 0 {
 			return st.add(wire.MachineSetupStepIDUser)
 		}
@@ -1014,4 +1044,56 @@ func (s *Service) setupNotSent(host, sender string, refusal *providers.Failure, 
 		return
 	}
 	s.setupChanged(ctx, host)
+}
+
+// errUserBegan says that Your set-up is not one that never began: nothing is changed.
+var errUserBegan = errors.New("your set-up began or was not asked for")
+
+// endUserNeverBegan fails a Your set-up that never began in userSendPatience (#7544), with words,
+// so that the projects and the person do not wait for ever. A setup.sh that comes after still
+// runs: its first report starts the step again.
+func (s *Service) endUserNeverBegan(ctx context.Context, host string) {
+	report := wire.MachineSetupReport{Step: wire.MachineSetupStepIDUser, State: wire.MachineSetupStateFailed,
+		Error: new(userNeverBeganWords(s.setupSender(ctx, host)))}
+	_, err := s.changeMachineSetup(ctx, host, false, func(st *storedSetup) error {
+		now := time.Now()
+		if !st.userNeverBegan(now) {
+			return errUserBegan
+		}
+		_, _, err := st.report(report, now)
+		return err
+	})
+	if errors.Is(err, errUserBegan) {
+		return
+	}
+	if err != nil {
+		s.log("machine " + host + ": its set-up could not say that setup.sh did not come: " + err.Error())
+		return
+	}
+	s.setupChanged(ctx, host)
+}
+
+// userNeverBeganWords are what a Your set-up that never began says, by its sender's name when it
+// is known.
+func userNeverBeganWords(sender string) string {
+	if sender == "" {
+		return "setup.sh did not come in 15 minutes. The machine that sends it may be offline, or it could not sign. Use Send Set-up to send it again."
+	}
+	return "setup.sh did not come from " + sender + " in 15 minutes. " + sender + " may be offline, or it could not sign. Use Send Set-up to send it again."
+}
+
+// setupSender is the name of the machine that sends host its setup.sh (setupWanted), or "".
+func (s *Service) setupSender(ctx context.Context, host string) string {
+	if s.providers == nil {
+		return ""
+	}
+	made := s.madeWorkspace(ctx, host)
+	if made == nil {
+		return ""
+	}
+	sender := s.records.Host(s.providers.CarrierOf(made.Provider))
+	if sender == nil {
+		return ""
+	}
+	return sender.Name
 }

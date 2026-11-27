@@ -243,6 +243,11 @@ func cleanFolder(folder string) string {
 func (s *Service) setupWork(ctx context.Context, host string) (wire.MachineSetupWork, error) {
 	none := wire.MachineSetupWork{Done: true, Projects: []wire.MachineSetupProject{}}
 	stored, _, err := s.readMachineSetup(ctx, host)
+	if err == nil && stored != nil && stored.userNeverBegan(time.Now()) {
+		// Its sender said nothing more (#7544): it fails, with words, and the wait ends.
+		s.endUserNeverBegan(ctx, host)
+		stored, _, err = s.readMachineSetup(ctx, host)
+	}
 	if err == nil && stored != nil && stored.waitUser(time.Now()) {
 		// Your set-up first (#7416): the host asks again.
 		return wire.MachineSetupWork{WaitUser: new(true), Projects: []wire.MachineSetupProject{}}, nil
