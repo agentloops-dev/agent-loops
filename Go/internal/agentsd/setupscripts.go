@@ -79,11 +79,13 @@ func (d *Daemon) setupScriptsFolder() string {
 	return ""
 }
 
-// scriptFile is one script as it is now: present, and its text, or why it has none.
+// scriptFile is one script as it is now: present, and its text, or why it has none. A file over
+// its limit has its size too (#7548), so the page can say by how much.
 type scriptFile struct {
 	present bool
 	text    string
 	problem string
+	size    int64
 }
 
 func (f scriptFile) hash() string { return scriptHash(f.text) }
@@ -120,7 +122,9 @@ func (d *Daemon) readSetupScript(file string, most int64) scriptFile {
 	case err != nil:
 		return scriptFile{present: true, problem: file + " cannot be read: " + err.Error()}
 	case int64(len(b)) > most:
-		return scriptFile{present: true, problem: fmt.Sprintf("%s is over %d KiB.", file, most>>10)}
+		size := max(info.Size(), most+1)
+		return scriptFile{present: true, size: size,
+			problem: fmt.Sprintf("%s is %d KiB, over its limit of %d KiB.", file, (size+(1<<10)-1)>>10, most>>10)}
 	case len(b) == 0:
 		return scriptFile{present: true, problem: file + " is empty."}
 	}
@@ -199,6 +203,9 @@ func scriptState(name string, f scriptFile, approved approvedSetup, state *machi
 	out := wire.SetupScript{Name: name, Present: f.present, Approvals: []wire.LockRecord{}, NextSeq: 1}
 	if f.problem != "" {
 		out.Problem = new(f.problem)
+		if f.size > 0 {
+			out.Size = new(f.size)
+		}
 	} else if f.present {
 		out.Text, out.Hash, out.Size = new(f.text), new(f.hash()), new(int64(len(f.text)))
 	}

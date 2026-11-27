@@ -103,7 +103,8 @@ struct MachineScriptsSettingsView: View {
                         Text(" · \(note)").foregroundStyle(StateTint.warning.style(or: .secondary))
                     }
                 }
-                Text(MachineScriptWords.filesLine(script)).appText(.fine).foregroundStyle(.secondary)
+                Text(MachineScriptWords.filesLine(script)).appText(.fine)
+                    .foregroundStyle(script.problem == nil ? AnyShapeStyle(.secondary) : StateTint.warning.style(or: .secondary))
                     .fixedSize(horizontal: false, vertical: true)
             }
             Spacer(minLength: 8)

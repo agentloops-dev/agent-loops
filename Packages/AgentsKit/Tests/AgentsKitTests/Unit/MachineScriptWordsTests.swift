@@ -101,8 +101,14 @@ struct MachineScriptWordsTests {
                                          approvedText: "apt-get install -y gh\n", approvals: [approval("made")])
         #expect(MachineScriptWords.filesNote(root) == nil)
         #expect(MachineScriptWords.filesLine(root) == "Runs once, as root, when a machine is made. Approved for new machines.")
-        root.problem = "root.sh is over 10 KiB."
-        #expect(MachineScriptWords.filesLine(root) == "root.sh is over 10 KiB.")
+        root.problem = "root.sh is 11 KiB, over its limit of 10 KiB."
+        #expect(MachineScriptWords.filesLine(root)
+            == "root.sh is 11 KiB, over its limit of 10 KiB. New machines can’t be made until you fix it. Then you can review it.")
+        // #7548: a setup.sh over its limit says new machines get none, and why there is no Review.
+        let large = DaemonAPI.SetupScript(name: "setup", present: true, size: 68 << 10, problem: "setup.sh is 68 KiB, over its limit of 64 KiB.")
+        #expect(MachineScriptWords.filesLine(large)
+            == "setup.sh is 68 KiB, over its limit of 64 KiB. New machines get no setup.sh until you fix it. Then you can review it.")
+        #expect(MachineScriptWords.filesNote(large) == nil && !large.needsApprovalForMade)
         #expect(MachineScriptWords.filesLine(DaemonAPI.SetupScript(name: "root", present: false)).hasPrefix("None."))
     }
 

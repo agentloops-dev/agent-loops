@@ -140,6 +140,13 @@ func TestASetUpScriptOverItsLimitIsNotUsed(t *testing.T) {
 	if s.Scripts[1].Problem == nil || s.Scripts[1].Text != nil {
 		t.Fatalf("%+v", s.Scripts[1])
 	}
+	// #7548: it says its size and the limit, rounded up, and carries the size.
+	if got := *s.Scripts[1].Problem; got != "setup.sh is 65 KiB, over its limit of 64 KiB." {
+		t.Errorf("problem %q", got)
+	}
+	if s.Scripts[1].Size == nil || *s.Scripts[1].Size != 64<<10+1 {
+		t.Errorf("size %v", s.Scripts[1].Size)
+	}
 	if _, err := d.approveSetupScript(wire.SetupApprove{Script: "setup", Approval: approvalOf(t, phone, state, "setup", "made", 1, text)}); codeOf(err) != wire.FailureSetupScriptChanged {
 		t.Fatalf("%v", err)
 	}
