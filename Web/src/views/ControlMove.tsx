@@ -1,6 +1,5 @@
 // Make This the Control Plane… on a machine's page (#6614, gate 2 of epic #6608), as the window's
-// ControlMoveSection (App/Sources/Hosts/ControlMoveSection.swift): for an admin with the flag
-// control-plane-move, on a machine that does not run the control plane now. The machine's checks
+// ControlMoveSection (App/Sources/Hosts/ControlMoveSection.swift): for an admin, on a machine that does not run the control plane now. The machine's checks
 // (control/eligible) are read as the page opens: with a reason, the button is off and the reasons are
 // under it. During a move to this machine, and for a day after, its steps; a failed one says which step,
 // and Try Again…. The strip across the page says the move while it runs, and for a day after.
@@ -8,8 +7,7 @@ import { useEffect, useState } from "preact/hooks";
 import type { Store } from "../model/store";
 import type { ControlCapacityCopy, ControlEligible, ControlMachine } from "../protocol/generated";
 import { Capability } from "../protocol/capabilities.generated";
-import { flagOn } from "../model/featureFlags";
-import { closeMove, controlMoveWords as words, flagName, forwardingLine, happens, meetsLine, moveLine, moveTo,
+import { closeMove, controlMoveWords as words, forwardingLine, happens, meetsLine, moveLine, moveTo,
   moves, movesHeardAt, question, runningMove, running, stepStates, steps, stripMove, takeMove } from "../model/controlMove";
 import type { ControlMove as Move } from "../protocol/generated";
 import { failedWords } from "../model/console";
@@ -18,9 +16,9 @@ import { LastUpdate } from "./LastUpdate";
 import { Modal } from "./Modal";
 import { Strip } from "./Strip";
 
-/** The person sees the move: the flag, an admin, and a control plane that moves. */
+/** The person sees the move: an admin, and a control plane that moves. */
 export function showsControlMove(store: Store): boolean {
-  return flagOn(flagName) && store.person.value?.role === "admin" && store.planeHas(Capability.controlMove1);
+  return store.person.value?.role === "admin" && store.planeHas(Capability.controlMove1);
 }
 
 /** The control plane's copies, each naming the machine that runs it (#7393): which machine runs it now. Read

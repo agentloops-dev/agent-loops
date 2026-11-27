@@ -44,7 +44,6 @@
 .timeline-block .title { font-weight: 600; }
 .timeline-block .title.past { fill: var(--paper-on-fill); }
 .timeline-block .title.later, .timeline-block .outside { fill: var(--c-later); font-weight: 600; }
-.timeline-block.dropped .outside { fill: var(--timeline-faint); font-weight: 400; }
 /* An epic on hold (#7335): its feature's colour, dimmed, and "On hold" after it, as the On hold chip says. */
 .timeline-block.held .past { fill-opacity: 0.4; }
 .timeline-block.held .title.past { fill: var(--c-later); }

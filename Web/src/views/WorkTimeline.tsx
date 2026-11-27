@@ -14,8 +14,8 @@ import { describe } from "../model/errors";
 import { boardChoices, boardName, withBoard, type WorkProject } from "../model/work";
 import { boards, forgeFolders, forgeHosts, loadBoards } from "../model/workLists";
 import {
-  Axis, bandGutter, bandRuleY, bands as bandsOf, blockHeight, blockWords, cardRow, chipWidth, chipWords, priorityBand, colourIndex, epicCount, epicRows, errorWords, forWhiteText, hexOf, hit, lastJoined,
-  lastJoinedWords, keepForecasts, layout, markWidth, mergeTimelines, nextInRow, noEpicsWords, noMachine, noProject, noProjectTitle, overlapping, lateAfter, Readers,
+  Axis, bandGutter, bandRuleY, bands as bandsOf, blockHeight, blockWords, cardRow, chipWidth, chipWords, priorityBand, colourIndex, epicCount, epicRows, errorWords, forWhiteText, hexOf, hit,
+  keepForecasts, layout, markWidth, mergeTimelines, nextInRow, noEpicsWords, noMachine, noProject, noProjectTitle, overlapping, lateAfter, Readers,
   packSpan, rangeSpan, rangeTitle, rangeWindow, reach, rgbOf, rowCount, rowGap, rowTop, sessionNodes, showTheWeek, startedBySessions,
   timelineLines, timelineRanges, timelineShows, titleWords, titleY, workingNow, zoomed, type Interval, type TimelineBand, type TimelineLine, type TimelineRange,
 } from "../model/workTimeline";
@@ -438,7 +438,6 @@ function Plot({ timeline: t, drawn, reading, working }: {
   const shows = timelineShows(drawn, reading, rows.length);
   const loading = shows === "loading";
   const d = new Drawing(lines, axis, now, height, offset, visible, loading ? [] : bandsOf(lines));
-  const last = shows === "empty" ? lastJoined(t, win.start) : undefined;
   return (
     <div class="timeline">
       <div class="timeline-scroll" ref={scroller} onScroll={onScroll}>
@@ -467,7 +466,6 @@ function Plot({ timeline: t, drawn, reading, working }: {
       {shows === "empty" && (
         <div class="timeline-empty" role="status">
           <span class="strong">{noEpicsWords(range.value)}</span>
-          {last !== undefined && <span class="quiet">{lastJoinedWords(last, now)}</span>}
           {range.value !== "week" && <button type="button" onClick={() => { range.value = "week"; goToNow(); }}>{showTheWeek}</button>}
         </div>
       )}
@@ -555,8 +553,8 @@ class Drawing {
   get seenTo() { return this.offset + 2 * this.visible; }
   seen(x: number) { return x >= this.seenFrom && x <= this.seenTo; }
 
-  /** A block's fill: its feature's colour, darkened until white has 4.5:1; grey when closed as not planned. */
-  colour(l: TimelineLine) { return fills[l.how.how === "dropped" ? fills.length - 1 : colourIndex(l.feature, fills.length)]!; }
+  /** A block's fill: its feature's colour, darkened until white has 4.5:1. */
+  colour(l: TimelineLine) { return fills[colourIndex(l.feature, fills.length)]!; }
 
   /** The epic or a child of it is worked on now, and the block is open at Now. */
   isWorking(l: TimelineLine) { return l.working > 0 && l.from <= this.now && l.end >= this.now; }
@@ -590,7 +588,7 @@ class Drawing {
       const pill = l.how.how === "waits" ? this.pillWidth(l.how.count) : 0;
       const words = blockWords(l, axis, measure, { next: nextInRow(this.lines, l), left: left + 2, trailing: pill });
       out.push(
-        <g key={`block ${l.id}`} class={`timeline-block${this.isWorking(l) ? " working" : ""}${l.how.how === "dropped" ? " dropped" : ""}${l.how.how === "held" ? " held" : ""}`}
+        <g key={`block ${l.id}`} class={`timeline-block${this.isWorking(l) ? " working" : ""}${l.how.how === "held" ? " held" : ""}`}
           style={{ "--c": c }}>
           {/* An epic a session is in a turn on now (#4265): a soft glow that breathes; with Reduce Motion, still. */}
           <defs>

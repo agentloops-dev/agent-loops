@@ -170,4 +170,25 @@ public enum WarmPoolWords {
     public static func replacedNote(pool: String) -> String {
         "The pool replaced this machine the moment it was claimed: “\(pool)” makes a new one now (Settings ▸ Machine Providers)."
     }
+
+    // MARK: A pool that waits for root.sh (#7157, gate 2 board *pool waits*)
+
+    public static let reviewLine = "root.sh changed. The pool makes no machines until you review it."
+
+    /// What a yes does: the pool's unclaimed machines ran the older root.sh.
+    public static func reviewAfter(_ pool: DaemonAPI.WarmPool) -> String {
+        let held = (pool.ready ?? 0) + (pool.settingUp ?? 0)
+        switch held {
+        case 0: return "After you approve, it makes machines again."
+        case 1: return "After you approve, it replaces its unclaimed machine."
+        default: return "After you approve, it replaces its \(held) unclaimed machines."
+        }
+    }
+
+    /// The pool as it is, with the person's yes to its changed root.sh.
+    public static func reviewed(_ pool: DaemonAPI.WarmPool) -> DaemonAPI.WarmPoolSet {
+        DaemonAPI.WarmPoolSet(id: pool.id, name: pool.name, scope: pool.scope, provider: pool.provider, size: pool.size,
+                              region: pool.region, runtimes: pool.runtimes, projects: pool.projects, minReady: pool.minReady,
+                              maxSize: pool.maxSize, replaceAfter: pool.replaceAfter, hours: pool.hours, reviewed: true)
+    }
 }

@@ -77,6 +77,12 @@ func (d *Daemon) registerUserSetup() {
 	On(d, wire.CallSetupSend, func(ctx context.Context, _ *Client, p wire.SetupSend) (wire.Empty, error) {
 		return wire.Empty{}, d.sendSetup(ctx, p)
 	})
+	On(d, wire.CallSetupWanted, func(_ context.Context, _ *Client, p wire.SetupWanted) (wire.SetupWantedAnswer, error) {
+		if p.Host == "" {
+			return wire.SetupWantedAnswer{}, Invalid("No machine is named.")
+		}
+		return wire.SetupWantedAnswer{Sending: d.setupWanted(p.Host)}, nil
+	})
 }
 
 func (d *Daemon) userSetupPath() string { return filepath.Join(d.Store.Loc.Root, userSetupFile) }
@@ -319,36 +325,36 @@ func (d *Daemon) sendSetup(ctx context.Context, p wire.SetupSend) error {
 	return d.deliverSetup(ctx, p.Host, text, approval, false, 2)
 }
 
-// toldSetupWanted is setup/wanted: a machine this one made, or one a person claimed from a warm
-// pool, is in the lock. It is sent setup.sh when an approval of scope made is in force.
-func (d *Daemon) toldSetupWanted(params json.RawMessage) {
-	var w wire.SetupWanted
-	if err := json.Unmarshal(params, &w); err != nil || w.Host == "" {
-		log.Printf("set-up: %s: %v", wire.NotifySetupWanted.Name, err)
-		return
+// setupWanted is setup/wanted: a machine this one made, or one a person claimed from a warm pool,
+// is in the lock. It is sent setup.sh when an approval of scope made is in force. It says at once
+// whether it is (#7416), so that the control plane has that machine's projects wait for it, and
+// sends it after.
+func (d *Daemon) setupWanted(host string) bool {
+	text, approval, err := d.approvedSetupScript("setup", machinelock.ScopeMade)
+	if err != nil {
+		// No setup.sh, or none approved for machines as they are made: nothing is sent.
+		if s := d.readSetupScript("setup.sh", 64<<10); s.present {
+			log.Printf("set-up: setup.sh is not sent to %s: %v", host, err)
+		}
+		return false
 	}
 	d.goJob("send set-up", func() {
-		text, approval, err := d.approvedSetupScript("setup", machinelock.ScopeMade)
-		if err != nil {
-			// No setup.sh, or none approved for machines as they are made: nothing is sent.
-			if s := d.readSetupScript("setup.sh", 64<<10); s.present {
-				log.Printf("set-up: setup.sh is not sent to %s: %v", w.Host, err)
-			}
+		if err := d.deliverSetup(d.hostCtx(), host, text, approval, true, setupDeliverTries); err != nil {
+			log.Printf("set-up: setup.sh was not sent to %s: %v", host, err)
 			return
 		}
-		if err := d.deliverSetup(d.hostCtx(), w.Host, text, approval, true, setupDeliverTries); err != nil {
-			log.Printf("set-up: setup.sh was not sent to %s: %v", w.Host, err)
-			return
-		}
-		log.Printf("set-up: setup.sh sent to %s", w.Host)
+		log.Printf("set-up: setup.sh sent to %s", host)
 	})
+	return true
 }
 
 // deliverSetup gives host setup.sh's text and approval, signed by this machine for host, through
-// the control plane. A refusal as not in the lock is tried again, tries times in all.
+// the control plane. A refusal as not in the lock is tried again, tries times in all. The last try
+// says it is the last, so that the control plane fails the target's Your set-up when it fails
+// (#7528).
 func (d *Daemon) deliverSetup(ctx context.Context, host, text string, approval wire.LockRecord, made bool, tries int) error {
 	for try := 1; ; try++ {
-		err := d.deliverSetupOnce(ctx, host, text, approval, made)
+		err := d.deliverSetupOnce(ctx, host, text, approval, made, try >= tries)
 		if err == nil || failureCode(err) != wire.FailureNotInLock || try >= tries {
 			return err
 		}
@@ -360,7 +366,7 @@ func (d *Daemon) deliverSetup(ctx context.Context, host, text string, approval w
 	}
 }
 
-func (d *Daemon) deliverSetupOnce(ctx context.Context, host, text string, approval wire.LockRecord, made bool) error {
+func (d *Daemon) deliverSetupOnce(ctx context.Context, host, text string, approval wire.LockRecord, made, last bool) error {
 	ask := d.askControl.Load()
 	if ask == nil {
 		return &Error{Code: wire.FailureNotSupported, Message: "This machine isn’t on a control plane."}
@@ -369,6 +375,10 @@ func (d *Daemon) deliverSetupOnce(ctx context.Context, host, text string, approv
 	if made {
 		step.Made = new(true)
 	}
-	return d.askPeerSigned(ctx, *ask, host, "set-up", wire.CallMachinesSetupDeliver.Name, wire.MachineSetupDeliver{Host: host},
+	relay := wire.MachineSetupDeliver{Host: host}
+	if last {
+		relay.Last = new(true)
+	}
+	return d.askPeerSigned(ctx, *ask, host, "set-up", wire.CallMachinesSetupDeliver.Name, relay,
 		wire.CallSetupDeliver.Name, step)
 }

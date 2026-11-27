@@ -1,12 +1,10 @@
 // Make This the Control Plane… (#6614, epic #6608): the steps and words of a move, as the window's
 // ControlMoveWords (Packages/AgentsKit/.../Model/ControlMove.swift), and the moves this page has heard:
-// control/moves/list as it connects, each step from control/moveChanged. For an admin with the flag
-// control-plane-move; the control plane answers admins only.
+// control/moves/list as it connects, each step from control/moveChanged. For an admin; the control
+// plane answers admins only.
 import { signal } from "@preact/signals";
 import type { ControlCapacityCopy, ControlEligible, ControlMachine, ControlMove, ControlMovePhase } from "../protocol/generated";
 import { fromWireDate } from "../protocol/dates";
-
-export const flagName = "control-plane-move";
 
 export const controlMoveWords = {
   make: "Make This the Control Plane…",

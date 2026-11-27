@@ -140,22 +140,7 @@ struct SendSetupSheet: View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Send setup.sh to \(machine)?").appText(.reading)
             LabeledContent("From", value: sender)
-            ScrollView {
-                VStack(alignment: .leading, spacing: 0) {
-                    let lines = MachineScriptWords.diff(script.changed ? script.approvedText : nil, script.text ?? "")
-                    ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
-                        Text("\(String(line.mark)) \(line.text)")
-                            .appText(.code)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .foregroundStyle(line.mark == " " ? AnyShapeStyle(.secondary) : AnyShapeStyle(.primary))
-                            .background(Self.tint(line.mark))
-                    }
-                }
-                .textSelection(.enabled)
-                .padding(8)
-            }
-            .frame(minHeight: 120, maxHeight: 320)
-            .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 6))
+            ScriptDiffView(script: script)
             Text("It runs on \(machine) now, as your user, and is approved for \(machine) only. Scripts are not secret: do not put a token in one.")
                 .appText(.fine).foregroundStyle(.secondary)
             if let problem {
@@ -178,13 +163,5 @@ struct SendSetupSheet: View {
         }
         .padding(20)
         .frame(width: 560)
-    }
-
-    static func tint(_ mark: Character) -> Color {
-        switch mark {
-        case "+": StateTint.vouched.color?.opacity(0.15) ?? .clear
-        case "-": StateTint.failure.color?.opacity(0.15) ?? .clear
-        default: .clear
-        }
     }
 }

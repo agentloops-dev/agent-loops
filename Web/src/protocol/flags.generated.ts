@@ -12,7 +12,6 @@ export interface FeatureFlagInfo {
 
 export const featureFlags: readonly FeatureFlagInfo[] = [
   { name: "commit-trailers", title: "Commit trailers", about: "The Commit trailers group in Agents ▸ Policy: the trailers on each agent's commits.", issue: 6373 },
-  { name: "control-plane-move", title: "Make This the Control Plane", about: "For admins on the Mac and the web page: Make This the Control Plane… on a machine's page, with its checks, and a strip with the move's steps.", issue: 6614 },
   { name: "dashboard", title: "Dashboard", about: "The Dashboard on the Mac: each work item with its sessions. The window opens to it.", issue: 6572 },
   { name: "docs", title: "Docs", about: "Docs in the sidebar, and the Docs section on a work item's page. On the Mac and the web page.", issue: 6572 },
   { name: "machine-scripts", title: "Machine scripts", about: "On the Mac: your root.sh and setup.sh set up each new machine. A failed Root set-up shows its last lines and what to do.", issue: 7151 },

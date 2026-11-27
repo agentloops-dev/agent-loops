@@ -508,6 +508,9 @@ public enum UserScopeWords {
     public static let cardRule = "Add only a card that has a spend limit, such as a Privacy.com card. A card locked to one merchant or category is safer. "
         + "An agent fills it into a page with fill_secret and never sees it. It stays sealed on your own machines."
     public static let cardConfirm = "This card has a spend limit"
+    /// The card sheet's optional billing address (#5569).
+    public static let cardAddressHeader = "Billing address"
+    public static let cardAddressHint = "Optional. For a sign-up that asks for a billing address. Agents fill each line and never see it."
 
     public static func refusal(_ error: any Error) -> String {
         if let error = error as? JSONRPCError {
@@ -532,14 +535,32 @@ public struct CardSecret: Codable, Sendable, Hashable {
     public var cvc: String
     public var name: String
     public var zip: String
+    /// The billing address (#5569), each part optional: nil is left out of the value, so a card
+    /// with none has the same bytes as before. fill_secret fills each part into its own field.
+    public var line1: String?
+    public var line2: String?
+    public var city: String?
+    public var state: String?
+    public var country: String?
 
     /// The card as the person typed it, tidied: the number's digits only, the expiry as MM/YY.
-    public init(number: String, expiry: String, cvc: String, name: String, zip: String) {
+    public init(number: String, expiry: String, cvc: String, name: String, zip: String,
+                line1: String = "", line2: String = "", city: String = "", state: String = "", country: String = "") {
         self.number = number.filter(Self.isDigit)
         self.expiry = Self.tidyExpiry(expiry)
         self.cvc = cvc.trimmingCharacters(in: .whitespaces)
         self.name = name.trimmingCharacters(in: .whitespaces)
         self.zip = zip.trimmingCharacters(in: .whitespaces)
+        self.line1 = Self.optional(line1)
+        self.line2 = Self.optional(line2)
+        self.city = Self.optional(city)
+        self.state = Self.optional(state)
+        self.country = Self.optional(country)
+    }
+
+    static func optional(_ typed: String) -> String? {
+        let text = typed.trimmingCharacters(in: .whitespaces)
+        return text.isEmpty ? nil : text
     }
 
     /// What is wrong with it, or nil when it can be added.

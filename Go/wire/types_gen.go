@@ -9988,6 +9988,9 @@ type MachineSetup struct {
 type MachineSetupDeliver struct {
 	// The machine's id, as the person's lock names it.
 	Host string `json:"host"`
+
+	// The sender's last try (#7528): it does not send again when this one fails. The control plane then fails that machine's Your set-up, with the reason, when the step has not begun. Absent: a refusal as not in the lock is tried again.
+	Last *bool `json:"last,omitzero"`
 }
 
 // A project folder a pool machine gets: path is the folder on its sources, project the project id it joins there, and sources the person's machines that have it, those online first.
@@ -10089,9 +10092,11 @@ const MachineSetupStepIDSmoke MachineSetupStepID = "smoke"
 const MachineSetupStepIDRoot MachineSetupStepID = "root"
 const MachineSetupStepIDUser MachineSetupStepID = "user"
 
-// machine/setupWork: what the set-up of the machine that asks has left (#6890, #6896). pool: a warm pool made it. claimed: a person claimed it, and from is the first of steps 6 to 8 that waits to run (absent: none does now). done: nothing is left to ask for. projects: the project folders to get, at their last commit. An unclaimed machine does step 6 and stops.
+// machine/setupWork: what the set-up of the machine that asks has left (#6890, #6896). pool: a warm pool made it. claimed: a person claimed it, and from is the first of steps 6 to 8 that waits to run (absent: none does now). done: nothing is left to ask for. projects: the project folders to get, at their last commit. An unclaimed machine does step 6 and stops. waitUser (#7416): Your set-up is on its way to this machine or runs there, and its projects wait for it: ask again.
 type MachineSetupWork struct {
 	Pool bool `json:"pool"`
+
+	WaitUser *bool `json:"waitUser,omitzero"`
 
 	Claimed bool `json:"claimed"`
 
@@ -12932,7 +12937,7 @@ type ProviderCarried struct {
 
 	Error *string `json:"error,omitzero"`
 
-	// Why it failed, for a client to say (#6072, W2b): denied (the person chose Deny), disconnected (the provider no longer takes the connection: it was removed there, or its refresh was refused), scope_missing (the person gave less than Agent Loops needs), account_inactive (the account can't make machines yet, such as no payment method), expired (the sign-in was not finished in time; start again).
+	// Why it failed, for a client to say (#6072, W2b): denied (the person chose Deny), disconnected (the provider no longer takes the connection: it was removed there, or its refresh was refused), scope_missing (the person gave less than Agent Loops needs), account_inactive (the account can't make machines yet, such as no payment method), expired (the sign-in was not finished in time; start again), setup_script_changed (#7157: the person's root.sh is not the text a client of their lock approved for new machines, so the make stopped).
 	Code *string `json:"code,omitzero"`
 }
 
@@ -15734,6 +15739,9 @@ type SetupScriptApproval struct {
 // setup/scripts (#7167): this machine's two set-up scripts, root then setup, as a client reads them to approve one.
 type SetupScripts struct {
 	Scripts []SetupScript `json:"scripts"`
+
+	// The folder the scripts are in, ~/.agents/machine-setup/ of this machine's personal home, as an absolute path (#7512): Settings ▸ Machines ▸ Machine scripts opens it and writes an example there. Left out when the machine has no personal home (a scratch root), which has no scripts.
+	Folder *string `json:"folder,omitzero"`
 }
 
 // setup/send (#7155, gate 1 of #7151, section 3): Send Set-up. A client of the person's lock asks this machine, the sender, to send its setup.sh to the machine host and run it there. approval is a setup.script record of setup, scope m:<host>, of the file as it is now: the sender keeps it as setup/approve does, then sends the approved text, signed by this machine for host, through the control plane (machines/setupDeliver). It answers when host took it, which then runs it.
@@ -15744,9 +15752,14 @@ type SetupSend struct {
 	Approval LockRecord `json:"approval"`
 }
 
-// setup/wanted (#7155): the control plane tells the machine that carries a provider that a machine it made (or a warm pool's machine that a person claimed) is ready for the person's setup.sh. It carries no text; the sender sends it only with an approval of scope made, and the target takes one such send.
+// setup/wanted (#7155): the control plane asks the machine that carries a provider whether it sends the person's setup.sh to a machine it made (or a warm pool's machine that a person claimed). It carries no text; the sender sends it only with an approval of scope made, and the target takes one such send.
 type SetupWanted struct {
 	Host string `json:"host"`
+}
+
+// setup/wanted's answer (#7416): sending says that the sender has a setup.sh approved for new machines, and sends it now.
+type SetupWantedAnswer struct {
+	Sending bool `json:"sending"`
 }
 
 type SharedInstructions struct {
@@ -18020,6 +18033,9 @@ type WarmPool struct {
 	// Why the pool stopped making, in the provider's words.
 	StoppedBecause *string `json:"stoppedBecause,omitzero"`
 
+	// The script the pool waits for the person to review (#7157): root when the machine that carries its provider refused a make because root.sh is not the text a client of the person's lock approved for new machines (code setup_script_changed). The pool is stopped until a pool/set with reviewed. Read-only.
+	Review *string `json:"review,omitzero"`
+
 	// Why a pool that is keeping makes no machine now: no machine that has its projects is online (#6890).
 	WaitingBecause *string `json:"waitingBecause,omitzero"`
 
@@ -18127,6 +18143,9 @@ type WarmPoolSet struct {
 	ReplaceAfter *float64 `json:"replaceAfter,omitzero"`
 
 	Hours *WarmPoolHours `json:"hours,omitzero"`
+
+	// The person approved the pool's changed root.sh (#7157): the pool makes machines again, and replaces its unclaimed machines made before now, which ran the older text.
+	Reviewed *bool `json:"reviewed,omitzero"`
 }
 
 // keeping: the pool makes and replaces. off-hours: outside its hours. stopped: three makes failed in a row, see stoppedBecause. empty: minReady is 0.

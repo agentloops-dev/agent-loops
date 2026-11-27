@@ -217,12 +217,16 @@ struct SettingsWindow: View {
                 .paperForm()
             }
         case .machines:
-            if let control {
+            if control != nil || model.showsMachineScriptsSettings {
                 HStack(spacing: 0) {
-                    MachinesPageList(page: $machinesPage)
-                    switch machinesPage {
-                    case .thisMac: FormColumn { MacSettingsView() }
-                    case .autoDetect: ControlSettingsView(control: control, page: .autoDetect)
+                    MachinesPageList(page: $machinesPage, autoDetect: control != nil,
+                                     machineScripts: model.showsMachineScriptsSettings)
+                    if machinesPage == .autoDetect, let control {
+                        ControlSettingsView(control: control, page: .autoDetect)
+                    } else if machinesPage == .machineScripts, model.showsMachineScriptsSettings {
+                        FormColumn { MachineScriptsSettingsView() }
+                    } else {
+                        FormColumn { MacSettingsView() }
                     }
                 }
             } else {
@@ -423,11 +427,14 @@ enum SettingsPane: String, Hashable, CaseIterable {
 /// folders picker looks. The list of every machine went to the sidebar (#3975).
 enum MachinesPage: Hashable {
     case thisMac, autoDetect
+    /// The person's root.sh and setup.sh (#7512), behind the flag machine-scripts.
+    case machineScripts
 
     var title: String {
         switch self {
         case .thisMac: "This Mac"
         case .autoDetect: ControlPage.autoDetect.title
+        case .machineScripts: "Machine scripts"
         }
     }
 }
@@ -651,13 +658,22 @@ private struct RuntimePageList: View {
 /// Machines' pages (#1759): every machine, with its count, and this Mac's own settings.
 private struct MachinesPageList: View {
     @Binding var page: MachinesPage
+    /// Auto-detect is the control plane's.
+    var autoDetect: Bool
+    var machineScripts: Bool
 
     var body: some View {
         PageList {
             PageLine(title: MachinesPage.thisMac.title, lit: page == .thisMac, count: nil,
                      action: { page = .thisMac })
-            PageLine(title: MachinesPage.autoDetect.title, lit: page == .autoDetect, count: nil,
-                     action: { page = .autoDetect })
+            if machineScripts {
+                PageLine(title: MachinesPage.machineScripts.title, lit: page == .machineScripts, count: nil,
+                         action: { page = .machineScripts })
+            }
+            if autoDetect {
+                PageLine(title: MachinesPage.autoDetect.title, lit: page == .autoDetect, count: nil,
+                         action: { page = .autoDetect })
+            }
         }
     }
 }

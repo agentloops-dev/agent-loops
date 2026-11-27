@@ -60,6 +60,10 @@ func TestASenderKeepsOnlyAClientsApprovalOfTheTextThere(t *testing.T) {
 		scripts.Scripts[1].NextSeq != 1 || *scripts.Scripts[1].Hash != scriptHash(text) {
 		t.Fatalf("%+v", scripts)
 	}
+	// #7512: the answer names the folder, so Settings ▸ Machines opens the one read here.
+	if scripts.Folder == nil || *scripts.Folder != filepath.Join(d.PersonalHome, ".agents", "machine-setup") {
+		t.Fatalf("folder: %v", scripts.Folder)
+	}
 	if _, _, err := d.approvedSetupScript("setup", machinelock.ScopeMade); codeOf(err) != wire.FailureSetupScriptChanged {
 		t.Fatalf("a script no client approved is used: %v", err)
 	}
@@ -230,5 +234,49 @@ func TestAMakeWithNoLockSendsNoRootScriptAndSaysWhy(t *testing.T) {
 	lines, sent, err := d.rootBootForMake()
 	if err != nil || lines != "" || sent == nil || !strings.Contains(sent.Problem, "needs your machine lock") {
 		t.Fatalf("%q %+v %v", lines, sent, err)
+	}
+}
+
+// #7157: a make that root.sh stopped carries the code setup_script_changed, so a warm pool waits
+// for a review; make_machine says a changed setup.sh on its card, and refuses before the card
+// for a changed root.sh, only on the machine that carries the provider.
+func TestAChangedScriptShowsBeforeAMake(t *testing.T) {
+	t.Parallel()
+	const text = "echo setup\n"
+	d, phone, _, state, write := senderWith(t, text)
+	if got := rootBootRefused(&Error{Code: wire.FailureSetupScriptChanged, Message: "root.sh changed"}); got.Code == nil || *got.Code != "setup_script_changed" ||
+		*got.Error != "root.sh changed" {
+		t.Fatalf("%+v", got)
+	}
+	if got := rootBootRefused(errors.New("no")); got.Code != nil {
+		t.Fatalf("%+v", got)
+	}
+	// Not the provider's carrier: nothing is said.
+	if note, err := d.scriptsBeforeMake("do"); note != "" || err != nil {
+		t.Fatalf("%q %v", note, err)
+	}
+	c := d.carried()
+	c.mu.Lock()
+	c.held["do"] = &carriedConnection{}
+	c.mu.Unlock()
+	note, err := d.scriptsBeforeMake("do")
+	if err != nil || !strings.Contains(note, "setup.sh is new or changed") {
+		t.Fatalf("a setup.sh no client approved: %q %v", note, err)
+	}
+	if _, err := d.approveSetupScript(wire.SetupApprove{Script: "setup", Approval: approvalOf(t, phone, state, "setup", "made", 1, text)}); err != nil {
+		t.Fatal(err)
+	}
+	if note, err := d.scriptsBeforeMake("do"); note != "" || err != nil {
+		t.Fatalf("nothing changed shows nothing: %q %v", note, err)
+	}
+	write("echo other\n")
+	if note, _ := d.scriptsBeforeMake("do"); !strings.Contains(note, "setup.sh") {
+		t.Fatalf("a changed setup.sh: %q", note)
+	}
+	write(text)
+	root := filepath.Join(d.PersonalHome, ".agents", "machine-setup", "root.sh")
+	must(t, os.WriteFile(root, []byte("apt-get install -y gh\n"), 0o600))
+	if _, err := d.scriptsBeforeMake("do"); codeOf(err) != wire.FailureSetupScriptChanged || !strings.Contains(err.Error(), "root.sh") {
+		t.Fatalf("a changed root.sh: %v", err)
 	}
 }

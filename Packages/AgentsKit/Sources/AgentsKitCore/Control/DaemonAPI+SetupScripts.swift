@@ -6,6 +6,8 @@ import Foundation
 public extension DaemonAPI.Method {
     /// The sender's two scripts, with the text approved last (#7167).
     static let setupScripts = "setup/scripts"
+    /// A client of the person's lock approves a script's text as it is now (#7167, #7157).
+    static let setupApprove = "setup/approve"
     /// Send Set-up (#7155): the sender sends `setup.sh` to one machine, with a client's approval for it.
     static let setupSend = "setup/send"
     /// Run Again, and Try Again of your set-up (#7155): the machine runs the copy it was sent again.
@@ -51,15 +53,42 @@ public extension DaemonAPI {
 
         /// The file's name: `root.sh` or `setup.sh`.
         public var file: String { name + ".sh" }
+
+        /// Whether a client's approval for `scope` is in force for the text there now (#7157).
+        public func approved(for scope: String) -> Bool {
+            !changed && approvals.contains { $0.scope == scope }
+        }
+
+        /// Whether a make must ask first (#7157): the file is there, can be read, and is not
+        /// the text approved for machines as they are made.
+        public var needsApprovalForMade: Bool {
+            present && text != nil && !approved(for: "made")
+        }
     }
 
     /// `setup/scripts`: root then setup.
     struct SetupScripts: Codable, Sendable, Hashable {
         public var scripts: [SetupScript]
+        /// The folder they are in, as an absolute path (#7512); nil with no personal home.
+        public var folder: String?
 
-        public init(scripts: [SetupScript]) { self.scripts = scripts }
+        public init(scripts: [SetupScript], folder: String? = nil) {
+            self.scripts = scripts
+            self.folder = folder
+        }
 
         public func script(_ name: String) -> SetupScript? { scripts.first { $0.name == name } }
+    }
+
+    /// `setup/approve`: an approval of `script` (`root` or `setup`), a `setup.script` record.
+    struct SetupApprove: Codable, Sendable, Hashable {
+        public var script: String
+        public var approval: LockRecord
+
+        public init(script: String, approval: LockRecord) {
+            self.script = script
+            self.approval = approval
+        }
     }
 
     /// `setup/send`: Send Set-up to the machine `host`, with an approval of `setup` of scope `m:<host>`.

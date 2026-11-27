@@ -9556,6 +9556,12 @@ export interface MachineSetup {
 export interface MachineSetupDeliver {
   /** The machine's id, as the person's lock names it. */
   host: string;
+  /**
+   * The sender's last try (#7528): it does not send again when this one fails. The control plane
+   * then fails that machine's Your set-up, with the reason, when the step has not begun. Absent: a
+   * refusal as not in the lock is tried again.
+   */
+  last?: boolean;
 }
 
 /**
@@ -9667,10 +9673,12 @@ export type MachineSetupStepID =
  * machine/setupWork: what the set-up of the machine that asks has left (#6890, #6896). pool: a warm
  * pool made it. claimed: a person claimed it, and from is the first of steps 6 to 8 that waits to
  * run (absent: none does now). done: nothing is left to ask for. projects: the project folders to
- * get, at their last commit. An unclaimed machine does step 6 and stops.
+ * get, at their last commit. An unclaimed machine does step 6 and stops. waitUser (#7416): Your
+ * set-up is on its way to this machine or runs there, and its projects wait for it: ask again.
  */
 export interface MachineSetupWork {
   pool: boolean;
+  waitUser?: boolean;
   claimed: boolean;
   done: boolean;
   from?: MachineSetupStepID;
@@ -12422,9 +12430,10 @@ export interface ProviderCarried {
    * (the provider no longer takes the connection: it was removed there, or its refresh was
    * refused), scope_missing (the person gave less than Agent Loops needs), account_inactive (the
    * account can't make machines yet, such as no payment method), expired (the sign-in was not
-   * finished in time; start again).
+   * finished in time; start again), setup_script_changed (#7157: the person's root.sh is not the
+   * text a client of their lock approved for new machines, so the make stopped).
    */
-  code?: "denied" | "disconnected" | "scope_missing" | "account_inactive" | "expired";
+  code?: "denied" | "disconnected" | "scope_missing" | "account_inactive" | "expired" | "setup_script_changed";
 }
 
 /**
@@ -15138,6 +15147,12 @@ export interface SetupScriptApproval {
  */
 export interface SetupScripts {
   scripts: SetupScript[];
+  /**
+   * The folder the scripts are in, ~/.agents/machine-setup/ of this machine's personal home, as an
+   * absolute path (#7512): Settings ▸ Machines ▸ Machine scripts opens it and writes an example
+   * there. Left out when the machine has no personal home (a scratch root), which has no scripts.
+   */
+  folder?: string;
 }
 
 /**
@@ -15154,13 +15169,21 @@ export interface SetupSend {
 }
 
 /**
- * setup/wanted (#7155): the control plane tells the machine that carries a provider that a machine
- * it made (or a warm pool's machine that a person claimed) is ready for the person's setup.sh. It
+ * setup/wanted (#7155): the control plane asks the machine that carries a provider whether it sends
+ * the person's setup.sh to a machine it made (or a warm pool's machine that a person claimed). It
  * carries no text; the sender sends it only with an approval of scope made, and the target takes
  * one such send.
  */
 export interface SetupWanted {
   host: string;
+}
+
+/**
+ * setup/wanted's answer (#7416): sending says that the sender has a setup.sh approved for new
+ * machines, and sends it now.
+ */
+export interface SetupWantedAnswer {
+  sending: boolean;
 }
 
 export interface SharedInstructions {
@@ -17109,6 +17132,13 @@ export interface WarmPool {
   /** Why the pool stopped making, in the provider's words. */
   stoppedBecause?: string;
   /**
+   * The script the pool waits for the person to review (#7157): root when the machine that carries
+   * its provider refused a make because root.sh is not the text a client of the person's lock
+   * approved for new machines (code setup_script_changed). The pool is stopped until a pool/set
+   * with reviewed. Read-only.
+   */
+  review?: "root";
+  /**
    * Why a pool that is keeping makes no machine now: no machine that has its projects is online
    * (#6890).
    */
@@ -17208,6 +17238,11 @@ export interface WarmPoolSet {
   maxSize: number;
   replaceAfter?: number;
   hours?: WarmPoolHours;
+  /**
+   * The person approved the pool's changed root.sh (#7157): the pool makes machines again, and
+   * replaces its unclaimed machines made before now, which ran the older text.
+   */
+  reviewed?: boolean;
 }
 
 /**
@@ -19677,13 +19712,13 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   MachineSessionCall: { required: ["host", "call"], optional: [] },
   MachineSessionStart: { required: ["host", "start"], optional: [] },
   MachineSetup: { required: ["steps", "startedAt"], optional: ["readyAt"] },
-  MachineSetupDeliver: { required: ["host"], optional: [] },
+  MachineSetupDeliver: { required: ["host"], optional: ["last"] },
   MachineSetupProject: { required: ["path", "sources"], optional: ["project"] },
   MachineSetupProjects: { required: ["pool", "finished", "folders"], optional: ["detail", "problem"] },
   MachineSetupReport: { required: ["step", "state"], optional: ["detail", "error", "fromPool", "code", "hash", "warning"] },
   MachineSetupSource: { required: ["machine", "name", "online"], optional: [] },
   MachineSetupStep: { required: ["id", "state"], optional: ["startedAt", "endedAt", "detail", "error", "fromPool", "slower", "hash", "warning"] },
-  MachineSetupWork: { required: ["pool", "claimed", "done", "projects"], optional: ["from"] },
+  MachineSetupWork: { required: ["pool", "claimed", "done", "projects"], optional: ["waitUser", "from"] },
   MachineStatus: { required: ["idle", "running"], optional: ["schedule"] },
   MachineStop: { required: ["host"], optional: ["confirmRunning"] },
   MachineTunnel: { required: ["up"], optional: ["problem"] },
@@ -20118,9 +20153,10 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   SetupRootLog: { required: ["text", "cut"], optional: [] },
   SetupScript: { required: ["name", "present", "approvals", "changed", "nextSeq"], optional: ["text", "hash", "size", "problem", "approvedText", "approvedHash"] },
   SetupScriptApproval: { required: ["hash", "size"], optional: [] },
-  SetupScripts: { required: ["scripts"], optional: [] },
+  SetupScripts: { required: ["scripts"], optional: ["folder"] },
   SetupSend: { required: ["host", "approval"], optional: [] },
   SetupWanted: { required: ["host"], optional: [] },
+  SetupWantedAnswer: { required: ["sending"], optional: [] },
   SharedInstructions: { required: ["path", "exists", "reach"], optional: [] },
   SharedLook: { required: ["kind", "page", "item", "text"], optional: [] },
   SharedMCP: { required: ["file", "servers", "app", "runtimeOnly"], optional: ["problem"] },
@@ -20281,14 +20317,14 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   WaitingOffer: { required: ["name", "offer"], optional: [] },
   WakeSettings: { required: ["keepsAwake", "graceHours", "warmRuntimes", "awakeOnPower"], optional: ["backgroundHours", "releaseAfterMinutes"] },
   WakeState: { required: ["isHolding", "agentsInFlight", "heldBackByBattery", "onPower"], optional: ["batteryPercent", "since", "graceUntil"] },
-  WarmPool: { required: ["id", "name", "scope", "provider", "minReady", "maxSize", "target", "state"], optional: ["size", "region", "runtimes", "projects", "replaceAfter", "hours", "ready", "settingUp", "failedMakes", "stoppedBecause", "waitingBecause", "machines", "claims"] },
+  WarmPool: { required: ["id", "name", "scope", "provider", "minReady", "maxSize", "target", "state"], optional: ["size", "region", "runtimes", "projects", "replaceAfter", "hours", "ready", "settingUp", "failedMakes", "stoppedBecause", "review", "waitingBecause", "machines", "claims"] },
   WarmPoolClaim: { required: ["provider"], optional: ["size", "region", "stopWhenIdle"] },
   WarmPoolClaimed: { required: ["workspace", "name", "fromPool"], optional: ["host", "pool", "note"] },
   WarmPoolClaims: { required: ["count", "empty"], optional: ["medianSeconds"] },
   WarmPoolHours: { required: ["days", "from", "to"], optional: ["timezone"] },
   WarmPoolMachine: { required: ["name", "state", "madeAt"], optional: ["detail"] },
   WarmPoolRequest: { required: ["id"], optional: [] },
-  WarmPoolSet: { required: ["name", "provider", "minReady", "maxSize"], optional: ["id", "scope", "size", "region", "runtimes", "projects", "replaceAfter", "hours"] },
+  WarmPoolSet: { required: ["name", "provider", "minReady", "maxSize"], optional: ["id", "scope", "size", "region", "runtimes", "projects", "replaceAfter", "hours", "reviewed"] },
   WarmPools: { required: ["pools"], optional: [] },
   WebPagePairing: { required: ["url"], optional: [] },
   WebPushKey: { required: [], optional: ["publicKey"] },

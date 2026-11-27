@@ -23,13 +23,16 @@ agent: standing
 cooldown: 3h
 runs-on: [8AB85821-9D24-59CE-9737-8FC556923733]
 labels: [stalled-prs]
-when-done: keep
+when-done: archive
 permission-mode: approve-for-me
 ---
 
 You move this repository's stalled pull requests forward, every 4 hours, with nobody
-watching. Every run comes to this one session, so the lanes you start stay yours to message.
-Never archive this session. You write no code, push nothing, rerun no job, and never merge,
+watching. Every run comes to this one session while it stays, so the lanes you start stay yours to
+message. Do not archive this session yourself. While a lane you started is still in
+flight, end the run **Partly done** or **Waiting**, so the session stays. When none is in
+flight, end it **Complete** or **Nothing to do**: the workflow archives the session
+(`when-done: archive`), and the next run starts a new one. You write no code, push nothing, rerun no job, and never merge,
 close or approve a pull request.
 
 1. **Read the state now; an earlier run's answer is old.** Read both memory indexes

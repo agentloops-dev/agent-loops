@@ -6,8 +6,6 @@
 public enum FeatureFlag: String, CaseIterable, Sendable {
     /// Commit trailers (#6373).
     case commitTrailers = "commit-trailers"
-    /// Make This the Control Plane (#6614).
-    case controlPlaneMove = "control-plane-move"
     /// Dashboard (#6572).
     case dashboard = "dashboard"
     /// Docs (#6572).
@@ -29,7 +27,6 @@ public enum FeatureFlag: String, CaseIterable, Sendable {
     public var title: String {
         switch self {
         case .commitTrailers: "Commit trailers"
-        case .controlPlaneMove: "Make This the Control Plane"
         case .dashboard: "Dashboard"
         case .docs: "Docs"
         case .machineScripts: "Machine scripts"
@@ -45,7 +42,6 @@ public enum FeatureFlag: String, CaseIterable, Sendable {
     public var about: String {
         switch self {
         case .commitTrailers: "The Commit trailers group in Agents ▸ Policy: the trailers on each agent's commits."
-        case .controlPlaneMove: "For admins on the Mac and the web page: Make This the Control Plane… on a machine's page, with its checks, and a strip with the move's steps."
         case .dashboard: "The Dashboard on the Mac: each work item with its sessions. The window opens to it."
         case .docs: "Docs in the sidebar, and the Docs section on a work item's page. On the Mac and the web page."
         case .machineScripts: "On the Mac: your root.sh and setup.sh set up each new machine. A failed Root set-up shows its last lines and what to do."
@@ -61,7 +57,6 @@ public enum FeatureFlag: String, CaseIterable, Sendable {
     public var issue: Int {
         switch self {
         case .commitTrailers: 6373
-        case .controlPlaneMove: 6614
         case .dashboard: 6572
         case .docs: 6572
         case .machineScripts: 7151

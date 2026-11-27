@@ -121,6 +121,10 @@ type Hooks struct {
 	// SetupStep keeps a step of a made machine's set-up (#5765, epic #5353): 1, create
 	// machine, as the provider makes it, and 2, join machine, until it joins. Nil keeps none.
 	SetupStep func(host string, report wire.MachineSetupReport)
+	// SetupNotSent is a machines/setupDeliver that the target refused, or that did not reach it
+	// (#7528): sender is the name of the machine that sent it, and last says the sender does
+	// not try again. Nil does nothing.
+	SetupNotSent func(host, sender string, refusal *Failure, last bool)
 	// MadeFor keeps, in the store, the workspace a made machine's host id is for, as soon as
 	// the provider has made it (#6075): the host that joins as that id is linked to it by its
 	// code, also after the control plane restarted and lost linkWhenJoined's wait. Nil keeps
@@ -2546,10 +2550,32 @@ func (p *Providers) providerCall(id string, work func(Provider) (any, error)) (a
 	}
 	var failure *ProviderFailure
 	if errors.As(err, &failure) {
-		return nil, fail(CodeProviderFailed, "%s", failure.Words)
+		refused := fail(CodeProviderFailed, "%s", failure.Words)
+		if failure.Code != "" {
+			refused.Data, _ = json.Marshal(map[string]string{"reason": failure.Code})
+		}
+		return nil, refused
 	}
 	return out, err
 }
+
+// FailureReason is the code a provider's failure carries as its data's reason (#6072, #7157),
+// such as setup_script_changed; none for any other error.
+func FailureReason(err error) string {
+	var refused *Failure
+	if !errors.As(err, &refused) || len(refused.Data) == 0 {
+		return ""
+	}
+	var data struct {
+		Reason string `json:"reason"`
+	}
+	_ = json.Unmarshal(refused.Data, &data) // data with no reason has none
+	return data.Reason
+}
+
+// SetupScriptChanged is the reason of a make that the carrying machine stopped because the
+// person's root.sh is not the text a client of their lock approved for new machines (#7157).
+const SetupScriptChanged = "setup_script_changed"
 
 // shellQuoted is WorkspaceProviders.shellQuoted.
 func shellQuoted(value string) string { return "'" + strings.ReplaceAll(value, "'", `'\''`) + "'" }

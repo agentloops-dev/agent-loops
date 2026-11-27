@@ -38,6 +38,9 @@ const (
 	setupProjectsEvery = 5 * time.Second
 	// setupWorkEvery is how often a pool machine asks if it was claimed, until it is ready.
 	setupWorkEvery = 5 * time.Second
+	// setupUserEvery is how often the projects step asks again while it waits for Your set-up
+	// (#7416): often, as a machine with no setup.sh waits only for the sender's answer.
+	setupUserEvery = time.Second
 )
 
 type machineSetupBook struct {
@@ -114,6 +117,18 @@ func (d *Daemon) getSetupProjects(ctx context.Context, patience, every time.Dura
 		out.Problem = &words
 		return out
 	}
+	// Your set-up first, so that a project's script can use what it installed (#7416): the
+	// control plane says to wait while setup.sh is on its way or runs. The step begins after.
+	work, err := d.askSetupWork(ctx)
+	for err == nil && work.WaitUser != nil && *work.WaitUser {
+		select {
+		case <-ctx.Done():
+			return problem("The set-up stopped while it waited for Your set-up.")
+		case <-time.After(min(every, setupUserEvery)):
+		}
+		work, err = d.askSetupWork(ctx)
+	}
+	say("Looking for projects")
 	deadline := time.Now().Add(patience)
 	pause := func() bool {
 		if time.Now().After(deadline) {
@@ -126,7 +141,6 @@ func (d *Daemon) getSetupProjects(ctx context.Context, patience, every time.Dura
 			return true
 		}
 	}
-	work, err := d.askSetupWork(ctx)
 	for err != nil && !noSetupWork(err) && pause() {
 		work, err = d.askSetupWork(ctx)
 	}

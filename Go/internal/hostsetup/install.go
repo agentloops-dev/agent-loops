@@ -524,7 +524,8 @@ func poolProjects(ctx context.Context, o *Options, d Deps, rep *Reporter) (pool 
 // pool made this machine.
 func prepareProjects(ctx context.Context, o *Options, d Deps, logs string, rep *Reporter, say func(string, ...any)) (bool, error) {
 	step := wire.MachineSetupStepIDProjects
-	rep.Say(step, wire.MachineSetupStateRunning, "Looking for projects", "")
+	// The host says the step's first line, "Looking for projects", once the step may begin: on
+	// a made machine, after Your set-up (#7416).
 	pool, note, err := poolProjects(ctx, o, d, rep)
 	if err != nil {
 		return pool, err

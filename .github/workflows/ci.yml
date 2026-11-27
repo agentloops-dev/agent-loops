@@ -83,8 +83,13 @@ jobs:
       # `nx affected` is its merge base with main.
       - uses: actions/checkout@v6
         with:
-          fetch-depth: 0
+          fetch-depth: 1
           ref: ${{ inputs.sha || github.event.pull_request.head.sha || github.sha }}
+      # The history of this commit and of main, for `nx affected`'s merge base, and no other
+      # branch (#6965): fetch-depth 0 fetched every branch and tag, the screenshots branch's
+      # 524 MB with them. The jobs that read tags (`git describe`) fetch them too.
+      - name: History
+        run: bash scripts/ci-history.sh
       - uses: actions/setup-node@v5
         with:
           node-version-file: Web/.node-version
@@ -170,8 +175,10 @@ jobs:
       # `nx affected` is its merge base with main.
       - uses: actions/checkout@v6
         with:
-          fetch-depth: 0
+          fetch-depth: 1
           ref: ${{ inputs.sha || github.event.pull_request.head.sha || github.sha }}
+      - name: History
+        run: bash scripts/ci-history.sh --tags
       # Each tracked file's time from its content (#5677), so Go's test cache below keeps the
       # pass of a package whose tests read the repo's files: a checkout's own times made about
       # 20 of the module's packages run again on every run.
@@ -329,7 +336,7 @@ jobs:
       # Mixed versions (#1767): the last release's agentsd joined to this tree's control plane,
       # and the last release's control plane with this tree's client, as a person meets them
       # while an update rolls out (docs/explanation/versions.md). It needs the tags, which the
-      # checkout above fetched.
+      # History step above fetched (ci-history.sh --tags).
       - name: Time left for the mixed-versions test
         id: skew-budget
         if: ${{ always() && !cancelled() && env.GO != 'skip' }}
@@ -438,8 +445,10 @@ jobs:
       # The pull request's own commit, as in `go` (#5584).
       - uses: actions/checkout@v6
         with:
-          fetch-depth: 0
+          fetch-depth: 1
           ref: ${{ inputs.sha || github.event.pull_request.head.sha || github.sha }}
+      - name: History
+        run: bash scripts/ci-history.sh --tags
       # Each tracked file's time from its content, as in `go` (#5677), here for Xcode's incremental
       # build. The restored DerivedData saved almost nothing: a checkout's own times made every
       # source newer than its object, and Xcode's compilation cache is not in the CI cache (there
@@ -761,8 +770,10 @@ jobs:
           echo "NX_WORKSPACE_DATA_DIRECTORY=$RUNNER_TEMP/nx/data" >> "$GITHUB_ENV"
       - uses: actions/checkout@v6
         with:
-          fetch-depth: 0
+          fetch-depth: 1
           ref: ${{ inputs.sha || github.event.pull_request.head.sha || github.sha }}
+      - name: History
+        run: bash scripts/ci-history.sh
       - name: Xcode
         run: echo "DEVELOPER_DIR=/Applications/Xcode_$(cat .xcode-version).app/Contents/Developer" >> "$GITHUB_ENV"
       # As in `apps`: a new image is a miss, not a restore nobody can use.
@@ -969,8 +980,10 @@ jobs:
           echo "NX_WORKSPACE_DATA_DIRECTORY=$RUNNER_TEMP/nx/data" >> "$GITHUB_ENV"
       - uses: actions/checkout@v6
         with:
-          fetch-depth: 0
+          fetch-depth: 1
           ref: ${{ inputs.sha || github.event.pull_request.head.sha || github.sha }}
+      - name: History
+        run: bash scripts/ci-history.sh
       # SwiftLint reads Swift with this Xcode's SourceKit.
       - name: Xcode
         run: echo "DEVELOPER_DIR=/Applications/Xcode_$(cat .xcode-version).app/Contents/Developer" >> "$GITHUB_ENV"
@@ -1023,8 +1036,10 @@ jobs:
           echo "GO_TEST_LOG_DIR=$RUNNER_TEMP/go-test-logs" >> "$GITHUB_ENV"
       - uses: actions/checkout@v6
         with:
-          fetch-depth: 0
+          fetch-depth: 1
           ref: ${{ inputs.sha || github.event.pull_request.head.sha || github.sha }}
+      - name: History
+        run: bash scripts/ci-history.sh
       - name: Xcode
         run: echo "DEVELOPER_DIR=/Applications/Xcode_$(cat .xcode-version).app/Contents/Developer" >> "$GITHUB_ENV"
       - uses: actions/setup-node@v5

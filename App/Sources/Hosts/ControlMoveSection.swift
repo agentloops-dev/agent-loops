@@ -1,8 +1,8 @@
 import AgentsKitCore
 import SwiftUI
 
-/// Make This the Control Plane… on a machine's page (#6614, gate 2 of epic #6608), for an admin
-/// with the flag `control-plane-move`, on a machine that does not run the control plane now. It
+/// Make This the Control Plane… on a machine's page (#6614, gate 2 of epic #6608), for an admin,
+/// on a machine that does not run the control plane now. It
 /// reads the machine's checks (`control/eligible`) when the page opens: with a reason, the button
 /// is off and the reasons are under it, in the control plane's words. During a move to this
 /// machine and for a day after it, the move's steps; a failed one says which step, and Try Again….

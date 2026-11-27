@@ -477,6 +477,8 @@ struct PromptBar: View {
                     // ⌘V attaches pictures and files too, and still pastes the words (#396).
                     .modifier(PastesIntoPrompt(isFocused: focused, attachFile: attach,
                                                attachPicture: attachPicture))
+                    // The wheel over a long prompt scrolls the prompt, not the chat (#6887).
+                    .modifier(ScrollsLongPrompt())
                     // Held, words and all, while they start an agent (#87).
                     .disabled(agent == nil && model.isStarting)
                     // Return sends. Shift-Return and Option-Return break the line (#377,

@@ -46,6 +46,11 @@ test("user scope: a card is one value of its parts, as the window writes it (#35
   assert.equal(u.cardProblem({ ...ok, expiry: "13/31" }), "Write the expiry as MM/YY.");
   assert.equal(u.cardProblem({ ...ok, cvc: "73" }), "The CVC is 3 or 4 digits.");
   assert.equal(u.cardProblem({ ...ok, name: "" }), "Write the name on the card.");
+  // #5569: the billing address is optional, each part in the value only when set, in the window's key order.
+  const billed = u.tidyCard({ ...ok, line1: " 1 Scratch Street ", line2: "", city: "Testville", state: "CA", country: "United States" });
+  assert.equal(u.cardValue(billed),
+    '{"city":"Testville","country":"United States","cvc":"737","expiry":"09/31","line1":"1 Scratch Street","name":"S","number":"4242424242424242","state":"CA","zip":"1"}');
+  assert.deepEqual(u.parseCard(u.cardValue(billed)), billed);
   assert.match(u.cardRule, /has a spend limit, such as a Privacy.com card. A card locked to one merchant or category is safer/);
 });
 
