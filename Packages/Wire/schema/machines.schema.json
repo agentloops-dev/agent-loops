@@ -5712,6 +5712,10 @@
           "items": {
             "$ref": "#/definitions/SetupScript"
           }
+        },
+        "folder": {
+          "type": "string",
+          "description": "The folder the scripts are in, ~/.agents/machine-setup/ of this machine's personal home, as an absolute path (#7512): Settings ▸ Machines ▸ Machine scripts opens it and writes an example there. Left out when the machine has no personal home (a scratch root), which has no scripts."
         }
       },
       "required": [

@@ -69,8 +69,13 @@ public extension DaemonAPI {
     /// `setup/scripts`: root then setup.
     struct SetupScripts: Codable, Sendable, Hashable {
         public var scripts: [SetupScript]
+        /// The folder they are in, as an absolute path (#7512); nil with no personal home.
+        public var folder: String?
 
-        public init(scripts: [SetupScript]) { self.scripts = scripts }
+        public init(scripts: [SetupScript], folder: String? = nil) {
+            self.scripts = scripts
+            self.folder = folder
+        }
 
         public func script(_ name: String) -> SetupScript? { scripts.first { $0.name == name } }
     }

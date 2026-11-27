@@ -15139,6 +15139,12 @@ export interface SetupScriptApproval {
  */
 export interface SetupScripts {
   scripts: SetupScript[];
+  /**
+   * The folder the scripts are in, ~/.agents/machine-setup/ of this machine's personal home, as an
+   * absolute path (#7512): Settings ▸ Machines ▸ Machine scripts opens it and writes an example
+   * there. Left out when the machine has no personal home (a scratch root), which has no scripts.
+   */
+  folder?: string;
 }
 
 /**
@@ -20131,7 +20137,7 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   SetupRootLog: { required: ["text", "cut"], optional: [] },
   SetupScript: { required: ["name", "present", "approvals", "changed", "nextSeq"], optional: ["text", "hash", "size", "problem", "approvedText", "approvedHash"] },
   SetupScriptApproval: { required: ["hash", "size"], optional: [] },
-  SetupScripts: { required: ["scripts"], optional: [] },
+  SetupScripts: { required: ["scripts"], optional: ["folder"] },
   SetupSend: { required: ["host", "approval"], optional: [] },
   SetupWanted: { required: ["host"], optional: [] },
   SharedInstructions: { required: ["path", "exists", "reach"], optional: [] },

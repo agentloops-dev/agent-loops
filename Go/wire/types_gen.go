@@ -15734,6 +15734,9 @@ type SetupScriptApproval struct {
 // setup/scripts (#7167): this machine's two set-up scripts, root then setup, as a client reads them to approve one.
 type SetupScripts struct {
 	Scripts []SetupScript `json:"scripts"`
+
+	// The folder the scripts are in, ~/.agents/machine-setup/ of this machine's personal home, as an absolute path (#7512): Settings ▸ Machines ▸ Machine scripts opens it and writes an example there. Left out when the machine has no personal home (a scratch root), which has no scripts.
+	Folder *string `json:"folder,omitzero"`
 }
 
 // setup/send (#7155, gate 1 of #7151, section 3): Send Set-up. A client of the person's lock asks this machine, the sender, to send its setup.sh to the machine host and run it there. approval is a setup.script record of setup, scope m:<host>, of the file as it is now: the sender keeps it as setup/approve does, then sends the approved text, signed by this machine for host, through the control plane (machines/setupDeliver). It answers when host took it, which then runs it.

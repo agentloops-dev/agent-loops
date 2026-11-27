@@ -87,5 +87,42 @@ struct MachineScriptWordsTests {
         #expect(MachineScriptWords.tokenLine("token=\"$(agents-secret GH_TOKEN)\"\ngh auth login --with-token\n") == nil)
         #expect(MachineScriptWords.tokenLine("aws configure set aws_access_key_id AKIAABCDEFGHIJKLMNOP\n") == 1)
     }
-}
 
+    /// #7512, Settings ▸ Machines ▸ Machine scripts: each row says what the script does, when it
+    /// runs, whether it is approved, and the secrets setup.sh reads.
+    @Test func theSettingsPageSaysWhatEachScriptDoes() {
+        var setup = DaemonAPI.SetupScript(name: "setup", present: true, text: MachineScriptWords.exampleSetup, hash: "aa", size: 10,
+                                          changed: true)
+        #expect(MachineScriptWords.filesNote(setup) == "new, not approved")
+        #expect(MachineScriptWords.filesLine(setup) == "Runs as your user, after the machine joins. Reads GH_TOKEN.")
+        setup.approvedText = "echo old\n"
+        #expect(MachineScriptWords.filesNote(setup) == "changed, not approved")
+        var root = DaemonAPI.SetupScript(name: "root", present: true, text: "apt-get install -y gh\n", hash: "bb", size: 22,
+                                         approvedText: "apt-get install -y gh\n", approvals: [approval("made")])
+        #expect(MachineScriptWords.filesNote(root) == nil)
+        #expect(MachineScriptWords.filesLine(root) == "Runs once, as root, when a machine is made. Approved for new machines.")
+        root.problem = "root.sh is over 10 KiB."
+        #expect(MachineScriptWords.filesLine(root) == "root.sh is over 10 KiB.")
+        #expect(MachineScriptWords.filesLine(DaemonAPI.SetupScript(name: "root", present: false)).hasPrefix("None."))
+    }
+
+    /// The `# secrets:` lines are read as the machine reads them: only in the comments at the top.
+    @Test func declaredSecretsAreTheTopCommentsOnly() {
+        #expect(MachineScriptWords.declaredSecrets("#!/bin/bash\n\n# secrets: A B\n# hi\n#secrets: B C\necho\n# secrets: D\n")
+            == ["A", "B", "C"])
+        #expect(MachineScriptWords.declaredSecrets("echo\n# secrets: A\n").isEmpty)
+    }
+
+    /// The examples New root.sh and New setup.sh write fit their limits, hold no token, and
+    /// setup.sh declares the secret it reads.
+    @Test func theExamplesAreFitToUse() {
+        for name in ["root", "setup"] {
+            let text = MachineScriptWords.example(name)
+            #expect(text.hasPrefix("#!/bin/bash\n") && text.hasSuffix("\n"))
+            #expect(text.utf8.count < 10 << 10)
+            #expect(MachineScriptWords.tokenLine(text) == nil)
+        }
+        #expect(MachineScriptWords.declaredSecrets(MachineScriptWords.exampleSetup) == ["GH_TOKEN"])
+        #expect(MachineScriptWords.declaredSecrets(MachineScriptWords.exampleRoot).isEmpty)
+    }
+}
