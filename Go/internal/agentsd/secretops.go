@@ -371,7 +371,11 @@ func (d *Daemon) noteSecretOp(op wire.SecretOperation, audit bool) {
 		return
 	}
 	op.At = wire.DateOf(nowFunc())
-	d.raise(secretOpEvent(op, d.secretWho(op.Agent)))
+	who := d.secretWho(op.Agent)
+	if op.Agent == nil && op.Place != nil && strings.HasPrefix(*op.Place, setupSecretPlace+" ") {
+		who = setupSecretPlace
+	}
+	d.raise(secretOpEvent(op, who))
 
 	d.secretOps.mu.Lock()
 	last := d.secretOpsLocked()
