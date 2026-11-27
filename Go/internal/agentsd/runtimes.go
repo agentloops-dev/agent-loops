@@ -409,7 +409,7 @@ func (d *Daemon) withRuntimeOwnEnv(r *runtimeDef, dir string, account *wire.Acco
 			}
 		}
 	case "codex":
-		if rl := d.relayFor("codex"); rl != nil && account == nil {
+		if rl := d.relayFor("codex"); rl != nil && account == nil && !ownCodexSignIn() {
 			env = without(env, "OPENAI_API_KEY", "CODEX_HOME", "CODEX_CA_CERTIFICATE")
 			env = append(env, "CODEX_HOME="+filepath.Join(root, "runtimes", "codex-relay-home"), "CODEX_CA_CERTIFICATE="+rl.caFile)
 		}

@@ -44,8 +44,9 @@ var codexFinishWait = 20 * time.Second
 var headlessRuntimes = map[string]bool{"claude": true, "codex": true}
 
 type headlessSignInState struct {
-	headlessMu sync.Mutex
-	headless   map[string]*headlessSignIn
+	headlessMu  sync.Mutex
+	headless    map[string]*headlessSignIn
+	signInCards signInCardState
 }
 
 // headlessSignIn is one runtime's sign-in, running.
@@ -292,6 +293,7 @@ func (d *Daemon) finishHeadlessSignIn(ctx context.Context, r wire.RuntimeSignInF
 	if s.waitErr != nil || !ownCodexSignIn() {
 		return wire.RuntimeStatus{}, &Error{Code: wire.FailureNeedsSignIn, Message: "Codex did not sign in" + lastLine(s.out.text())}
 	}
+	d.closeRelayForOwnSignIn("codex")
 	return d.signedInHere(rt), nil
 }
 
@@ -336,6 +338,7 @@ func (d *Daemon) signInWithKey(ctx context.Context, runtimeID, key string) (wire
 	if err := cmd.Wait(); err != nil {
 		return wire.RuntimeStatus{}, &Error{Code: wire.FailureNeedsSignIn, Message: "Codex did not take that key" + lastLine(out.text())}
 	}
+	d.closeRelayForOwnSignIn("codex")
 	return d.signedInHere(rt), nil
 }
 
@@ -575,7 +578,7 @@ func (d *Daemon) noteSignIn(s *wire.RuntimeStatus) {
 	case "codex":
 		in.SignedIn = ownCodexSignIn()
 	}
-	if d.relayFor(s.Runtime.ID) != nil && (s.Runtime.ID != "claude" || d.storedClaudeSignIn() == "") {
+	if d.relayFor(s.Runtime.ID) != nil && (s.Runtime.ID != "claude" || d.storedClaudeSignIn() == "") && (s.Runtime.ID != "codex" || !in.SignedIn) {
 		relayed := true
 		in.Relayed = &relayed
 	}
