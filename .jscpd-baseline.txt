@@ -352,11 +352,5 @@ Shared/UI/UsageCharts.swift <-> Shared/UI/VelocityCharts.swift
 Shared/UI/UsageCharts.swift <-> Shared/UI/VelocityCharts.swift
 Shared/UI/UsageCharts.swift <-> Shared/UI/VelocityCharts.swift
 Shared/UI/UsageCharts.swift <-> Shared/UI/VelocityCharts.swift
-Shared/UI/UserScope/AccountsPageView.swift <-> Shared/UI/UserScope/SecretsPageView.swift
-Shared/UI/UserScope/AccountsPageView.swift <-> Shared/UI/UserScope/SecretsPageView.swift
-Shared/UI/UserScope/AccountsPageView.swift <-> Shared/UI/UserScope/SecretsPageView.swift
-Shared/UI/UserScope/AccountsPageView.swift <-> Shared/UI/UserScope/SecretsPageView.swift
-Shared/UI/UserScope/AccountsPageView.swift <-> Shared/UI/UserScope/SecretsPageView.swift
-Shared/UI/UserScope/AccountsPageView.swift <-> Shared/UI/UserScope/SecretsPageView.swift
 Shared/UI/Work/WorkItemPage.swift <-> Shared/UI/Work/WorkReleasePage.swift
 Web/src/model/machineLock.ts <-> Web/src/model/machineLock.ts
