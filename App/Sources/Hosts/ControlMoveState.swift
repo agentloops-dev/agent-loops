@@ -2,8 +2,8 @@ import AgentsKitCore
 import Foundation
 import Observation
 
-/// Make This the Control Plane… (#6614, epic #6608), for an admin with the flag
-/// `control-plane-move`: the moves from `control/moves/list` when the window connects, each step
+/// Make This the Control Plane… (#6614, epic #6608), for
+/// an admin: the moves from `control/moves/list` when the window connects, each step
 /// from `control/moveChanged`, and each machine's checks from `control/eligible` while its page
 /// is open. The web page keeps the same in `Web/src/model/controlMove.ts`.
 @MainActor
