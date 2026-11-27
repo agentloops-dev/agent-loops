@@ -24,21 +24,13 @@ func TestAServersCodexSignsInFromACard(t *testing.T) {
 	lend(t, d, "codex", "stand-in")
 
 	d.raiseSignInCard(id, "codex")
-	var card wire.ElicitationRequest
-	for deadline := time.Now().Add(15 * time.Second); card.ID == ""; time.Sleep(20 * time.Millisecond) {
-		if got := d.pendingElicitations(); len(got) > 0 {
-			card = got[0]
-		} else if time.Now().After(deadline) {
-			t.Fatal("no card")
-		}
-	}
+	card := theCard(t, d)
 	if card.Mode.URL == nil || card.Mode.URL.Value != "https://auth.openai.com/codex/device" ||
 		card.Message == nil || !strings.Contains(*card.Message, "ABCD-EFGH1") {
 		t.Fatalf("%+v", card)
 	}
 	// Again while it is open: the same card.
-	d.raiseSignInCard(id, "codex")
-	time.Sleep(100 * time.Millisecond)
+	d.raiseSignInCard(id, "codex") // returns at once: a card is open
 	if got := d.pendingElicitations(); len(got) != 1 {
 		t.Fatalf("%d cards", len(got))
 	}
@@ -52,11 +44,10 @@ func TestAServersCodexSignsInFromACard(t *testing.T) {
 	}
 	must(t, os.WriteFile(filepath.Join(home, "entered"), nil, 0o600))
 	var err error
-	for deadline := time.Now().Add(15 * time.Second); ; time.Sleep(50 * time.Millisecond) {
-		if _, err = d.answerRequest(answer, nil); err == nil || !strings.Contains(err.Error(), "still waiting") || time.Now().After(deadline) {
-			break
-		}
-	}
+	waitFor(t, "signed in", func() bool {
+		_, err = d.answerRequest(answer, nil)
+		return err == nil || !strings.Contains(err.Error(), "still waiting")
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -90,14 +81,7 @@ func TestDismissingTheCodexCardStopsTheSignIn(t *testing.T) {
 	asAServer(t)
 	id := startAgent(t, c, 1, t.TempDir(), "")
 	d.raiseSignInCard(id, "codex")
-	var card wire.ElicitationRequest
-	for deadline := time.Now().Add(15 * time.Second); card.ID == ""; time.Sleep(20 * time.Millisecond) {
-		if got := d.pendingElicitations(); len(got) > 0 {
-			card = got[0]
-		} else if time.Now().After(deadline) {
-			t.Fatal("no card")
-		}
-	}
+	card := theCard(t, d)
 	answer := wire.RequestsAnswer{ID: card.ID, Answer: wire.RequestAnswer{Form: &wire.RequestFormAnswer{Action: wire.AnswerElicitationRequestActionCancel}}}
 	if _, err := d.answerRequest(answer, nil); err != nil {
 		t.Fatal(err)
@@ -108,4 +92,18 @@ func TestDismissingTheCodexCardStopsTheSignIn(t *testing.T) {
 	if n != 0 || len(d.pendingElicitations()) != 0 {
 		t.Fatalf("sign-ins %d, cards %d", n, len(d.pendingElicitations()))
 	}
+}
+
+// theCard waits for the one card the daemon shows.
+func theCard(t *testing.T, d *Daemon) wire.ElicitationRequest {
+	t.Helper()
+	var card wire.ElicitationRequest
+	waitFor(t, "shown the card", func() bool {
+		got := d.pendingElicitations()
+		if len(got) > 0 {
+			card = got[0]
+		}
+		return len(got) > 0
+	})
+	return card
 }

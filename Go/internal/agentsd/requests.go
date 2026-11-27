@@ -677,7 +677,7 @@ func (d *Daemon) answerLostForm(req wire.ElicitationRequest, action wire.AnswerE
 		Summary: answeredSummary(action), Answers: said}})
 	if signIn != "" {
 		if action != wire.AnswerElicitationRequestActionAccept {
-			d.answerSignInCard(signIn, action) //nolint:errcheck // a stop has nothing to report
+			_ = d.answerSignInCard(signIn, action) // a stop has nothing to report
 		}
 		d.forgetSignInCard(req.ID)
 		return nil
