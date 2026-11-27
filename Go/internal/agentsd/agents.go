@@ -165,6 +165,7 @@ func (d *Daemon) prompt(r wire.PromptRequest) error {
 		return err
 	}
 	if err := d.needsSignIn(a.RuntimeID); err != nil {
+		d.raiseSignInCard(a.ID, a.RuntimeID)
 		return err
 	}
 	if !d.once(r.SendID) {
