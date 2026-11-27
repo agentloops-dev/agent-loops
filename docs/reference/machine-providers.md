@@ -56,7 +56,7 @@ Contract 1 keeps these tool names and the `workspace`/`workspaces` payload field
   in the background, and the first boot waits for it after `firstBoot`. It may call a shell
   function `agents_root_done` when the first boot defines one. Answer `rootBootRuns: true` if
   you will. A provider that does not declare it is not sent it, and the step says that it
-  can't run root set-up. Which presets run it: [Set up new machines with your scripts](../how-to/set-up-machines-with-scripts.md#where-root-sh-runs).
+  can't run root set-up. Which presets run it: [Set up new machines with your scripts](../how-to/set-up-machines-with-scripts.md#where-rootsh-runs).
 - **`workspace_delete`** deletes the machine and everything on it. The control plane then
   removes its host, as **Remove** does.
 

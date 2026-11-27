@@ -239,6 +239,23 @@ func (d *Daemon) runUserSetup(ctx context.Context, u userSetup) {
 			log.Printf("set-up: how setup.sh ended was not kept: %v", err)
 		}
 	}
+	names, err := declaredSecrets(u.Text)
+	if err != nil {
+		end(err.Error())
+		return
+	}
+	waited := false
+	err = d.waitForSetupSecrets(ctx, names, func(words string) {
+		waited = true
+		say.SayScript(step, wire.MachineSetupStateNeedsYou, words, "", u.Hash)
+	})
+	if err != nil {
+		end(err.Error())
+		return
+	}
+	if waited {
+		say.SayScript(step, wire.MachineSetupStateRunning, "Running setup.sh", "", u.Hash)
+	}
 	script := filepath.Join(root, userSetupScript)
 	// store-bounds: not a store: the copy of machine-setup.json's text that runs, written each run
 	if err := os.WriteFile(script, []byte(u.Text), 0o600); err != nil {
@@ -263,7 +280,14 @@ func (d *Daemon) runUserSetup(ctx context.Context, u userSetup) {
 			say.SayScript(step, wire.MachineSetupStateRunning, line, "", u.Hash)
 		}
 	}
-	err := hostsetup.RunUserScript(ctx, script, home, d.ownName(), d.fromPool(), userSetupTimeout, output, progress)
+	env, endGrant, err := d.setupSecretEnv(hostsetup.UserScriptEnv(d.ownName(), d.fromPool()), names, u.Hash)
+	if err != nil {
+		end(err.Error())
+		return
+	}
+	// The grant ends with the run; runBash has killed its process group by then.
+	err = hostsetup.RunUserScript(ctx, script, home, env, userSetupTimeout, output, progress)
+	endGrant()
 	if err != nil {
 		log.Printf("set-up: setup.sh: %v", err)
 		end(err.Error())
