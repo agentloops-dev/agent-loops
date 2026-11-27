@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/githubmcp"
+	"github.com/agentloops-dev/agent-loops/Go/internal/gitlabmcp"
 	"github.com/agentloops-dev/agent-loops/Go/internal/lineage"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
@@ -262,5 +263,58 @@ func TestForgeNextFollowsTheEpicsAbove(t *testing.T) {
 	gh.plan = githubmcp.Plan{Epic: under(planIssue(54, "open", "epic"), 52), Children: []githubmcp.PlanChild{{Item: planIssue(71, "open", "task")}}}
 	if got := call(4, wire.ForgeNextRequest{Folder: folder, Epic: &wire.LineageNode{Kind: "issue", Ref: "github:issue:alexec/agents#54"}}); got != "" {
 		t.Fatalf("children of 54:\n%s", got)
+	}
+}
+
+// folderOn is the folder whose remote is repo.
+func folderOn(t *testing.T, d *Daemon, repo forgeRepo) string {
+	t.Helper()
+	for _, f := range d.folderPaths() {
+		if got := d.folderRepo(f); got.forge == repo.forge && strings.EqualFold(got.path, repo.path) {
+			return f
+		}
+	}
+	t.Fatalf("no folder on %v", repo)
+	return ""
+}
+
+// #7343: GitLab's list does not say an issue's parent, so forge/next reads the parents of the
+// epics and of the issues, one read for each list, and an issue under an epic on hold is on hold.
+func TestForgeNextReadsGitLabParentsOnce(t *testing.T) {
+	t.Parallel()
+
+	d, c, _, gl, _, _ := allForgesDaemon(t)
+	folder := folderOn(t, d, forgeRepo{"gitlab", "group/app"})
+	gl.epics = []gitlabmcp.Item{{Project: "Group/App", Number: 5, State: "open", Title: "Held epic", Labels: []string{"epic", "on hold"},
+		UpdatedAt: "2026-11-01T08:00:00Z"}}
+	gl.parents = map[int]gitlabmcp.Ref{4: {Project: "Group/App", Number: 5, Open: true}}
+	gl.blockers = map[int][]gitlabmcp.Ref{}
+
+	var next wire.ForgeNext
+	if err := json.Unmarshal(c.call(t, 1, "forge/next", wire.ForgeNextRequest{Folder: folder}), &next); err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(nextRows(t, next), "\n"); got != "3: no priority; no size\n4: epic on hold; no priority; no size" {
+		t.Errorf("rows:\n%s", got)
+	}
+	gl.mu.Lock()
+	defer gl.mu.Unlock()
+	if fmt.Sprint(gl.parented) != "[Group/App[5] Group/App[4 3]]" {
+		t.Errorf("parents asked %q", gl.parented)
+	}
+}
+
+// #7343: Forgejo's issues keep no parent in forge/next, as an epic's children there are the
+// issues it depends on, which are its blockers too; their parents are not read.
+func TestForgeNextReadsNoForgejoParents(t *testing.T) {
+	t.Parallel()
+
+	d, c, fj, _ := forgejoDaemon(t)
+	folder := folderOn(t, d, forgeRepo{"forgejo", "walkalex/app"})
+	c.call(t, 1, "forge/next", wire.ForgeNextRequest{Folder: folder})
+	fj.mu.Lock()
+	defer fj.mu.Unlock()
+	if len(fj.parented) != 0 {
+		t.Errorf("parents asked %q", fj.parented)
 	}
 }
