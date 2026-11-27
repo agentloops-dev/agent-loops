@@ -526,10 +526,12 @@ struct PromptBar: View {
         LevelPill(field: field,
                   chosen: field == .model ? agent.levels?.model?.rawValue : agent.levels?.permission?.rawValue,
                   runtimeName: PromptWords.runtimeName(agent.runtimeID),
+                  owner: agent.id.uuidString,
                   cell: { model.autoMappings.cell(agent.runtimeID, field, $0) },
                   own: own, binding: binding(for:)) { level in
             Task { await model.setAgentLevel(agent.id, field, level) }
         }
+        .equatable()
     }
 
     private func optionsRow(_ shown: [ConfigOption]) -> some View {

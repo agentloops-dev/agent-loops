@@ -1029,6 +1029,7 @@ struct PromptBar: View {
             model.draftLevel(field)
         }
         return LevelPill(field: field, chosen: chosen, runtimeName: runtimeName(runtimeID),
+                         owner: agent?.id.uuidString ?? "draft-\(runtimeID)",
                          cell: { model.autoMappings.cell(runtimeID, field, $0) },
                          own: own, binding: binding(for:)) { level in
             if let agent {
@@ -1037,6 +1038,7 @@ struct PromptBar: View {
                 model.chooseDraftLevel(field, level)
             }
         }
+        .equatable()
     }
 
     /// The pills of a new session on Auto (#2658): Permission mode, Sandbox and Model, each
@@ -1046,10 +1048,11 @@ struct PromptBar: View {
         let picked = model.draftAutoPreview?.runtimeID
         return HStack(spacing: 10) {
             LevelPill(field: .permission, chosen: model.draftLevels.permission?.rawValue,
-                      runtimeName: picked.map(runtimeName),
+                      runtimeName: picked.map(runtimeName), owner: "auto",
                       cell: { level in picked.flatMap { model.autoMappings.cell($0, .permission, level) } }) {
                 model.chooseDraftLevel(.permission, $0)
             }
+            .equatable()
             SelectCapsule(name: LevelWords.sandboxField, title: LevelWords.sandbox(model.draftSandbox ?? .runtime)) { dismiss in
                 SelectGroupHeading(title: LevelWords.sandboxField)
                 ForEach(SandboxChoice.allCases, id: \.self) { choice in
@@ -1065,10 +1068,11 @@ struct PromptBar: View {
             }
             Spacer(minLength: 16)
             LevelPill(field: .model, chosen: model.draftLevels.model?.rawValue,
-                      runtimeName: picked.map(runtimeName),
+                      runtimeName: picked.map(runtimeName), owner: "auto",
                       cell: { level in picked.flatMap { model.autoMappings.cell($0, .model, level) } }) {
                 model.chooseDraftLevel(.model, $0)
             }
+            .equatable()
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
