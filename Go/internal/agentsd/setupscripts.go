@@ -11,6 +11,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"sync"
 
@@ -285,10 +286,16 @@ func (d *Daemon) approveSetupScript(p wire.SetupApprove) (wire.SetupScript, erro
 	if err != nil {
 		return wire.SetupScript{}, &Error{Code: CodeServer, Message: "The approved set-up scripts cannot be read: " + err.Error()}
 	}
-	if _, err := approved.Counters.Take(r); err != nil {
+	taken, err := approved.Counters.Take(r)
+	if err != nil {
 		return wire.SetupScript{}, Invalid("The approval of %s cannot be taken: %v", file, err)
 	}
 	a := approved.Scripts[p.Script]
+	if !taken && keptAlready(a, r, now.hash(), state) {
+		// The same approval again, as each try of a Send Set-up that waits gives (#7547): the
+		// file is not written again.
+		return scriptState(p.Script, now, approved, state), nil
+	}
 	switch {
 	case machinelock.Removed(r):
 		delete(a.Approvals, r.Scope)
@@ -317,6 +324,23 @@ func (d *Daemon) approveSetupScript(p wire.SetupApprove) (wire.SetupScript, erro
 		return wire.SetupScript{}, &Error{Code: wire.FailureCouldNotSave, Message: "The approval of " + file + " was not kept: " + err.Error()}
 	}
 	return scriptState(p.Script, now, approved, state), nil
+}
+
+// keptAlready says that a keeps r as it is, for the text hash, and only approvals of the lock held
+// now: taking r again changes nothing.
+func keptAlready(a approvedScript, r wire.LockRecord, hash string, state *machinelock.State) bool {
+	if machinelock.Removed(r) || a.Hash != hash {
+		return false
+	}
+	if had, ok := a.Approvals[r.Scope]; !ok || !reflect.DeepEqual(had, r) {
+		return false
+	}
+	for _, had := range a.Approvals {
+		if _, err := machinelock.CheckRecord(state, had); err != nil {
+			return false
+		}
+	}
+	return true
 }
 
 // approvedSetupScript is the text of a script and its approval for scope, for the sender to use
