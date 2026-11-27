@@ -2,7 +2,7 @@ import AgentsKitCore
 import SwiftUI
 
 /// Across the top of the window while a copy of the control plane is near or at capacity (#6591),
-/// as a machine's capacity warning (#4582), for an admin with the flag on. It says why, in the
+/// as a machine's capacity warning (#4582), for an admin. It says why, in the
 /// control plane's words, opens the control plane's machine, and opens the guide that says what
 /// to do (#6589). The control plane keeps serving at every level: the strip only tells. While the
 /// control plane is away it is hidden (#7363): its level is the last one known, not now.

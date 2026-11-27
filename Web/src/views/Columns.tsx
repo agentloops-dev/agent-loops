@@ -40,6 +40,7 @@ import { navPages } from "../model/nav";
 import { sectionOf } from "../route";
 import { OrgPolicyStrip } from "./OrgPolicyLine";
 import { ControlMoveStrip } from "./ControlMove";
+import { ControlCapacityStrip } from "./ControlPlane";
 import { Icon } from "./Icon";
 import { RuntimeSignInPanel } from "./RuntimeSignInDialog";
 
@@ -94,6 +95,8 @@ export function Columns({ session, store }: { session: Session; store: Store }) 
       <OrgPolicyStrip store={store} />
       {/* The control plane moving to another machine, or just moved, for an admin (#6614). */}
       <ControlMoveStrip store={store} />
+      {/* A copy of the control plane near or at capacity, for an admin (#6592). */}
+      <ControlCapacityStrip store={store} down={down} />
       {store.newMachineAsk.value && <NewMachineSheet key={JSON.stringify(store.newMachineAsk.value)} store={store} ask={store.newMachineAsk.value} />}
       {section === "overview" ? <div class="columns overview-columns console" aria-busy={down}><Overview store={store} down={down} /></div>
         : section !== "agents" ? <SectionPage store={store} section={section} down={down} /> : <div class="columns with-sidebar" aria-busy={down}>

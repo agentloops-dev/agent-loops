@@ -18,6 +18,9 @@ import { cardRows, eventRows, needingYou, noEvents, noSpend, nothingRuns, overvi
 import { totalWords, todayTotals } from "./Activity";
 import { requestCount } from "./ConsoleRecords";
 import { runtimeNameIn } from "./Reports";
+import { controlPlaneTitle, isControlPlaneOnly, showsControlPlaneMachine } from "./ControlPlane";
+import * as controlPlane from "../model/controlPlaneMachine";
+import { levelClass } from "../model/capacity";
 
 function Card({ title, line, children, links }: { title: string; line?: string | null; children?: ComponentChildren;
   links: [string, Route][] }) {
@@ -84,6 +87,11 @@ export function Overview({ store, down }: { store: Store; down: boolean }) {
     .flatMap(([host, page]) => page.events.map((event) => ({ host, event })))
     .sort((a, b) => (b.event.lastAt ?? b.event.at) - (a.event.lastAt ?? a.event.at)).slice(0, eventRows);
   const hostName = (id: string) => hosts.find((h) => h.id === id)?.name ?? id;
+  // The control plane first when a copy is near or at capacity (#6592), as the strip says it.
+  const control = showsControlPlaneMachine(store) ? controlPlane.warning(controlPlane.looks(), down) : null;
+  const controlHost = control ? control.machine ?? hosts.find((h) => h.roles?.includes("control"))?.id : undefined;
+  const machineRows = (troubled.length ? troubled : machines).filter((m) => m.host.id !== controlHost)
+    .slice(0, control ? cardRows - 1 : cardRows);
   const open = (p: (typeof placed)[number]) => go({ host: p.host.id, folder: p.folder.folder.folder, session: p.agent.id });
 
   return (
@@ -95,7 +103,16 @@ export function Overview({ store, down }: { store: Store; down: boolean }) {
           <div class="overview-grid">
             <Card title="Machines" line={fleetSummary(machines, version)} links={[["All machines", { nav: "machines", section: "machines" }]]}>
               <ul class="overview-rows">
-                {(troubled.length ? troubled : machines).slice(0, cardRows).map((m) => (
+                {control && (
+                  <li key="control-plane">
+                    {controlHost
+                      ? <button type="button" class="link" onClick={() => go({ nav: "machines", section: `machine-${controlHost}` })}>
+                        {isControlPlaneOnly(store, controlHost) ? controlPlaneTitle(store, controlHost) : `${hostName(controlHost)} · ${controlPlane.title}`}</button>
+                      : <span>{controlPlane.title}</span>}
+                    <span class={`small ${levelClass(control.level)}`} title={controlPlane.sentence(control)}>{controlPlane.shortRowLine(control)}</span>
+                  </li>
+                )}
+                {machineRows.map((m) => (
                   <li key={m.host.id}>
                     <span class={`fleet-state ${m.host.state}`}>{m.host.name}</span>
                     <span class={`quiet small${troubled.includes(m) ? " attention" : ""}`}>

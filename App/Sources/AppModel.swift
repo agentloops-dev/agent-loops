@@ -2661,9 +2661,9 @@ final class AppModel {
     let setupSends = SetupSendState()
 
     /// The control plane as a machine in Machines, with its level, its page and a strip (#6591):
-    /// behind its flag, and for an admin only.
+    /// for an admin only. Its flag went with the web page's part (#6592).
     var showsControlPlaneMachine: Bool {
-        flags.isOn(.controlPlaneMachine) && people.you?.isAdmin == true
+        people.you?.isAdmin == true
     }
 
     /// Make This the Control Plane… on a machine's page, and the strip of a move (#6614): behind its

@@ -8,12 +8,6 @@
       "issue": 6373
     },
     {
-      "name": "control-plane-machine",
-      "title": "Control plane machine",
-      "about": "For admins on the Mac: the control plane's machine in Machines, with its capacity level, its page, and a strip while it is near or at capacity.",
-      "issue": 6591
-    },
-    {
       "name": "control-plane-move",
       "title": "Make This the Control Plane",
       "about": "For admins on the Mac and the web page: Make This the Control Plane… on a machine's page, with its checks, and a strip with the move's steps.",
