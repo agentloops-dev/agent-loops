@@ -64,7 +64,7 @@ function useSwipe() {
 }
 
 /** A laptop, a cloud or a rack, as the window's SF Symbols, in its state's colour; amber pulses while it changes. */
-function MachineIcon({ kind, tone }: { kind: MachineKind; tone: MachineIconTone }) {
+export function MachineIcon({ kind, tone }: { kind: MachineKind; tone: MachineIconTone }) {
   return (
     <svg class={`machine-icon ${tone}`} viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor"
       stroke-width="1.4" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true">

@@ -29,6 +29,7 @@ import { failedStep, foldedLine, setupChip } from "../model/machineSetup";
 import { MachineSetupSection } from "./MachineSetup";
 import { ControlMoveSection, showsControlMove, useControlCopies } from "./ControlMove";
 import { controlRole, runsControl } from "../model/controlMove";
+import { ControlPlaneSection, runsControlPlane } from "./ControlPlane";
 
 const disksHelp = "Each disk its agents write to. Low and almost full are the lines set in Folder Settings ▸ Disk Space.";
 
@@ -92,6 +93,8 @@ export function MachinePage({ store, host }: { store: Store; host: string }) {
       {/* Make This the Control Plane…, on a machine that does not run it, for an admin (#6614): a control-only
           machine that runs no copy too, the one a team moves to (#7393). */}
       {movable && !runsControl(machine, copies, hosts.filter(controlRole).length) && <ControlMoveSection store={store} machine={machine} />}
+      {/* The control plane's figures, on a machine that also runs agents (#6592). */}
+      {runsControlPlane(store, host) && <ControlPlaneSection store={store} host={host} />}
       <MachineSessionsSection store={store} host={host} name={name} online={answers} />
       <MachineLabels store={store} host={host} machine={machine} />
       {!answers ? <p class="hint">{name} is offline, so it can’t say how it is doing now.</p>

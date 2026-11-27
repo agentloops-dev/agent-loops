@@ -243,7 +243,7 @@ struct MachinesListPage: View {
 
     private var selected: [DaemonAPI.ControlMachine] { rows.filter { picked.contains($0.id) } }
 
-    /// The rows as drawn: the control plane's machines first, for an admin with its flag (#6591).
+    /// The rows as drawn: the control plane's machines first, for an admin (#6591).
     private var shown: [DaemonAPI.ControlMachine] {
         model.showsControlPlaneMachine ? ControlPlaneMachine.first(rows) : rows
     }

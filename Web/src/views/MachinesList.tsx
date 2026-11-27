@@ -15,6 +15,8 @@ import { go, route } from "../route";
 import { hostsOf } from "../model/machineNames";
 import { LastUpdate } from "./LastUpdate";
 import { ask } from "./MessageKinds";
+import { ControlPlaneLines, controlPlaneTitle, isControlPlaneOnly, runsControlPlane, showsControlPlaneMachine } from "./ControlPlane";
+import { first as controlFirst, refreshing as capacityRefreshing } from "../model/controlPlaneMachine";
 
 export function MachinesList({ store }: { store: Store }) {
   const [choice, setChoice] = useState<MachineChoice>(() => ({ ...noChoice, only: hostsOf(route.peek().query) }));
@@ -80,6 +82,9 @@ export function MachinesList({ store }: { store: Store }) {
     const timer = setTimeout(() => void read(choice), choice.search ? 250 : 0);
     return () => clearTimeout(timer);
   }, [choice, hosts.map((h) => `${h.id}:${h.state}`).join(",")]);
+  // The control plane's level, read again as the page opens (#6592).
+  const showsControl = showsControlPlaneMachine(store);
+  useEffect(() => { if (showsControl) void store.loadControlCapacity(); }, [showsControl]);
   // An "and N more" link while this page is open narrows it again.
   const asked = route.value.query;
   useEffect(() => { setChoice((now) => ({ ...now, only: hostsOf(asked) })); }, [asked]);
@@ -140,6 +145,7 @@ export function MachinesList({ store }: { store: Store }) {
             {sorts.map((s) => <option key={s} value={s}>{sortTitle[s]}</option>)}
           </select>
         </label>
+        {showsControl && capacityRefreshing.value && <span class="spinner small" aria-label="Refreshing capacity" />}
         {readAt !== null && <LastUpdate at={readAt} />}
       </div>
       {shownChips.length > 0 && (
@@ -178,8 +184,10 @@ export function MachinesList({ store }: { store: Store }) {
           </thead>
           <tbody>
             {rows.length === 0 && <tr class="empty"><td colSpan={5}>{readAt === null ? "Loading…" : emptyWords(narrowed(choice))}</td></tr>}
-            {rows.map((h) => {
-              const name = h.id === macID ? "This Mac" : h.name;
+            {(showsControl ? controlFirst(rows) : rows).map((h) => {
+              // A control-only machine that runs no copy is not the control plane yet (#7393).
+              const control = runsControlPlane(store, h.id);
+              const name = control && isControlPlaneOnly(store, h.id) ? controlPlaneTitle(store, h.id) : h.id === macID ? "This Mac" : h.name;
               const working = store.sessionsByMachine.value[h.id]?.working ?? 0;
               return (
                 <tr key={h.id} class="opens" aria-selected={picked.has(h.id)}
@@ -188,7 +196,8 @@ export function MachinesList({ store }: { store: Store }) {
                     onChange={(e) => tick(h.id, (e.target as HTMLInputElement).checked)} /></td>
                   <td>
                     <button type="button" class="link strong" onClick={() => go({ nav: "machines", section: `machine-${h.id}` })}>{name}</button>
-                    <br /><span class={`fleet-state ${h.state} small`}>{stateWords(h)}</span>
+                    <br />{control ? <ControlPlaneLines store={store} row={h} state={stateWords(h)} />
+                      : <span class={`fleet-state ${h.state} small`}>{stateWords(h)}</span>}
                   </td>
                   <td>{h.platform}</td>
                   <td>{versionWords(h)}</td>

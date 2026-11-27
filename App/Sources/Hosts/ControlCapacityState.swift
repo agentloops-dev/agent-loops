@@ -3,9 +3,9 @@ import Foundation
 import Observation
 
 /// The control plane's capacity, for an admin's Machines (#6591, epic #6593): the latest look of
-/// each live copy, from `control/capacity` (#6590) when the window connects, when the flag turns
-/// on (#7364) and while a control plane machine's page is open, and each move from
-/// `control/capacityChanged`. Behind the flag `control-plane-machine`; a member reads nothing, as the control plane answers admins only.
+/// each live copy, from `control/capacity` (#6590) when the window connects, when the person
+/// becomes an admin (#7364) and while a control plane machine's page is open, and each move from
+/// `control/capacityChanged`. A member reads nothing, as the control plane answers admins only.
 @MainActor
 @Observable
 final class ControlCapacityState {
@@ -61,8 +61,7 @@ final class ControlCapacityState {
         }
     }
 
-    /// When the window comes to show the control plane (#7364): the flag turns on, or the person
-    /// becomes an admin. Reads at once, not at the next connect, and once more after a look when
+    /// When the window comes to show the control plane (#7364): the person becomes an admin. Reads at once, not at the next connect, and once more after a look when
     /// the answer is empty, so the words can say that no reading comes.
     func shown(_ control: DaemonClient) async {
         await read(control)
