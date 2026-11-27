@@ -8,7 +8,7 @@ import { Capability } from "../protocol/capabilities.generated";
 import { CallFailed } from "../wire/link";
 import { openSealedSecret, sealSecret } from "../wire/sealing";
 import { describe, methodNotFound } from "../model/errors";
-import { type Card, cardConfirm, cardKind, type CardPart, cardParts, cardProblem, cardRule, cardValue, clipboardSeconds, copiedSeconds,
+import { type Card, cardAddressHeader, cardAddressHint, cardConfirm, cardKind, type CardPart, cardParts, cardProblem, cardRule, cardValue, clipboardSeconds, copiedSeconds,
   copyRefused, describedAs, didNotOpen, isSecretName, nameHint, nextVersion, noCopyYet, parseCard, partLabels, revealNeedsNewerPlane,
   shownSeconds, spacedNumber, tidyCard } from "../model/userScope";
 import { AskBeforeUseCheck } from "./AskBeforeUse";
@@ -91,6 +91,12 @@ export function CardSheet({ store, replacing, close, saved }: { store: Store; re
   const cvc = useSignal("");
   const holder = useSignal("");
   const zip = useSignal("");
+  // The billing address (#5569), optional.
+  const line1 = useSignal("");
+  const line2 = useSignal("");
+  const city = useSignal("");
+  const region = useSignal("");
+  const country = useSignal("");
   const locked = useSignal(false);
   // A new card starts on (#4162); a replaced one keeps its own.
   const ask = useSignal(replacing ? replacing.needsApproval === true : true);
@@ -98,7 +104,8 @@ export function CardSheet({ store, replacing, close, saved }: { store: Store; re
   const problem = useSignal<string | null>(null);
   const busy = useSignal(false);
   const save = async () => {
-    const card = tidyCard({ number: number.value, expiry: expiry.value, cvc: cvc.value, name: holder.value, zip: zip.value });
+    const card = tidyCard({ number: number.value, expiry: expiry.value, cvc: cvc.value, name: holder.value, zip: zip.value,
+      line1: line1.value, line2: line2.value, city: city.value, state: region.value, country: country.value });
     const wrong = cardProblem(card);
     if (wrong) {
       problem.value = wrong;
@@ -109,6 +116,8 @@ export function CardSheet({ store, replacing, close, saved }: { store: Store; re
       await setSecret(store, name.value.trim(), cardValue(card), replacing, ask.value, description.value, cardKind);
       number.value = "";
       cvc.value = "";
+      line1.value = "";
+      line2.value = "";
       saved?.(name.value.trim());
       close();
     } catch (error) {
@@ -140,6 +149,15 @@ export function CardSheet({ store, replacing, close, saved }: { store: Store; re
         {field("CVC", cvc, { type: "password", inputMode: "numeric" })}
         {field("Name on card", holder)}
         {field("Billing ZIP", zip)}
+        <fieldset class="card-address">
+          <legend>{cardAddressHeader}</legend>
+          {field("Address line 1", line1)}
+          {field("Address line 2", line2)}
+          {field("City", city)}
+          {field("State", region)}
+          {field("Country", country)}
+          <p class="sheet-note">{cardAddressHint}</p>
+        </fieldset>
         <SecretDescriptionField text={description} />
         <AskBeforeUseCheck on={ask} />
         <p class={problem.value ? "sheet-note failure" : "sheet-note"} role={problem.value ? "alert" : undefined}>{problem.value ?? nameHint}</p>
