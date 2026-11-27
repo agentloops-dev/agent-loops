@@ -334,6 +334,8 @@ extension AppModel {
             return (try? await self.sendFacts(folder, on: .mac))?.hasChanges ?? false
         }, pools: { [weak self] in
             await self?.warmPools() ?? []
+        }, scripts: { [weak self] provider in
+            self?.newMachineScripts(provider)
         })
     }
 

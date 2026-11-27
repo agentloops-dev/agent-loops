@@ -12422,9 +12422,10 @@ export interface ProviderCarried {
    * (the provider no longer takes the connection: it was removed there, or its refresh was
    * refused), scope_missing (the person gave less than Agent Loops needs), account_inactive (the
    * account can't make machines yet, such as no payment method), expired (the sign-in was not
-   * finished in time; start again).
+   * finished in time; start again), setup_script_changed (#7157: the person's root.sh is not the
+   * text a client of their lock approved for new machines, so the make stopped).
    */
-  code?: "denied" | "disconnected" | "scope_missing" | "account_inactive" | "expired";
+  code?: "denied" | "disconnected" | "scope_missing" | "account_inactive" | "expired" | "setup_script_changed";
 }
 
 /**
@@ -17109,6 +17110,13 @@ export interface WarmPool {
   /** Why the pool stopped making, in the provider's words. */
   stoppedBecause?: string;
   /**
+   * The script the pool waits for the person to review (#7157): root when the machine that carries
+   * its provider refused a make because root.sh is not the text a client of the person's lock
+   * approved for new machines (code setup_script_changed). The pool is stopped until a pool/set
+   * with reviewed. Read-only.
+   */
+  review?: "root";
+  /**
    * Why a pool that is keeping makes no machine now: no machine that has its projects is online
    * (#6890).
    */
@@ -17208,6 +17216,11 @@ export interface WarmPoolSet {
   maxSize: number;
   replaceAfter?: number;
   hours?: WarmPoolHours;
+  /**
+   * The person approved the pool's changed root.sh (#7157): the pool makes machines again, and
+   * replaces its unclaimed machines made before now, which ran the older text.
+   */
+  reviewed?: boolean;
 }
 
 /**
@@ -20281,14 +20294,14 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   WaitingOffer: { required: ["name", "offer"], optional: [] },
   WakeSettings: { required: ["keepsAwake", "graceHours", "warmRuntimes", "awakeOnPower"], optional: ["backgroundHours", "releaseAfterMinutes"] },
   WakeState: { required: ["isHolding", "agentsInFlight", "heldBackByBattery", "onPower"], optional: ["batteryPercent", "since", "graceUntil"] },
-  WarmPool: { required: ["id", "name", "scope", "provider", "minReady", "maxSize", "target", "state"], optional: ["size", "region", "runtimes", "projects", "replaceAfter", "hours", "ready", "settingUp", "failedMakes", "stoppedBecause", "waitingBecause", "machines", "claims"] },
+  WarmPool: { required: ["id", "name", "scope", "provider", "minReady", "maxSize", "target", "state"], optional: ["size", "region", "runtimes", "projects", "replaceAfter", "hours", "ready", "settingUp", "failedMakes", "stoppedBecause", "review", "waitingBecause", "machines", "claims"] },
   WarmPoolClaim: { required: ["provider"], optional: ["size", "region", "stopWhenIdle"] },
   WarmPoolClaimed: { required: ["workspace", "name", "fromPool"], optional: ["host", "pool", "note"] },
   WarmPoolClaims: { required: ["count", "empty"], optional: ["medianSeconds"] },
   WarmPoolHours: { required: ["days", "from", "to"], optional: ["timezone"] },
   WarmPoolMachine: { required: ["name", "state", "madeAt"], optional: ["detail"] },
   WarmPoolRequest: { required: ["id"], optional: [] },
-  WarmPoolSet: { required: ["name", "provider", "minReady", "maxSize"], optional: ["id", "scope", "size", "region", "runtimes", "projects", "replaceAfter", "hours"] },
+  WarmPoolSet: { required: ["name", "provider", "minReady", "maxSize"], optional: ["id", "scope", "size", "region", "runtimes", "projects", "replaceAfter", "hours", "reviewed"] },
   WarmPools: { required: ["pools"], optional: [] },
   WebPagePairing: { required: ["url"], optional: [] },
   WebPushKey: { required: [], optional: ["publicKey"] },

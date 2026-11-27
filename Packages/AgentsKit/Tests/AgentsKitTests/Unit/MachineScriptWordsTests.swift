@@ -52,4 +52,40 @@ struct MachineScriptWordsTests {
                                            readyAt: Date(timeIntervalSince1970: 30))
         #expect(MachineSetupWords.chip(setup) == "Set-up failed · step 1 of 1")
     }
+
+    private func approval(_ scope: String) -> DaemonAPI.LockRecord {
+        DaemonAPI.LockRecord(v: 1, person: "p", root: Data(), kind: "setup.script", subject: "root", scope: scope, seq: 1,
+                             content: Data(), key: Data(), sig: Data())
+    }
+
+    /// #7157: a make asks for a script that is new, changed, or approved only for one machine;
+    /// nothing changed asks nothing.
+    @Test func aMakeAsksForANewOrChangedScriptOnly() {
+        let new = DaemonAPI.SetupScript(name: "root", present: true, text: "apt-get install -y gh\n", hash: "bb", size: 22, changed: true)
+        #expect(new.needsApprovalForMade)
+        #expect(MachineScriptWords.reviewTitle([new]) == "Approve root.sh?")
+        #expect(MachineScriptWords.reviewLine(new, sender: "studio").contains("new · runs as root on each new machine"))
+        var changed = new
+        changed.approvedText = "apt-get install -y jq\n"
+        #expect(MachineScriptWords.reviewTitle([changed]) == "root.sh changed since you approved it")
+        #expect(MachineScriptWords.reviewLine(changed, sender: "studio").contains("+1 −1"))
+        #expect(MachineScriptWords.reviewTitle([changed, script]) == "Approve your scripts?")
+        var same = changed
+        same.changed = false
+        same.approvals = [approval("m:h-2")]
+        #expect(same.needsApprovalForMade, "an approval for one machine is not one for new machines")
+        same.approvals = [approval("made")]
+        #expect(!same.needsApprovalForMade)
+        #expect(MachineScriptWords.makeRow(same).hasSuffix("· approved"))
+        #expect(!DaemonAPI.SetupScript(name: "setup", present: false).needsApprovalForMade)
+        #expect(!DaemonAPI.SetupScript(name: "root", present: true, problem: "root.sh is over 10 KiB.").needsApprovalForMade)
+    }
+
+    /// #7157, board *approve token*: a text that looks like a token warns, with its line.
+    @Test func aTokenInAScriptIsFound() {
+        #expect(MachineScriptWords.tokenLine("echo hi\nexport GH_TOKEN=ghp_abcdefghijklmnopqrstuvwxyz0123\n") == 2)
+        #expect(MachineScriptWords.tokenLine("token=\"$(agents-secret GH_TOKEN)\"\ngh auth login --with-token\n") == nil)
+        #expect(MachineScriptWords.tokenLine("aws configure set aws_access_key_id AKIAABCDEFGHIJKLMNOP\n") == 1)
+    }
 }
+

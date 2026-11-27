@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/controllink"
+	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/providers"
 	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/store"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
@@ -488,5 +489,58 @@ func TestARemovedPersonsPoolsGo(t *testing.T) {
 	}
 	if len(f.made) != 0 || len(f.deleted) != 2 {
 		t.Fatalf("made %v deleted %v", f.made, f.deleted)
+	}
+}
+
+// #7157: a make that root.sh stopped (not the text the person approved) stops the pool at once,
+// as a review and not a failure. After a set with reviewed, the pool makes again, and its ready
+// machines made before the yes, which ran the older root.sh, are replaced.
+func TestAPoolWaitsForAReviewOfRootThenReplaces(t *testing.T) {
+	t.Parallel()
+	w, f := testPools(t)
+	ctx := context.Background()
+	pool, err := w.set(ctx, "alex", wire.WarmPoolSet{Name: "dev", Provider: "do", MinReady: 2, MaxSize: 4})
+	if err != nil || len(f.made) != 2 {
+		t.Fatalf("%v %v", err, f.made)
+	}
+	for _, n := range f.made {
+		f.stages["ws-"+n] = stageReady
+	}
+	refused := &providers.Failure{Code: providers.CodeProviderFailed, Message: "root.sh is not the text you approved: review it and approve it again.",
+		Data: []byte(`{"reason":"setup_script_changed"}`)}
+	if providers.FailureReason(refused) != providers.SetupScriptChanged || providers.FailureReason(errors.New("no")) != "" {
+		t.Fatal("reason")
+	}
+	// A claim takes one: the pool must make one, and root.sh stops it.
+	f.failMake = refused
+	w.mu.Lock()
+	p, tag, _ := w.read(ctx, pool.ID)
+	p.Machines = p.Machines[1:]
+	must(t, w.write(ctx, p, tag))
+	w.mu.Unlock()
+	w.reconcileAll(ctx)
+	got, _ := w.list(ctx, "alex")
+	if q := got.Pools[0]; q.State != wire.WarmPoolStateStopped || q.Review == nil || *q.Review != "root" || q.FailedMakes != nil || f.stopped != poolReviewWhy {
+		t.Fatalf("stopped for a review: %+v %q", q, f.stopped)
+	}
+	// A pass changes nothing while it waits.
+	made := len(f.made)
+	f.failMake = nil
+	w.reconcileAll(ctx)
+	if len(f.made) != made {
+		t.Fatal("a pool that waits for a review made a machine")
+	}
+	// The yes: it makes again, and replaces the one it holds from before.
+	yes := true
+	q, err := w.set(ctx, "alex", wire.WarmPoolSet{ID: &pool.ID, Name: "dev", Provider: "do", MinReady: 2, MaxSize: 4, Reviewed: &yes})
+	if err != nil || q.State != wire.WarmPoolStateKeeping || q.Review != nil || len(f.made) != made+2 {
+		t.Fatalf("after the yes: %v %+v made %v", err, q, f.made)
+	}
+	for _, n := range f.made[made:] {
+		f.stages["ws-"+n] = stageReady
+	}
+	w.reconcileAll(ctx)
+	if len(f.deleted) != 1 || f.deleted[0] != "ws-"+f.made[1] {
+		t.Fatalf("the machine from before the yes is replaced: deleted %v of %v", f.deleted, f.made)
 	}
 }

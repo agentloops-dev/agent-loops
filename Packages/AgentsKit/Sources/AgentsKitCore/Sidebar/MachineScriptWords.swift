@@ -105,4 +105,48 @@ public enum MachineScriptWords {
         if out.last == "" { out.removeLast() }
         return out
     }
+
+    // MARK: Approving a script (#7157, gate 2 boards *approve first*, *approve changed*, *approve token*)
+
+    /// The approval sheet's title: *Approve setup.sh?* for a first use, *root.sh changed since
+    /// you approved it* for a change; for both scripts at once, *Approve your scripts?*.
+    public static func reviewTitle(_ scripts: [DaemonAPI.SetupScript]) -> String {
+        guard scripts.count == 1, let script = scripts.first else { return "Approve your scripts?" }
+        return script.approvedText == nil ? "Approve \(script.file)?" : "\(script.file) changed since you approved it"
+    }
+
+    /// The line over a script's diff: where it is, how much changed, and how it runs.
+    public static func reviewLine(_ script: DaemonAPI.SetupScript, sender: String) -> String {
+        let lines = diff(script.approvedText, script.text ?? "")
+        let added = lines.filter { $0.mark == "+" }.count, removed = lines.filter { $0.mark == "-" }.count
+        let change = script.approvedText == nil ? "new" : "+\(added) −\(removed)"
+        let runs = script.name == "root" ? "runs as root on each new machine" : "runs as your user on new machines"
+        return "\(sender) · ~/.agents/machine-setup/\(script.file) · \(change) · \(runs)"
+    }
+
+    /// The words under the diffs.
+    public static func reviewLimit(sender: String) -> String {
+        "Approving signs this text with \(sender)’s key, for new machines made for you. Scripts are not secret: do not put a token in one."
+    }
+
+    /// A row of New Machine's *Your scripts*: its size, and whether it is approved.
+    public static func makeRow(_ script: DaemonAPI.SetupScript) -> String {
+        if let problem = script.problem { return problem }
+        let size = ByteCountFormatter.string(fromByteCount: script.size ?? 0, countStyle: .file)
+        if !script.needsApprovalForMade { return "\(size) · approved" }
+        return script.approvedText == nil ? "\(size) · new, not approved" : "\(size) · changed since approved"
+    }
+
+    /// The first line of a text that looks like a token (#7157, board *approve token*), counted
+    /// from one: a GitHub, GitLab, Slack, OpenAI or Anthropic token, or an AWS key id. It warns
+    /// and does not refuse.
+    public static func tokenLine(_ text: String) -> Int? {
+        let shapes = [#"gh[pousr]_[A-Za-z0-9]{20,}"#, #"github_pat_[A-Za-z0-9_]{20,}"#, #"glpat-[A-Za-z0-9_\-]{20,}"#,
+                      #"xox[abprs]-[A-Za-z0-9\-]{10,}"#, #"sk-(ant-)?[A-Za-z0-9_\-]{20,}"#, #"AKIA[0-9A-Z]{16}"#]
+        for (i, line) in lines(text).enumerated() where shapes.contains(where: { line.range(of: $0, options: .regularExpression) != nil }) {
+            return i + 1
+        }
+        return nil
+    }
 }
+

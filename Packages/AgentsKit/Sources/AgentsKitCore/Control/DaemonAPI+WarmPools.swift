@@ -104,6 +104,9 @@ public extension DaemonAPI {
         public var settingUp: Int?
         public var failedMakes: Int?
         public var stoppedBecause: String?
+        /// The script the pool stopped for until the person reviews it (#7157): `root` when
+        /// root.sh is not the text they approved for new machines.
+        public var review: String?
         /// Why a pool that is keeping makes no machine now (#6890).
         public var waitingBecause: String?
         public var machines: [WarmPoolMachine]?
@@ -113,7 +116,8 @@ public extension DaemonAPI {
                     region: String? = nil, runtimes: [String]? = nil, projects: [String]? = nil, minReady: Int,
                     maxSize: Int, target: Int? = nil, replaceAfter: Double? = nil, hours: WarmPoolHours? = nil,
                     state: WarmPoolState = .keeping, ready: Int? = nil, settingUp: Int? = nil, failedMakes: Int? = nil,
-                    stoppedBecause: String? = nil, waitingBecause: String? = nil, machines: [WarmPoolMachine]? = nil, claims: WarmPoolClaims? = nil) {
+                    stoppedBecause: String? = nil, review: String? = nil, waitingBecause: String? = nil,
+                    machines: [WarmPoolMachine]? = nil, claims: WarmPoolClaims? = nil) {
             self.id = id
             self.name = name
             self.scope = scope
@@ -132,6 +136,7 @@ public extension DaemonAPI {
             self.settingUp = settingUp
             self.failedMakes = failedMakes
             self.stoppedBecause = stoppedBecause
+            self.review = review
             self.waitingBecause = waitingBecause
             self.machines = machines
             self.claims = claims
@@ -158,10 +163,13 @@ public extension DaemonAPI {
         public var maxSize: Int
         public var replaceAfter: Double?
         public var hours: WarmPoolHours?
+        /// The person approved the pool's changed root.sh (#7157): it makes again, and replaces
+        /// its unclaimed machines from before.
+        public var reviewed: Bool?
 
         public init(id: String? = nil, name: String, scope: WarmPoolScope? = nil, provider: ProviderID, size: String? = nil,
                     region: String? = nil, runtimes: [String]? = nil, projects: [String]? = nil, minReady: Int,
-                    maxSize: Int, replaceAfter: Double? = nil, hours: WarmPoolHours? = nil) {
+                    maxSize: Int, replaceAfter: Double? = nil, hours: WarmPoolHours? = nil, reviewed: Bool? = nil) {
             self.id = id
             self.name = name
             self.scope = scope
@@ -174,6 +182,7 @@ public extension DaemonAPI {
             self.maxSize = maxSize
             self.replaceAfter = replaceAfter
             self.hours = hours
+            self.reviewed = reviewed
         }
     }
 

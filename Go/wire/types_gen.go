@@ -12932,7 +12932,7 @@ type ProviderCarried struct {
 
 	Error *string `json:"error,omitzero"`
 
-	// Why it failed, for a client to say (#6072, W2b): denied (the person chose Deny), disconnected (the provider no longer takes the connection: it was removed there, or its refresh was refused), scope_missing (the person gave less than Agent Loops needs), account_inactive (the account can't make machines yet, such as no payment method), expired (the sign-in was not finished in time; start again).
+	// Why it failed, for a client to say (#6072, W2b): denied (the person chose Deny), disconnected (the provider no longer takes the connection: it was removed there, or its refresh was refused), scope_missing (the person gave less than Agent Loops needs), account_inactive (the account can't make machines yet, such as no payment method), expired (the sign-in was not finished in time; start again), setup_script_changed (#7157: the person's root.sh is not the text a client of their lock approved for new machines, so the make stopped).
 	Code *string `json:"code,omitzero"`
 }
 
@@ -18020,6 +18020,9 @@ type WarmPool struct {
 	// Why the pool stopped making, in the provider's words.
 	StoppedBecause *string `json:"stoppedBecause,omitzero"`
 
+	// The script the pool waits for the person to review (#7157): root when the machine that carries its provider refused a make because root.sh is not the text a client of the person's lock approved for new machines (code setup_script_changed). The pool is stopped until a pool/set with reviewed. Read-only.
+	Review *string `json:"review,omitzero"`
+
 	// Why a pool that is keeping makes no machine now: no machine that has its projects is online (#6890).
 	WaitingBecause *string `json:"waitingBecause,omitzero"`
 
@@ -18127,6 +18130,9 @@ type WarmPoolSet struct {
 	ReplaceAfter *float64 `json:"replaceAfter,omitzero"`
 
 	Hours *WarmPoolHours `json:"hours,omitzero"`
+
+	// The person approved the pool's changed root.sh (#7157): the pool makes machines again, and replaces its unclaimed machines made before now, which ran the older text.
+	Reviewed *bool `json:"reviewed,omitzero"`
 }
 
 // keeping: the pool makes and replaces. off-hours: outside its hours. stopped: three makes failed in a row, see stoppedBecause. empty: minReady is 0.

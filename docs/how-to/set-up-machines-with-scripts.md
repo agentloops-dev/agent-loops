@@ -57,6 +57,27 @@ You approve each script on a device of your machine lock before it is used, and 
 time it changes. Agent Loops uses a script only when the file is the text you approved. With
 no lock, no script runs, and the step says so.
 
+### Approving a script
+
+**New Machine** lists your scripts under **Your scripts, from This Mac**, and reads them again
+when you press **Make**. When one is new, or changed since you approved it for new machines,
+New Machine shows it first, with what changed, and **Approve and Make**: this Mac's lock key
+signs that text for new machines made for you, then the machine is made. When nothing changed,
+nothing asks. A line that looks like a token (such as `ghp_…`) is shown in red, and the press
+says **Approve and Make Anyway**: keep tokens in Secrets, and read them with `agents-secret`.
+
+- **A warm pool** makes machines with nobody there. When `root.sh` changes, the pool stops
+  making and says *root.sh changed*, with **Review root.sh**. After you approve it, the pool
+  makes machines again and replaces its unclaimed ones, which ran the older `root.sh`. A
+  claim from New Machine asks for `setup.sh` the same way.
+- **An agent's `make_machine`** cannot approve a script. When `setup.sh` changed, its card
+  says so, and the new machine is made without it. When `root.sh` changed, it asks nothing,
+  and tells the agent that you approve it with New Machine.
+- **Send Set-up…** on a machine's page shows the same change for that one machine.
+
+This check is against mistakes. It is not a wall: agents on the machine with your scripts run
+as your user, and can change the files.
+
 **Root set-up** is a step of the machine's set-up, after **Compare digits**:
 
 - It runs beside the install of Agent Loops, so a slow `apt-get` does not hold the join up.
