@@ -739,13 +739,39 @@ func (b *Book) liveNames(ctx context.Context, user string) ([]string, error) {
 
 // secretRoom refuses a new name past the person's most secrets, or past the most removed
 // ones. One of theirs has its room, and so has a removed one set again.
+//
+// A record over tombstoneMost is a live secret, as the sweep takes it, so it is counted from
+// the listing with no read (#7480): before, each set read and decoded every secret the person
+// had, so their 200th secret read 199 sealed ones.
 func (b *Book) secretRoom(ctx context.Context, user, name string) error {
-	all, _, err := b.secretRecords(ctx, user)
+	listed, err := b.store.List(ctx, secretsPrefix(user))
 	if err != nil {
 		return err
 	}
+	key := secretKey(user, name)
 	live, removed, there := 0, 0, false
-	for _, r := range all {
+	for _, k := range listed {
+		if !strings.HasSuffix(k.Key, ".json") {
+			continue
+		}
+		if k.Size > tombstoneMost {
+			if k.Key == key {
+				return nil
+			}
+			live++
+			continue
+		}
+		o, err := b.store.Get(ctx, k.Key)
+		if err != nil {
+			return err
+		}
+		if o == nil {
+			continue
+		}
+		var r secretRecord
+		if json.Unmarshal(o.Data, &r) != nil || !secretName.MatchString(r.Name) || secretKey(user, r.Name) != k.Key {
+			continue
+		}
 		if r.Sealed != nil {
 			live++
 		} else {
