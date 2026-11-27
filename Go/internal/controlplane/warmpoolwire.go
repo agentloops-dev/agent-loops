@@ -99,7 +99,7 @@ func (b poolsBackend) Bind(person, provider, workspace string, stopWhenIdle *int
 		return "", err
 	}
 	b.s.setupChanged(context.Background(), host.ID)
-	b.s.setupWanted(context.Background(), host.ID)
+	b.s.setupAsked(context.Background(), host.ID, b.s.setupWanted(context.Background(), host.ID))
 	return host.ID, nil
 }
 
@@ -242,10 +242,14 @@ func cleanFolder(folder string) string {
 // setupWork is machine/setupWork: what the set-up of host has left (#6890, #6896).
 func (s *Service) setupWork(ctx context.Context, host string) (wire.MachineSetupWork, error) {
 	none := wire.MachineSetupWork{Done: true, Projects: []wire.MachineSetupProject{}}
+	stored, _, err := s.readMachineSetup(ctx, host)
+	if err == nil && stored != nil && stored.waitUser(time.Now()) {
+		// Your set-up first (#7416): the host asks again.
+		return wire.MachineSetupWork{WaitUser: new(true), Projects: []wire.MachineSetupProject{}}, nil
+	}
 	if s.pools == nil {
 		return none, nil
 	}
-	stored, _, err := s.readMachineSetup(ctx, host)
 	if err != nil {
 		return none, fail(storeUnavailable, "The machine's set-up could not be read: %v", err)
 	}

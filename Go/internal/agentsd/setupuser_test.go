@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/hostsetup"
+	"github.com/agentloops-dev/agent-loops/Go/internal/machinelock"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -187,5 +188,22 @@ func TestSendSetUpNeedsAnApprovalForThatMachine(t *testing.T) {
 	}
 	if _, r, err := d.approvedSetupScript("setup", "m:h-2"); err != nil || r.Seq != 2 {
 		t.Fatalf("the approval was not kept: %v", err)
+	}
+}
+
+// #7416: setup/wanted says at once whether the sender sends setup.sh: only with an approval for
+// machines as they are made.
+func TestSetupWantedSaysWhetherItSends(t *testing.T) {
+	t.Parallel()
+	const text = "#!/bin/bash\nbrew install jq\n"
+	d, phone, _, state, _ := senderWith(t, text)
+	if d.setupWanted("h-2") {
+		t.Fatal("it sends with no approval for made machines")
+	}
+	if _, err := d.approveSetupScript(wire.SetupApprove{Script: "setup", Approval: approvalOf(t, phone, state, "setup", machinelock.ScopeMade, 1, text)}); err != nil {
+		t.Fatal(err)
+	}
+	if !d.setupWanted("h-2") {
+		t.Fatal("it does not send with an approval for made machines")
 	}
 }

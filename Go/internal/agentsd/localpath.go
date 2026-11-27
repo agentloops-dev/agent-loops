@@ -235,10 +235,6 @@ func (d *Daemon) Told(method string, params json.RawMessage) {
 		d.toldBusDelivery(params)
 		return
 	}
-	if method == wire.NotifySetupWanted.Name {
-		d.toldSetupWanted(params)
-		return
-	}
 	if method == wire.NotifyMachineUser.Name {
 		d.toldHostUser(params)
 		return

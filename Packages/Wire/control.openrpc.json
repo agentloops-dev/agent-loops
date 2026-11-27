@@ -6532,22 +6532,6 @@
       }
     },
     {
-      "name": "setup/wanted",
-      "x-capability": "host.machine-setup/2",
-      "description": "To the machine that carries a provider, on its channel 0 (#7155): a machine it made, or a warm pool's machine that a person claimed, is ready for setup.sh. No text; the sender sends only with an approval of scope made.",
-      "x-notification": true,
-      "paramStructure": "by-name",
-      "params": [
-        {
-          "name": "params",
-          "required": true,
-          "schema": {
-            "$ref": "schema/machines.schema.json#/definitions/SetupWanted"
-          }
-        }
-      ]
-    },
-    {
       "name": "signIn/addToMe",
       "x-capability": "signin/1",
       "paramStructure": "by-name",

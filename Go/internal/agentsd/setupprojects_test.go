@@ -25,6 +25,8 @@ type setupPlane struct {
 	refused error
 	packs   []wire.SendPackRequest
 	said    []wire.MachineSetupReport
+	// asked counts machine/setupWork.
+	asked int
 }
 
 func (p *setupPlane) ask(_ context.Context, method string, params any) (json.RawMessage, error) {
@@ -32,6 +34,7 @@ func (p *setupPlane) ask(_ context.Context, method string, params any) (json.Raw
 	defer p.mu.Unlock()
 	switch method {
 	case wire.CallMachineSetupWork.Name:
+		p.asked++
 		return json.Marshal(p.work)
 	case wire.CallMachineSetupStep.Name:
 		p.said = append(p.said, params.(wire.MachineSetupReport))
@@ -239,4 +242,49 @@ func TestAClaimedMachinesHostRunsTheStepsThatWait(t *testing.T) {
 			t.Fatalf("said again: %+v", p.said)
 		}
 	})
+}
+
+// #7416: the projects step waits while the control plane says that Your set-up is on its way or
+// runs, and says its first line only when it goes on.
+func TestTheProjectsWaitForYourSetUp(t *testing.T) {
+	t.Parallel()
+	d, p, _, here := setupMachine(t)
+	defer d.Shutdown()
+	p.set(func() { p.work.WaitUser = new(true) })
+	var said []string
+	var saidMu sync.Mutex
+	done := make(chan wire.MachineSetupProjects, 1)
+	go func() {
+		done <- d.getSetupProjects(context.Background(), time.Second, 5*time.Millisecond, func(line string) {
+			saidMu.Lock()
+			defer saidMu.Unlock()
+			said = append(said, line)
+		})
+	}()
+	// It asks again while it waits.
+	waitFor(t, "asked three times", func() bool {
+		p.mu.Lock()
+		defer p.mu.Unlock()
+		return p.asked >= 3
+	})
+	select {
+	case got := <-done:
+		t.Fatalf("the projects did not wait: %s", mustJSON(got))
+	default:
+	}
+	saidMu.Lock()
+	if len(said) != 0 {
+		t.Fatalf("the step said %q while it waited", said)
+	}
+	saidMu.Unlock()
+	p.set(func() { p.work.WaitUser = nil })
+	got := <-done
+	if got.Problem != nil || len(got.Folders) != 1 || got.Folders[0] != here {
+		t.Fatalf("%s", mustJSON(got))
+	}
+	saidMu.Lock()
+	defer saidMu.Unlock()
+	if len(said) == 0 || said[0] != "Looking for projects" {
+		t.Fatalf("%q", said)
+	}
 }
