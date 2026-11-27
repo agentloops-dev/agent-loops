@@ -545,7 +545,7 @@ struct WorkTimelineTests {
     @Test func aFirstAnswerKeepsTheForecastsOnScreen() {
         let forecast = DaemonAPI.WorkTimelineForecast(low: Self.h(1), mid: Self.h(2), high: Self.h(3))
         let first = DaemonAPI.WorkTimeline(epics: [Self.epic(1, [Self.child(2, started: -2)]), Self.epic(3, [Self.child(4, started: -2)]),
-                                                   Self.epic(5, [Self.child(6, closed: -1)])], partial: true)
+                                                   Self.epic(5, [Self.child(6, closed: -1)], closed: -1)], partial: true)
         let shown = DaemonAPI.WorkTimeline(epics: [Self.epic(1, [Self.child(2, started: -2)], forecast: forecast),
                                                    Self.epic(5, [Self.child(6, started: -2)], forecast: forecast)])
         #expect(WorkTimeline.keepForecasts(first, shown: shown).epics.map(\.forecast) == [forecast, nil, nil])
