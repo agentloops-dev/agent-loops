@@ -234,3 +234,36 @@ func TestDriveScreenIsOfferedOnlyWhileDesktopControlIsOn(t *testing.T) {
 		t.Fatal("drive_screen not offered while desktop control is on")
 	}
 }
+
+// tools/list marks the tools that nearly every lane calls with Claude Code's
+// anthropic/alwaysLoad, so Claude does not defer them and refuse the first call (#5187).
+// No other tool has the mark: each one would add its schema to every prompt.
+func TestTheToolsEveryLaneCallsAreAlwaysLoaded(t *testing.T) {
+	t.Parallel()
+
+	marked := map[string]bool{}
+	for _, raw := range offeredTools(false, false, false, false) {
+		var tool struct {
+			Name string `json:"name"`
+			Meta struct {
+				AlwaysLoad *bool `json:"anthropic/alwaysLoad"`
+			} `json:"_meta"`
+		}
+		mustUnmarshal(t, raw, &tool)
+		if tool.Meta.AlwaysLoad != nil {
+			if !*tool.Meta.AlwaysLoad {
+				t.Fatalf("%s: alwaysLoad false", tool.Name)
+			}
+			marked[tool.Name] = true
+		}
+	}
+	want := []string{"set_session_labels", "lease_resource", "release_resource", "wait_for_event", "message_session", "commit_trailers"}
+	for _, name := range want {
+		if !marked[name] {
+			t.Errorf("%s is not always loaded", name)
+		}
+	}
+	if len(marked) != len(want) {
+		t.Errorf("always loaded: %v, want only %v", marked, want)
+	}
+}
