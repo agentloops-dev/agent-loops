@@ -168,6 +168,9 @@ func (d *Daemon) prompt(r wire.PromptRequest) error {
 		d.raiseSignInCard(a.ID, a.RuntimeID)
 		return err
 	}
+	if a.RuntimeID == "claude" {
+		d.raiseSignInCard(a.ID, a.RuntimeID) // a Claude that still uses the Mac's sign-in (#7506)
+	}
 	if !d.once(r.SendID) {
 		return nil
 	}

@@ -9556,6 +9556,12 @@ export interface MachineSetup {
 export interface MachineSetupDeliver {
   /** The machine's id, as the person's lock names it. */
   host: string;
+  /**
+   * The sender's last try (#7528): it does not send again when this one fails. The control plane
+   * then fails that machine's Your set-up, with the reason, when the step has not begun. Absent: a
+   * refusal as not in the lock is tried again.
+   */
+  last?: boolean;
 }
 
 /**
@@ -9667,10 +9673,17 @@ export type MachineSetupStepID =
  * machine/setupWork: what the set-up of the machine that asks has left (#6890, #6896). pool: a warm
  * pool made it. claimed: a person claimed it, and from is the first of steps 6 to 8 that waits to
  * run (absent: none does now). done: nothing is left to ask for. projects: the project folders to
- * get, at their last commit. An unclaimed machine does step 6 and stops.
+ * get, at their last commit. An unclaimed machine does step 6 and stops. waitUser (#7416): Your
+ * set-up is on its way to this machine or runs there, and its projects wait for it: ask again, less
+ * often each time. userFailed (#7546): Your set-up failed, so the projects, sign-in and smoke do
+ * not start: ask again only when Your set-up runs again (Run Again, Send Set-up). from on a machine
+ * that no pool made (pool false, #7559): Your set-up is done and the projects step has not begun,
+ * so the host runs steps 6 to 8 when no installer asks for the projects (a reboot ended it).
  */
 export interface MachineSetupWork {
   pool: boolean;
+  waitUser?: boolean;
+  userFailed?: boolean;
   claimed: boolean;
   done: boolean;
   from?: MachineSetupStepID;
@@ -15161,13 +15174,21 @@ export interface SetupSend {
 }
 
 /**
- * setup/wanted (#7155): the control plane tells the machine that carries a provider that a machine
- * it made (or a warm pool's machine that a person claimed) is ready for the person's setup.sh. It
+ * setup/wanted (#7155): the control plane asks the machine that carries a provider whether it sends
+ * the person's setup.sh to a machine it made (or a warm pool's machine that a person claimed). It
  * carries no text; the sender sends it only with an approval of scope made, and the target takes
  * one such send.
  */
 export interface SetupWanted {
   host: string;
+}
+
+/**
+ * setup/wanted's answer (#7416): sending says that the sender has a setup.sh approved for new
+ * machines, and sends it now.
+ */
+export interface SetupWantedAnswer {
+  sending: boolean;
 }
 
 export interface SharedInstructions {
@@ -19696,13 +19717,13 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   MachineSessionCall: { required: ["host", "call"], optional: [] },
   MachineSessionStart: { required: ["host", "start"], optional: [] },
   MachineSetup: { required: ["steps", "startedAt"], optional: ["readyAt"] },
-  MachineSetupDeliver: { required: ["host"], optional: [] },
+  MachineSetupDeliver: { required: ["host"], optional: ["last"] },
   MachineSetupProject: { required: ["path", "sources"], optional: ["project"] },
   MachineSetupProjects: { required: ["pool", "finished", "folders"], optional: ["detail", "problem"] },
   MachineSetupReport: { required: ["step", "state"], optional: ["detail", "error", "fromPool", "code", "hash", "warning"] },
   MachineSetupSource: { required: ["machine", "name", "online"], optional: [] },
   MachineSetupStep: { required: ["id", "state"], optional: ["startedAt", "endedAt", "detail", "error", "fromPool", "slower", "hash", "warning"] },
-  MachineSetupWork: { required: ["pool", "claimed", "done", "projects"], optional: ["from"] },
+  MachineSetupWork: { required: ["pool", "claimed", "done", "projects"], optional: ["waitUser", "userFailed", "from"] },
   MachineStatus: { required: ["idle", "running"], optional: ["schedule"] },
   MachineStop: { required: ["host"], optional: ["confirmRunning"] },
   MachineTunnel: { required: ["up"], optional: ["problem"] },
@@ -20140,6 +20161,7 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   SetupScripts: { required: ["scripts"], optional: ["folder"] },
   SetupSend: { required: ["host", "approval"], optional: [] },
   SetupWanted: { required: ["host"], optional: [] },
+  SetupWantedAnswer: { required: ["sending"], optional: [] },
   SharedInstructions: { required: ["path", "exists", "reach"], optional: [] },
   SharedLook: { required: ["kind", "page", "item", "text"], optional: [] },
   SharedMCP: { required: ["file", "servers", "app", "runtimeOnly"], optional: ["problem"] },

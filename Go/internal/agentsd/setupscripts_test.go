@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/machinelock"
 	"github.com/agentloops-dev/agent-loops/Go/internal/workspacecommands"
@@ -131,6 +132,43 @@ func TestASenderKeepsOnlyAClientsApprovalOfTheTextThere(t *testing.T) {
 }
 
 // #7167: a script over its limit is not one to approve.
+// #7547: each try of a Send Set-up that waits gives the same approval again. It is taken, and
+// machine-setup-approved.json is not written again; a new approval is written.
+func TestTheSameApprovalAgainDoesNotWriteTheApprovals(t *testing.T) {
+	t.Parallel()
+	const text = "#!/bin/bash\nbrew install jq\n"
+	d, phone, _, state, _ := senderWith(t, text)
+	scope := machinelock.ScopeOf("h-2")
+	r := approvalOf(t, phone, state, "setup", scope, 1, text)
+	approve := func(r wire.LockRecord) {
+		t.Helper()
+		if _, err := d.approveSetupScript(wire.SetupApprove{Script: "setup", Approval: r}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	approve(r)
+	path := d.approvedSetupPath()
+	old := time.Unix(1_000_000, 0)
+	must(t, os.Chtimes(path, old, old))
+	written := func() bool {
+		t.Helper()
+		info, err := os.Stat(path)
+		must(t, err)
+		return !info.ModTime().Equal(old)
+	}
+	approve(r)
+	if written() {
+		t.Fatal("the same approval wrote the approvals again")
+	}
+	if _, _, err := d.approvedSetupScript("setup", scope); err != nil {
+		t.Fatalf("the approval is not in force: %v", err)
+	}
+	approve(approvalOf(t, phone, state, "setup", scope, 2, text))
+	if !written() {
+		t.Fatal("a new approval was not written")
+	}
+}
+
 func TestASetUpScriptOverItsLimitIsNotUsed(t *testing.T) {
 	t.Parallel()
 	text := strings.Repeat("#", 64<<10+1)
@@ -139,6 +177,13 @@ func TestASetUpScriptOverItsLimitIsNotUsed(t *testing.T) {
 	must(t, err)
 	if s.Scripts[1].Problem == nil || s.Scripts[1].Text != nil {
 		t.Fatalf("%+v", s.Scripts[1])
+	}
+	// #7548: it says its size and the limit, rounded up, and carries the size.
+	if got := *s.Scripts[1].Problem; got != "setup.sh is 65 KiB, over its limit of 64 KiB." {
+		t.Errorf("problem %q", got)
+	}
+	if s.Scripts[1].Size == nil || *s.Scripts[1].Size != 64<<10+1 {
+		t.Errorf("size %v", s.Scripts[1].Size)
 	}
 	if _, err := d.approveSetupScript(wire.SetupApprove{Script: "setup", Approval: approvalOf(t, phone, state, "setup", "made", 1, text)}); codeOf(err) != wire.FailureSetupScriptChanged {
 		t.Fatalf("%v", err)

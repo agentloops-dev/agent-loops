@@ -41,6 +41,24 @@ struct MachineSetupWordsTests {
         #expect(MachineNeed.most(row: row, offline: false, runtimes: []) == .settingUp(setup(done: 3)))
     }
 
+    @Test func aFailedScriptLetsSessionsStartWithAWarning() throws {
+        func failing(_ id: String) -> DaemonAPI.MachineSetup {
+            .init(steps: [.init(id: "install", state: .done), .init(id: id, state: .failed, error: "exit 1"),
+                          .init(id: "smoke", state: .waiting)], startedAt: start)
+        }
+        let user = try #require(MachineSetupWords.failedScript(failing("user")))
+        #expect(user.id == "user")
+        #expect(MachineSetupWords.failedScript(failing("root"))?.id == "root")
+        // Another failed step still holds new sessions back.
+        #expect(MachineSetupWords.failedScript(failing("install")) == nil)
+        #expect(MachineSetupWords.failedScript(setup(done: 3)) == nil)
+        #expect(MachineSetupWords.failedScript(nil) == nil)
+        #expect(MachineSetupWords.startsDespiteFailure(user, machine: "vm-1")
+            == "Your set-up failed on vm-1. The session starts, but what setup.sh installs can be missing.")
+        #expect(MachineSetupWords.startsDespiteFailure(.init(id: "root", state: .failed), machine: "vm-1")
+            == "Root set-up failed on vm-1. The session starts, but what root.sh installs can be missing.")
+    }
+
     @Test func aStepSaysWhatItDoes() {
         let running = DaemonAPI.MachineSetupStep(id: "install", state: .running, detail: "Agents: 62 of 140 MB", slower: true)
         #expect(MachineSetupWords.line(running) == "Agents: 62 of 140 MB · Slower than usual")

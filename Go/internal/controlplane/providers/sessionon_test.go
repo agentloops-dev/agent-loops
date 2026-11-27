@@ -559,3 +559,59 @@ func TestAnAgentAsksWhichMachineAutoPicks(t *testing.T) {
 		t.Fatal("answered with no runtime")
 	}
 }
+
+// #7528: a setup.sh that the target refused, or that did not reach it, is told to the control
+// plane's set-up, with whether the sender tries again; one that went is not.
+func TestASetupDeliverThatFailsIsToldToTheSetUp(t *testing.T) {
+	h := newHarness(t)
+	type notSent struct {
+		host, sender string
+		code         int
+		last         bool
+	}
+	var told []notSent
+	h.providers.hooks.SetupNotSent = func(host, sender string, refusal *Failure, last bool) {
+		told = append(told, notSent{host, sender, refusal.Code, last})
+	}
+	refuse := true
+	h.router.mu.Lock()
+	h.router.answer = func(host, method string, params json.RawMessage) *Reply {
+		if refuse {
+			return &Reply{Error: fail(wire.FailureNotInLock, "This machine is not in your lock.")}
+		}
+		return &Reply{Result: rawOf(map[string]any{})}
+	}
+	h.router.mu.Unlock()
+	h.router.setOnline(devbox, true)
+	deliver := &wire.LockDelivery{Method: wire.CallSetupDeliver.Name, Params: `{"script":"setup"}`,
+		Lock: wire.LockSignature{At: time.Now().Unix(), Key: []byte{4}, Sig: []byte{1}}}
+	call := func(last bool) error {
+		params := map[string]any{"host": devbox}
+		if last {
+			params["last"] = true
+		}
+		_, err := h.providers.HostSaid(other, MethodHostMachines, rawOf(MachineWorkspaceCall{Agent: "set-up", Method: MethodSetupDeliver,
+			Params: rawOf(params), Deliver: deliver}))
+		return err
+	}
+	if err := call(false); failureOf(err) == nil || failureOf(err).Code != wire.FailureNotInLock {
+		t.Fatalf("the refusal did not come back: %v", err)
+	}
+	if err := call(true); failureOf(err) == nil {
+		t.Fatal("the last refusal did not come back")
+	}
+	if len(told) != 2 || told[0].host != devbox || told[0].code != wire.FailureNotInLock || told[0].last || !told[1].last || told[0].sender == "" {
+		t.Fatalf("told: %+v", told)
+	}
+	refuse = false
+	if err := call(true); err != nil {
+		t.Fatal(err)
+	}
+	h.router.setOnline(devbox, false)
+	if err := call(false); failureOf(err) == nil || failureOf(err).Code != CodeHostOffline {
+		t.Fatalf("an offline target: %v", err)
+	}
+	if len(told) != 3 || told[2].code != CodeHostOffline {
+		t.Fatalf("a send that went, or an offline target: %+v", told)
+	}
+}

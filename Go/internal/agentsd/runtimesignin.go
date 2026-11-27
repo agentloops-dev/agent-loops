@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -281,6 +282,9 @@ func (d *Daemon) finishHeadlessSignIn(ctx context.Context, r wire.RuntimeSignInF
 		}
 		s.end()
 		d.dropHeadless(s)
+		if err := d.checkOwnClaudeSignIn(ctx, "CLAUDE_CODE_OAUTH_TOKEN", token); err != nil {
+			return wire.RuntimeStatus{}, err
+		}
 		if err := d.keepClaudeSignIn("CLAUDE_CODE_OAUTH_TOKEN", token); err != nil {
 			return wire.RuntimeStatus{}, err
 		}
@@ -322,6 +326,9 @@ func (d *Daemon) signInWithKey(ctx context.Context, runtimeID, key string) (wire
 		if strings.HasPrefix(key, "sk-ant-oat") {
 			variable = "CLAUDE_CODE_OAUTH_TOKEN"
 		}
+		if err := d.checkOwnClaudeSignIn(ctx, variable, key); err != nil {
+			return wire.RuntimeStatus{}, err
+		}
 		if err := d.keepClaudeSignIn(variable, key); err != nil {
 			return wire.RuntimeStatus{}, err
 		}
@@ -351,6 +358,44 @@ func (d *Daemon) signInWithKey(ctx context.Context, runtimeID, key string) (wire
 	}
 	d.closeRelayForOwnSignIn("codex")
 	return d.signedInHere(rt), nil
+}
+
+// claudeCheckTurn runs one cheap turn of Claude with only the given sign-in, and says why
+// it failed. A variable so a test needs no Claude on the machine.
+var claudeCheckTurn = func(ctx context.Context, env []string) error {
+	cmd, err := runtimeTool("claude", env, "-p", "Reply with the word ok.", "--max-turns", "1")
+	if err != nil {
+		return err
+	}
+	out := &signInOutput{}
+	cmd.Stdout, cmd.Stderr = out, out
+	if err := cmd.Start(); err != nil {
+		return err
+	}
+	stop := context.AfterFunc(ctx, func() { _ = cmd.Process.Kill() })
+	defer stop()
+	if err := cmd.Wait(); err != nil {
+		return errors.New(strings.TrimPrefix(lastLine(out.text()), ": "))
+	}
+	return nil
+}
+
+// checkOwnClaudeSignIn is spec 7469 Q6.2: before the Mac's lent sign-in is closed for a
+// server's own, one cheap check turn must pass with the server's own sign-in alone. With no
+// lend open there is nothing to close and nothing to check. When it fails the sign-in is not
+// kept, so the lend stays and works, and the error says why.
+func (d *Daemon) checkOwnClaudeSignIn(ctx context.Context, variable, value string) error {
+	if d.relayFor("claude") == nil {
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(ctx, 90*time.Second)
+	defer cancel()
+	env := append(d.signInEnvironment(runtimeByID("claude")), variable+"="+value)
+	if err := claudeCheckTurn(ctx, env); err != nil {
+		return &Error{Code: wire.FailureNeedsSignIn, Message: "Claude did not answer a check turn with this sign-in, so this server keeps using the Mac's" +
+			strings.TrimSuffix(": "+err.Error(), ": ") + "."}
+	}
+	return nil
 }
 
 // closeRelayForOwnSignIn closes the gate of the Mac's lent sign-in once this server has its

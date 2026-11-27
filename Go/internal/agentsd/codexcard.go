@@ -16,10 +16,15 @@ import (
 // sealed or sent through the control plane, and the Mac's host is not part of it. Once it is
 // made, the Mac's lent sign-in is closed and this one wins.
 
+// signInCodeField is the one field of Claude's sign-in card.
+const signInCodeField = "code"
+
 // signInCards are the open cards of a sign-in made here: request ID to sign-in ID.
 type signInCardState struct {
 	cards   map[wire.UUID]signInCard
 	raising map[string]bool
+	// dismissed are the runtimes whose card the person dismissed: not raised again until restart.
+	dismissed map[string]bool
 }
 
 type signInCard struct {
@@ -70,7 +75,16 @@ func (d *Daemon) replaceExpiredSignInCard(id string) {
 // raiseSignInCard shows the card for runtimeID's sign-in on agent, in the background, once:
 // a card still open for a sign-in that is still running is the card.
 func (d *Daemon) raiseSignInCard(agent wire.UUID, runtimeID string) {
-	if runtimeID != "codex" || macToolsHome != "" {
+	if macToolsHome != "" || runtimeID != "codex" && runtimeID != "claude" {
+		return
+	}
+	if runtimeID == "claude" && (d.relayFor("claude") == nil || d.storedClaudeSignIn() != "" || ownClaudeSignIn()) {
+		return // no lend to leave, or a sign-in of its own already (#7506)
+	}
+	d.headlessMu.Lock()
+	gone := d.signInCards.dismissed[runtimeID]
+	d.headlessMu.Unlock()
+	if gone {
 		return
 	}
 	var stale []wire.UUID
@@ -113,9 +127,19 @@ func (d *Daemon) raiseSignInCard(agent wire.UUID, runtimeID string) {
 		}
 		msg := "Sign Codex in on this server, so it works when the Mac is away. Open " + string(step.URL) +
 			" in any browser and enter the code " + code + ", then choose Accept."
+		mode := wire.ElicitationRequestMode{URL: &wire.ElicitationRequestModeURL{Value: string(step.URL)}}
+		if runtimeID == "claude" {
+			// Claude's page gives a code to paste back: a form with the link in its words (#7506).
+			msg = "Sign in on this server so it works when the Mac is away. Open " + string(step.URL) +
+				" in any browser, sign in, and paste the code it gives."
+			title := "Sign Claude in on this server"
+			field := "Code from the sign-in page"
+			mode = wire.ElicitationRequestMode{Form: &wire.ElicitationRequestModeForm{Value: wire.ElicitationSchema{Title: &title,
+				Properties: []wire.ElicitationSchemaProperty{{Name: signInCodeField, Title: &field, IsRequired: true,
+					Kind: wire.ElicitationSchemaPropertyKind{String: &wire.ElicitationSchemaPropertyKindString{}}}}}}}
+		}
 		req := wire.ElicitationRequest{ID: store.NewUUID(), AgentID: agent, Message: &msg,
-			Mode:  wire.ElicitationRequestMode{URL: &wire.ElicitationRequestModeURL{Value: string(step.URL)}},
-			Scope: wire.ElicitationRequestScopeSession, AskedAt: now()}
+			Mode: mode, Scope: wire.ElicitationRequestScopeSession, AskedAt: now()}
 		r := d.formRequest(req)
 		if r == nil {
 			d.cancelSignIn(step.SignInID)
@@ -132,7 +156,7 @@ func (d *Daemon) raiseSignInCard(agent wire.UUID, runtimeID string) {
 		opened := d.keepFormRequest(r)
 		d.requestOpened(opened)
 		Broadcast(d, wire.NotifyAgentElicitation, wire.ElicitationNotification{AgentID: agent, RequestID: req.ID, Request: &req})
-		d.raiseAgentEvent("agent.asked_form", agent, "is asking for Codex to be signed in on this server.", nil)
+		d.raiseAgentEvent("agent.asked_form", agent, "is asking for "+runtimeByID(runtimeID).Name+" to be signed in on this server.", nil)
 	})
 }
 
@@ -143,13 +167,25 @@ func (d *Daemon) cancelSignIn(id string) {
 
 // answerSignInCard is the answer to a sign-in card. Accept is Done: Codex must have seen the
 // code, or the card stays open and says so. Anything else stops the sign-in.
-func (d *Daemon) answerSignInCard(signInID string, action wire.AnswerElicitationRequestAction) error {
+func (d *Daemon) answerSignInCard(signInID string, action wire.AnswerElicitationRequestAction, code string) error {
 	if action != wire.AnswerElicitationRequestActionAccept {
+		d.headlessMu.Lock()
+		if s := d.headless[signInID]; s != nil {
+			if d.signInCards.dismissed == nil {
+				d.signInCards.dismissed = map[string]bool{}
+			}
+			d.signInCards.dismissed[s.runtimeID] = true
+		}
+		d.headlessMu.Unlock()
 		d.forgetSignInCardFor(signInID)
 		d.cancelSignIn(signInID)
 		return nil
 	}
-	_, err := d.finishHeadlessSignIn(d.ctx, wire.RuntimeSignInFinish{SignInID: signInID})
+	fin := wire.RuntimeSignInFinish{SignInID: signInID}
+	if code != "" {
+		fin.Code = &code
+	}
+	_, err := d.finishHeadlessSignIn(d.ctx, fin)
 	if err == nil {
 		d.forgetSignInCardFor(signInID)
 	}

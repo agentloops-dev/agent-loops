@@ -153,9 +153,10 @@ struct MachinePage: View {
     }
 
     /// Try Again: your set-up runs on the machine itself (#7155), so it runs its copy again there;
-    /// any other step is the control plane's to run again.
+    /// any other step, and a Your set-up that never got a script (no hash), is the control
+    /// plane's to run again: it asks the sender again for that one (#7545).
     private func retry(_ setup: DaemonAPI.MachineSetup) async {
-        if MachineSetupWords.failedStep(setup)?.id == "user" {
+        if let failed = MachineSetupWords.failedStep(setup), failed.id == "user", !(failed.hash ?? "").isEmpty {
             await model.runSetupAgain(host)
         } else {
             await model.retrySetup(host)

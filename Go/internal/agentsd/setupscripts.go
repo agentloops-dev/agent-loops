@@ -11,6 +11,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"sync"
 
@@ -79,11 +80,13 @@ func (d *Daemon) setupScriptsFolder() string {
 	return ""
 }
 
-// scriptFile is one script as it is now: present, and its text, or why it has none.
+// scriptFile is one script as it is now: present, and its text, or why it has none. A file over
+// its limit has its size too (#7548), so the page can say by how much.
 type scriptFile struct {
 	present bool
 	text    string
 	problem string
+	size    int64
 }
 
 func (f scriptFile) hash() string { return scriptHash(f.text) }
@@ -120,7 +123,9 @@ func (d *Daemon) readSetupScript(file string, most int64) scriptFile {
 	case err != nil:
 		return scriptFile{present: true, problem: file + " cannot be read: " + err.Error()}
 	case int64(len(b)) > most:
-		return scriptFile{present: true, problem: fmt.Sprintf("%s is over %d KiB.", file, most>>10)}
+		size := max(info.Size(), most+1)
+		return scriptFile{present: true, size: size,
+			problem: fmt.Sprintf("%s is %d KiB, over its limit of %d KiB.", file, (size+(1<<10)-1)>>10, most>>10)}
 	case len(b) == 0:
 		return scriptFile{present: true, problem: file + " is empty."}
 	}
@@ -199,6 +204,9 @@ func scriptState(name string, f scriptFile, approved approvedSetup, state *machi
 	out := wire.SetupScript{Name: name, Present: f.present, Approvals: []wire.LockRecord{}, NextSeq: 1}
 	if f.problem != "" {
 		out.Problem = new(f.problem)
+		if f.size > 0 {
+			out.Size = new(f.size)
+		}
 	} else if f.present {
 		out.Text, out.Hash, out.Size = new(f.text), new(f.hash()), new(int64(len(f.text)))
 	}
@@ -278,10 +286,16 @@ func (d *Daemon) approveSetupScript(p wire.SetupApprove) (wire.SetupScript, erro
 	if err != nil {
 		return wire.SetupScript{}, &Error{Code: CodeServer, Message: "The approved set-up scripts cannot be read: " + err.Error()}
 	}
-	if _, err := approved.Counters.Take(r); err != nil {
+	taken, err := approved.Counters.Take(r)
+	if err != nil {
 		return wire.SetupScript{}, Invalid("The approval of %s cannot be taken: %v", file, err)
 	}
 	a := approved.Scripts[p.Script]
+	if !taken && keptAlready(a, r, now.hash(), state) {
+		// The same approval again, as each try of a Send Set-up that waits gives (#7547): the
+		// file is not written again.
+		return scriptState(p.Script, now, approved, state), nil
+	}
 	switch {
 	case machinelock.Removed(r):
 		delete(a.Approvals, r.Scope)
@@ -310,6 +324,23 @@ func (d *Daemon) approveSetupScript(p wire.SetupApprove) (wire.SetupScript, erro
 		return wire.SetupScript{}, &Error{Code: wire.FailureCouldNotSave, Message: "The approval of " + file + " was not kept: " + err.Error()}
 	}
 	return scriptState(p.Script, now, approved, state), nil
+}
+
+// keptAlready says that a keeps r as it is, for the text hash, and only approvals of the lock held
+// now: taking r again changes nothing.
+func keptAlready(a approvedScript, r wire.LockRecord, hash string, state *machinelock.State) bool {
+	if machinelock.Removed(r) || a.Hash != hash {
+		return false
+	}
+	if had, ok := a.Approvals[r.Scope]; !ok || !reflect.DeepEqual(had, r) {
+		return false
+	}
+	for _, had := range a.Approvals {
+		if _, err := machinelock.CheckRecord(state, had); err != nil {
+			return false
+		}
+	}
+	return true
 }
 
 // approvedSetupScript is the text of a script and its approval for scope, for the sender to use

@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/agentloops-dev/agent-loops/Go/internal/gitlabmcp"
 	"github.com/agentloops-dev/agent-loops/Go/internal/lineage"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
@@ -330,7 +331,53 @@ func (d *Daemon) forgeNextReadOpen(ctx context.Context, method, folder string, e
 		}
 		q.Cursor = page.Cursor
 	}
+	d.forgeNextParents(ctx, method, all, out)
 	return all, nil
+}
+
+// forgeNextParents sets the parent of each GitLab issue of items that has none (#7343): GitLab's
+// REST list does not say it, so the epics above it would not count. It is one GraphQL read for
+// each project, a page of standingParentsMost at a time, not one read per issue. A project that
+// cannot be read adds its error to out, and its issues keep no parent. Forgejo's issues keep
+// none: an epic's children there are the issues it depends on, which are its blockers too.
+func (d *Daemon) forgeNextParents(ctx context.Context, method string, items []wire.ForgeItem, out *wire.ForgeNext) {
+	var repos []forgeRepo
+	at := map[forgeRepo][]int{}
+	for n, i := range items {
+		repo, _, ok := nodeOfRepo(i.Node)
+		if i.Parent != nil || i.Node.Kind != lineage.KindIssue || !ok || repo.forge != "gitlab" {
+			continue
+		}
+		if at[repo] == nil {
+			repos = append(repos, repo)
+		}
+		at[repo] = append(at[repo], n)
+	}
+	for _, repo := range repos {
+		gl, project, _, err := d.gitlabOf(ctx, method, repo)
+		for left := at[repo]; err == nil && len(left) > 0; {
+			page := left[:min(len(left), standingParentsMost)]
+			left = left[len(page):]
+			numbers := make([]int, len(page))
+			for n, i := range page {
+				numbers[n] = refNumber(items[i].Node.Ref)
+			}
+			var parents map[int]gitlabmcp.Ref
+			if parents, err = gl.Parents(ctx, project, numbers); err != nil {
+				break
+			}
+			for n, i := range page {
+				if p, ok := parents[numbers[n]]; ok {
+					items[i].Parent = new(forgeRepo{"gitlab", strings.ToLower(p.Project)}.issue(p.Number))
+				}
+			}
+		}
+		if err != nil {
+			if e := forgeListError("gitlab", err); !slices.Contains(out.Errors, e) {
+				out.Errors = append(out.Errors, e)
+			}
+		}
+	}
 }
 
 // takenIssues are the issues (by ref, in lower case) that a session on this machine that is not

@@ -658,9 +658,12 @@ func (d *Daemon) answerLostForm(req wire.ElicitationRequest, action wire.AnswerE
 	// A card for a sign-in made here (#7471): Accept is Done, and the agent is not prompted.
 	signIn := d.signInCardOf(req.ID)
 	if signIn != "" && action == wire.AnswerElicitationRequestActionAccept {
-		if err := d.answerSignInCard(signIn, action); err != nil {
+		code, _ := text(value(content[signInCodeField]))
+		if err := d.answerSignInCard(signIn, action, code); err != nil {
 			return err
 		}
+		// The code is used once and is nobody's to read again: not in the record.
+		content, said = map[string]wire.JSONValue{}, nil
 	}
 	if d.heldForm(req.ID) {
 		// Not lost: an answer that came first is ending it (#6475).
@@ -677,7 +680,7 @@ func (d *Daemon) answerLostForm(req wire.ElicitationRequest, action wire.AnswerE
 		Summary: answeredSummary(action), Answers: said}})
 	if signIn != "" {
 		if action != wire.AnswerElicitationRequestActionAccept {
-			_ = d.answerSignInCard(signIn, action) // a stop has nothing to report
+			_ = d.answerSignInCard(signIn, action, "") // a stop has nothing to report
 		}
 		d.forgetSignInCard(req.ID)
 		return nil

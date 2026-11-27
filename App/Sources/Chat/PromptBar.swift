@@ -147,6 +147,7 @@ struct PromptBar: View {
             VStack(alignment: .leading, spacing: 12) {
                 whereAndWhat
                 startingOnOut
+                setupScriptFailed
                 if draftLostSomething {
                     Text(PromptWords.draftLostSomething)
                         .appText(.fine)
@@ -285,6 +286,18 @@ struct PromptBar: View {
         if agent == nil, let runtimeID = model.draftRuntimeID,
            let sentence = model.runtimeAllowances?.startingOnOut(runtimeID) {
             Text(sentence)
+                .appText(.fine)
+                .foregroundStyle(StateTint.warning.style(or: .primary))
+        }
+    }
+
+    /// A new chat on a machine whose Root set-up or Your set-up failed (#7558; #7151, gate 1):
+    /// which step failed, said before the first prompt. Send still starts the session.
+    @ViewBuilder
+    private var setupScriptFailed: some View {
+        if let step = targetSetupFailed {
+            Label(MachineSetupWords.startsDespiteFailure(step, machine: model.hosts.label(targetHost)),
+                  icon: MachineSetupSection<EmptyView>.warningSymbol)
                 .appText(.fine)
                 .foregroundStyle(StateTint.warning.style(or: .primary))
         }
@@ -1029,6 +1042,7 @@ struct PromptBar: View {
             model.draftLevel(field)
         }
         return LevelPill(field: field, chosen: chosen, runtimeName: runtimeName(runtimeID),
+                         owner: agent?.id.uuidString ?? "draft-\(runtimeID)",
                          cell: { model.autoMappings.cell(runtimeID, field, $0) },
                          own: own, binding: binding(for:)) { level in
             if let agent {
@@ -1037,6 +1051,7 @@ struct PromptBar: View {
                 model.chooseDraftLevel(field, level)
             }
         }
+        .equatable()
     }
 
     /// The pills of a new session on Auto (#2658): Permission mode, Sandbox and Model, each
@@ -1046,10 +1061,11 @@ struct PromptBar: View {
         let picked = model.draftAutoPreview?.runtimeID
         return HStack(spacing: 10) {
             LevelPill(field: .permission, chosen: model.draftLevels.permission?.rawValue,
-                      runtimeName: picked.map(runtimeName),
+                      runtimeName: picked.map(runtimeName), owner: "auto",
                       cell: { level in picked.flatMap { model.autoMappings.cell($0, .permission, level) } }) {
                 model.chooseDraftLevel(.permission, $0)
             }
+            .equatable()
             SelectCapsule(name: LevelWords.sandboxField, title: LevelWords.sandbox(model.draftSandbox ?? .runtime)) { dismiss in
                 SelectGroupHeading(title: LevelWords.sandboxField)
                 ForEach(SandboxChoice.allCases, id: \.self) { choice in
@@ -1065,10 +1081,11 @@ struct PromptBar: View {
             }
             Spacer(minLength: 16)
             LevelPill(field: .model, chosen: model.draftLevels.model?.rawValue,
-                      runtimeName: picked.map(runtimeName),
+                      runtimeName: picked.map(runtimeName), owner: "auto",
                       cell: { level in picked.flatMap { model.autoMappings.cell($0, .model, level) } }) {
                 model.chooseDraftLevel(.model, $0)
             }
+            .equatable()
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -1177,8 +1194,16 @@ struct PromptBar: View {
     /// Offline, and not a stopped workspace that keeps what is sent until it is up (#691 US3).
     private var targetOffline: Bool { model.hosts.isOffline(targetHost) && !model.startsWhenUsed(targetHost) }
 
-    /// A new session waits until its machine's set-up is done (#5357, #7108).
-    private var targetSettingUp: Bool { agent == nil && model.hosts.settingUp(targetHost) }
+    /// A new session waits until its machine's set-up is done (#5357, #7108), except after a
+    /// failed Root set-up or Your set-up: then it starts, with a warning (#7558).
+    private var targetSettingUp: Bool {
+        agent == nil && model.hosts.settingUp(targetHost) && targetSetupFailed == nil
+    }
+
+    /// The failed Root set-up or Your set-up of a new chat's machine, behind the flag (#7558).
+    private var targetSetupFailed: DaemonAPI.MachineSetupStep? {
+        agent == nil ? model.failedSetupScript(targetHost) : nil
+    }
 
     /// Who the prompt goes to, as the pending mark says it.
     private var recipient: String {

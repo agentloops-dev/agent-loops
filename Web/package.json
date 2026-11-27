@@ -20,7 +20,7 @@
   },
   "devDependencies": {
     "esbuild": "0.28.2",
-    "knip": "6.45.1",
+    "knip": "6.47.0",
     "typescript": "7.0.2"
   }
 }

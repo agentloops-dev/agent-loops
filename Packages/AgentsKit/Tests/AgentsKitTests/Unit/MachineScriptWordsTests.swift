@@ -101,8 +101,14 @@ struct MachineScriptWordsTests {
                                          approvedText: "apt-get install -y gh\n", approvals: [approval("made")])
         #expect(MachineScriptWords.filesNote(root) == nil)
         #expect(MachineScriptWords.filesLine(root) == "Runs once, as root, when a machine is made. Approved for new machines.")
-        root.problem = "root.sh is over 10 KiB."
-        #expect(MachineScriptWords.filesLine(root) == "root.sh is over 10 KiB.")
+        root.problem = "root.sh is 11 KiB, over its limit of 10 KiB."
+        #expect(MachineScriptWords.filesLine(root)
+            == "root.sh is 11 KiB, over its limit of 10 KiB. New machines can’t be made until you fix it. Then you can review it.")
+        // #7548: a setup.sh over its limit says new machines get none, and why there is no Review.
+        let large = DaemonAPI.SetupScript(name: "setup", present: true, size: 68 << 10, problem: "setup.sh is 68 KiB, over its limit of 64 KiB.")
+        #expect(MachineScriptWords.filesLine(large)
+            == "setup.sh is 68 KiB, over its limit of 64 KiB. New machines get no setup.sh until you fix it. Then you can review it.")
+        #expect(MachineScriptWords.filesNote(large) == nil && !large.needsApprovalForMade)
         #expect(MachineScriptWords.filesLine(DaemonAPI.SetupScript(name: "root", present: false)).hasPrefix("None."))
     }
 
@@ -124,5 +130,25 @@ struct MachineScriptWordsTests {
         }
         #expect(MachineScriptWords.declaredSecrets(MachineScriptWords.exampleSetup) == ["GH_TOKEN"])
         #expect(MachineScriptWords.declaredSecrets(MachineScriptWords.exampleRoot).isEmpty)
+    }
+}
+
+/// Send Set-up's tries while a machine is offline (#7547).
+struct SetupSendPauseTests {
+    @Test func theTriesBackOffAndStopAfterTwoHours() {
+        let pauses = (1...40).map { MachineScriptWords.sendPause(before: $0) }
+        #expect(Array(pauses.prefix(6)) == [.seconds(15), .seconds(30), .seconds(60), .seconds(120), .seconds(240), .seconds(300)])
+        let tried = pauses.compactMap(\.self)
+        #expect(tried.count < 40)
+        #expect(pauses.drop(while: { $0 != nil }).allSatisfy { $0 == nil })
+        let total = tried.reduce(Duration.zero, +)
+        #expect(total <= MachineScriptWords.sendTriesFor)
+        #expect(total > MachineScriptWords.sendTriesFor - .seconds(300))
+        #expect(MachineScriptWords.sendPause(before: 0) == nil)
+    }
+
+    @Test func theRowSaysWhatItWaitsFor() {
+        #expect(MachineScriptWords.sendWaitNote("dev-3") == "waiting for dev-3 to be online")
+        #expect(MachineScriptWords.sendGaveUpLine("dev-3") == "dev-3 was not online for 2 hours. Send Set-up again when it is.")
     }
 }

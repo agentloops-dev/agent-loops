@@ -2666,10 +2666,10 @@ final class AppModel {
         people.you?.isAdmin == true
     }
 
-    /// Make This the Control Plane… on a machine's page, and the strip of a move (#6614): behind its
-    /// flag, and for an admin only.
+    /// Make This the Control Plane… on a machine's page, and the strip of a move (#6614): for an
+    /// admin only. Its flag came out in #7390.
     var showsControlPlaneMove: Bool {
-        flags.isOn(.controlPlaneMove) && people.you?.isAdmin == true
+        people.you?.isAdmin == true
     }
 
     /// The machine record a page is of, as the control plane lists it: this Mac's too (#6614).

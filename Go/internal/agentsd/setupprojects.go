@@ -38,7 +38,26 @@ const (
 	setupProjectsEvery = 5 * time.Second
 	// setupWorkEvery is how often a pool machine asks if it was claimed, until it is ready.
 	setupWorkEvery = 5 * time.Second
+	// setupUserEvery is how soon the projects step asks again while it waits for Your set-up
+	// (#7416): soon, as a machine with no setup.sh waits only for the sender's answer. Each ask
+	// after waits twice as long, up to setupUserMost (#7546): a setup.sh runs for up to 10 minutes.
+	setupUserEvery = time.Second
+	setupUserMost  = 15 * time.Second
 )
+
+// setupUserFailedEvery is how often the projects step asks again while Your set-up has failed
+// (#7546), when it does not run again here: a run here wakes it at once. A test sets it shorter.
+var setupUserFailedEvery = 10 * time.Minute
+
+// setupInstallerGone is how long no installer has asked setup/projects before the host takes a
+// made machine's steps 6 to 8 as its own (#7559): the installer asks once a second while it waits
+// for Your set-up, and a host that starts waits as long for an installer that still runs.
+const setupInstallerGone = time.Minute
+
+// setupUserSettle is how long after setup.sh began or ended here the projects step still asks
+// as it does while Your set-up runs: the control plane can say the last run's end until this
+// host's report of the new one reaches it.
+const setupUserSettle = time.Minute
 
 type machineSetupBook struct {
 	poolGetMu sync.Mutex
@@ -48,6 +67,21 @@ type machineSetupBook struct {
 	setupRuns atomic.Bool
 	// poolHome is the folder the projects go in; "" is the home folder. A test sets it.
 	poolHome string
+	// projectsAskedAt is when the installer last asked setup/projects, or this host began to
+	// forward its set-up's reports (#7559), in Unix nanoseconds.
+	projectsAskedAt atomic.Int64
+	// installerPatience is setupInstallerGone; a test sets it shorter.
+	installerPatience time.Duration
+}
+
+// installerGone says no installer waits for this machine's projects (#7559): none asked
+// setup/projects for setupInstallerGone, as after a reboot while Your set-up had failed.
+func (d *Daemon) installerGone() bool {
+	patience := d.installerPatience
+	if patience == 0 {
+		patience = setupInstallerGone
+	}
+	return time.Since(time.Unix(0, d.projectsAskedAt.Load())) >= patience
 }
 
 func (d *Daemon) poolFolder(name string) (string, error) {
@@ -61,6 +95,7 @@ func (d *Daemon) poolFolder(name string) (string, error) {
 // setupProjects is setup/projects: it starts a get when none is under way, and says how it
 // stands. An end is said once; the next call begins again.
 func (d *Daemon) setupProjects() wire.MachineSetupProjects {
+	d.projectsAskedAt.Store(time.Now().UnixNano())
 	d.poolGetMu.Lock()
 	defer d.poolGetMu.Unlock()
 	if d.setupGet == nil {
@@ -114,6 +149,13 @@ func (d *Daemon) getSetupProjects(ctx context.Context, patience, every time.Dura
 		out.Problem = &words
 		return out
 	}
+	// Your set-up first, so that a project's script can use what it installed (#7416): the
+	// control plane says to wait while setup.sh is on its way or runs. The step begins after.
+	work, err := d.waitForUserSetup(ctx, every)
+	if err == nil && ctx.Err() != nil {
+		return problem("The set-up stopped while it waited for Your set-up.")
+	}
+	say("Looking for projects")
 	deadline := time.Now().Add(patience)
 	pause := func() bool {
 		if time.Now().After(deadline) {
@@ -126,7 +168,6 @@ func (d *Daemon) getSetupProjects(ctx context.Context, patience, every time.Dura
 			return true
 		}
 	}
-	work, err := d.askSetupWork(ctx)
 	for err != nil && !noSetupWork(err) && pause() {
 		work, err = d.askSetupWork(ctx)
 	}
@@ -171,6 +212,45 @@ func (d *Daemon) getSetupProjects(ctx context.Context, patience, every time.Dura
 		return problem(strings.Join(problems, "\n"))
 	}
 	return out
+}
+
+// waitForUserSetup asks machine/setupWork until it says neither waitUser nor userFailed, or ctx
+// ends. While Your set-up is on its way or runs, it asks again less often each time, from 1 s
+// to 15 s (#7546). While it has failed, the projects do not start (gate 1 of #7151, section 1):
+// the host asks again only when setup.sh begins or ends here (Run Again, Send Set-up), or after
+// setupUserFailedEvery.
+func (d *Daemon) waitForUserSetup(ctx context.Context, every time.Duration) (wire.MachineSetupWork, error) {
+	first := min(every, setupUserEvery)
+	most := setupUserMost
+	if every < setupUserEvery {
+		most = every
+	}
+	pause := first
+	var changed time.Time
+	for {
+		again := d.userSetupChanges()
+		work, err := d.askSetupWork(ctx)
+		if err != nil || ctx.Err() != nil {
+			return work, err
+		}
+		failed := work.UserFailed != nil && *work.UserFailed
+		var wake <-chan time.Time
+		switch {
+		case failed && !d.userSetupRunning() && time.Since(changed) >= setupUserSettle:
+			wake, pause = time.After(setupUserFailedEvery), first
+		case failed || work.WaitUser != nil && *work.WaitUser:
+			wake, pause = time.After(pause), min(2*pause, most)
+		default:
+			return work, nil
+		}
+		select {
+		case <-ctx.Done():
+			return work, nil
+		case <-again:
+			changed, pause = time.Now(), first
+		case <-wake:
+		}
+	}
 }
 
 // getOrWait gets work's project i into folder. It waits for a source, but not on a claim that
@@ -327,7 +407,7 @@ func (d *Daemon) seedHere(folder, origin string, say func(string)) ([]string, *w
 }
 
 // continueSetup asks what the machine's set-up has left, and runs it. It says false when
-// nothing is left to ask for: no pool made the machine, or it is ready.
+// nothing is left to ask for: no pool made the machine and nothing waits, or it is ready.
 func (d *Daemon) continueSetup(ctx context.Context) bool {
 	if d.setupRuns.Load() {
 		return true
@@ -336,10 +416,15 @@ func (d *Daemon) continueSetup(ctx context.Context) bool {
 	if err != nil {
 		return !noSetupWork(err)
 	}
-	if !work.Pool || work.Done {
+	made := !work.Pool && work.From != nil
+	if made && !d.installerGone() {
+		// Its installer may still wait for the projects: it gets them, or it is gone soon.
+		return true
+	}
+	if !made && (!work.Pool || work.Done) {
 		return false
 	}
-	if !work.Claimed || work.From == nil || d.setupRuns.Swap(true) {
+	if !made && !work.Claimed || work.From == nil || d.setupRuns.Swap(true) {
 		return true
 	}
 	from := *work.From
@@ -350,7 +435,8 @@ func (d *Daemon) continueSetup(ctx context.Context) bool {
 			log.Printf("set-up: no home folder: %v", err)
 			return
 		}
-		o := hostsetup.Options{Name: d.ownName(), Home: home, FromPool: true}
+		// A machine that no pool made has the steps its installer did not run (#7559).
+		o := hostsetup.Options{Name: d.ownName(), Home: home, FromPool: !made}
 		for _, p := range work.Projects {
 			if folder, err := d.poolFolder(filepath.Base(p.Path)); err == nil && isDir(folder) {
 				o.Projects = append(o.Projects, folder)

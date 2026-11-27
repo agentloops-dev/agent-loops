@@ -81,6 +81,7 @@ func (s *Service) startCapacityMonitor() {
 		lastReason := ""
 		var lastBelow wire.CapacityLevel
 		below := 0
+		var notices capacityNotices
 		look := func() {
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			sample := sampleControlCapacity(ctx)
@@ -101,15 +102,15 @@ func (s *Service) startCapacityMonitor() {
 			sample.reason = reason
 			s.metrics.setCapacity(sample)
 			snapshot := s.keepControlCapacity(sample)
+			switch notices.look(level, sample.at) {
+			case "control.busy":
+				s.noticeAdmins(wire.ControlNotice{Kind: "control.busy", Words: controlCapacityWords(level, reason)})
+			case "control.ok":
+				s.noticeAdmins(wire.ControlNotice{Kind: "control.ok", Words: "The control plane is back within capacity. See Run the control plane in the cloud: https://docs.agentloops.dev/how-to/run-the-control-plane-in-the-cloud/."})
+			}
 			if level != previous {
-				wasOK := previous == wire.CapacityLevelOk
 				previous = level
 				s.capacityChangedAdmins(snapshot)
-				if wasOK && level != wire.CapacityLevelOk {
-					s.noticeAdmins(wire.ControlNotice{Kind: "control.busy", Words: controlCapacityWords(level, reason)})
-				} else if level == wire.CapacityLevelOk {
-					s.noticeAdmins(wire.ControlNotice{Kind: "control.ok", Words: "The control plane is back within capacity. See Run the control plane in the cloud: https://docs.agentloops.dev/how-to/run-the-control-plane-in-the-cloud/."})
-				}
 				s.log(fmt.Sprintf("control capacity: %s (reason %s; load %.2f per core; memory PSI full avg60 %.2f; I/O PSI full avg60 %.2f)",
 					level, reason, sample.load1, sample.pressureMemory, sample.pressureIO))
 			}
@@ -124,6 +125,39 @@ func (s *Service) startCapacityMonitor() {
 			}
 		}
 	}()
+}
+
+// controlNoticeAfter is how long a level must stay before the admins get a notice of it (#7367).
+// The level itself still changes at once (the strip and the rows follow it), but a spiky load
+// changed it 8 times in 13 minutes (#7354), so a notice on each change came every few minutes.
+const controlNoticeAfter = 5 * time.Minute
+
+// capacityNotices says which notice, if any, one look of the level gives (#7367):
+// control.busy when the level has stayed above ok for controlNoticeAfter, and control.ok
+// when it has stayed ok for controlNoticeAfter after a control.busy was sent.
+type capacityNotices struct {
+	since time.Time // when the level last went from ok to above ok, or back; zero at the start
+	above bool      // the level is above ok
+	busy  bool      // a control.busy was sent and no control.ok after it
+}
+
+func (n *capacityNotices) look(level wire.CapacityLevel, at time.Time) string {
+	above := level != wire.CapacityLevelOk
+	if above != n.above || n.since.IsZero() {
+		n.above, n.since = above, at
+	}
+	if at.Sub(n.since) < controlNoticeAfter {
+		return ""
+	}
+	switch {
+	case above && !n.busy:
+		n.busy = true
+		return "control.busy"
+	case !above && n.busy:
+		n.busy = false
+		return "control.ok"
+	}
+	return ""
 }
 
 func controlCapacityWords(level wire.CapacityLevel, reason string) string {

@@ -249,12 +249,8 @@ public enum WorkTimeline {
         }
     }
 
-    /// How an epic's block ends (#5506).
+    /// How an open epic's block ends (#5506); a closed epic is not drawn (#7334).
     public enum End: Sendable, Hashable {
-        /// The epic closed: the block ends where its work stopped.
-        case joined
-        /// Closed as not planned: a grey block, then "✕ closed as not planned".
-        case dropped
         /// Forecast: a lighter tint with a dashed edge after Now.
         case forecast
         /// Children wait for the person: a pill after it, 👤 and the number.
@@ -283,8 +279,6 @@ public enum WorkTimeline {
         /// Where the block starts and ends: its solid span and its ghost.
         public var from: Date
         public var end: Date
-        /// When the epic closed.
-        public var closedAt: Date?
         public var how: End
         public var band: DateInterval?
         /// The epic and its open children that a session is in a turn on now (#4265): the line
@@ -308,36 +302,27 @@ public enum WorkTimeline {
 
         /// When the work stopped, on an open block where that was before Now (a minute's slack): the hover card says so.
         public func stopped(now: Date) -> Date? {
-            guard open, let stopped = work?.end, stopped < now.addingTimeInterval(-60) else { return nil }
+            guard let stopped = work?.end, stopped < now.addingTimeInterval(-60) else { return nil }
             return stopped
         }
 
         /// The hover card's figures, `#n · 6 of 8`. A block shows its title only (Alex, 2026-11-14).
         public var figures: String { "\(number) · \(done) of \(total)" }
-
-        /// Whether the line runs past `date` (it has not ended by then).
-        public var open: Bool {
-            switch how {
-            case .forecast, .waits, .open, .held: true
-            case .joined, .dropped: false
-            }
-        }
     }
 
-    /// The lines of a timeline, past and forecast: one per epic (#7058). Not drawn: an epic with no
-    /// children, one on hold unless `held` (the On hold toggle, #7335), and one that has not started and has no
-    /// forecast. `forecast` off draws the past only. `working` is the refs a session is in a turn on now
+    /// The lines of a timeline, past and forecast: one per open epic (#7058). Not drawn: a closed epic, also one
+    /// closed as not planned (#7334: the read keeps them for the forecast only), an epic with no children, one on
+    /// hold unless `held` (the On hold toggle, #7335), and one that has not started and has no forecast. `forecast` off draws the past only. `working` is the refs a session is in a turn on now
     /// (`workingNow`): only an open epic works. An open epic on hold has its solid span and no forecast; with no
     /// work yet, it is a mark at Now.
     public static func lines(_ timeline: DaemonAPI.WorkTimeline, now: Date, forecast: Bool = true,
                              working: Set<String> = [], held: Bool = false) -> [Line] {
         timeline.epics.compactMap { epic -> Line? in
             let children = epic.children
-            let isOpen = epic.closedAt == nil
+            if epic.closedAt != nil { return nil }
             let onHold = epic.item.onHold == true
-            if onHold ? !(held && isOpen) : children.isEmpty { return nil }
-            let working = !isOpen ? 0
-                : children.filter { $0.closedAt == nil && working.contains($0.item.node.ref) }.count
+            if onHold ? !held : children.isEmpty { return nil }
+            let working = children.filter { $0.closedAt == nil && working.contains($0.item.node.ref) }.count
                     + (working.contains(epic.item.node.ref) ? 1 : 0)
             // The work stopped at its last child's close (or the last start after it); while a session is
             // in a turn on it, it did not stop (#6043).
@@ -347,7 +332,7 @@ public enum WorkTimeline {
                 let last = working > 0 ? now : (starts + children.compactMap(\.closedAt)).max() ?? start
                 return DateInterval(start: start, end: max(min(last, now), start))
             }
-            let predicted = isOpen && forecast && !onHold ? epic.forecast : nil
+            let predicted = forecast && !onHold ? epic.forecast : nil
             let ghost = predicted.map { DateInterval(start: work?.end ?? now, end: max($0.mid, now)) }
             let mark: Date? = onHold ? now : nil
             guard let from = work?.start ?? ghost?.start ?? mark, let end = ghost?.end ?? work?.end ?? mark else { return nil }
@@ -356,9 +341,6 @@ public enum WorkTimeline {
             let waiting = children.filter { $0.closedAt == nil && $0.waitsForPerson == true }.count
             if onHold {
                 how = .held
-            } else if !isOpen {
-                let dropped = epic.stateReason == "not_planned" || children.allSatisfy { $0.stateReason == "not_planned" }
-                how = dropped ? .dropped : .joined
             } else if waiting > 0 {
                 how = .waits(waiting)
             } else if let predicted {
@@ -367,7 +349,7 @@ public enum WorkTimeline {
             }
             return Line(epic: epic.item.node, title: epic.item.title, number: WorkList.shortRef(epic.item.node.ref),
                         feature: epic.item.feature, done: children.filter { $0.closedAt != nil }.count,
-                        total: children.count, work: work, ghost: ghost, from: from, end: end, closedAt: epic.closedAt,
+                        total: children.count, work: work, ghost: ghost, from: from, end: end,
                         how: how, band: band, working: working, priority: epic.item.priority)
         }
     }
@@ -521,12 +503,9 @@ public enum WorkTimeline {
         return best
     }
 
-    /// What a closed-as-not-planned block says after it.
-    public static let droppedWords = "✕ closed as not planned"
-
     /// A block's words (#5506). `inside`: its title in it, from `insideX` (held at the visible left
     /// edge, with ←, when the block starts before it). `outside`: what goes after the block, from
-    /// `outsideX`: the title when the block is too narrow for it, and "✕ closed as not planned"; cut
+    /// `outsideX`: the title when the block is too narrow for it, and "On hold"; cut
     /// with "…" before the next block in the row.
     public struct BlockWords: Sendable, Hashable {
         public var inside: String?
@@ -556,7 +535,7 @@ public enum WorkTimeline {
         let insideX = (arrow ? left : sx) + titleInset
         let inside = fits ? cut(arrow ? "← \(line.title)" : line.title, room: ex - insideX - titleInset, measure: measure) : nil
         let outsideX = axis.x(reach(line)) + line.markWidth + 6 + (trailing > 0 ? trailing + 6 : 0)
-        let after = line.how == .dropped ? droppedWords : line.how == .held ? WorkPlan.onHoldWords : ""
+        let after = line.how == .held ? WorkPlan.onHoldWords : ""
         let words = [fits ? "" : line.title, after].filter { !$0.isEmpty }.joined(separator: "  ")
         let room = (next.map { axis.x($0) - 6 } ?? .infinity) - outsideX
         var out = BlockWords(inside: inside, insideX: insideX, arrow: arrow,
@@ -654,8 +633,6 @@ public enum WorkTimeline {
         var out = [line.figures]
         if let stopped = line.stopped(now: now) { out.append(stoppedWords(stopped, now: now)) }
         switch line.how {
-        case .joined: out.append("closed \(agoWords(line.closedAt ?? line.end, now: now))")
-        case .dropped: out.append("closed as not planned")
         case .forecast:
             out.append("closes about \(time(line.end, now: now, calendar: calendar))")
             if let band = line.band {
@@ -688,11 +665,6 @@ public enum WorkTimeline {
         overlapping(lines, window).count
     }
 
-    /// When the last epic before `date` closed, for the empty card (S11); nil when the read has none.
-    public static func lastJoined(_ timeline: DaemonAPI.WorkTimeline, before date: Date) -> Date? {
-        timeline.epics.filter { !$0.children.isEmpty && $0.item.onHold != true }.compactMap(\.closedAt).filter { $0 < date }.max()
-    }
-
     /// What the plot shows (#5925): grey blocks that shimmer (S10) while no read has drawn yet, or while
     /// any read of the window runs and no epic is in it; the empty card (S11) only when every read
     /// ended and the window has none; else the epics. A device's copy with no epic is not "no epic"
@@ -704,12 +676,8 @@ public enum WorkTimeline {
         return !drawn || reading ? .loading : .empty
     }
 
-    /// The empty card (S11): "No epic in these 2 days", and "The last one joined 4 d ago." when known.
-    public static func noEpicsWords(_ range: Range) -> String { "No epic in \(range.these)" }
-
-    public static func lastJoinedWords(_ date: Date, now: Date) -> String {
-        "The last one joined \(agoWords(date, now: now))."
-    }
+    /// The empty card (S11): "No open epic in these 2 days" (#7334: a closed epic is not drawn, so it names none).
+    public static func noEpicsWords(_ range: Range) -> String { "No open epic in \(range.these)" }
 
     /// What VoiceOver reads, a row per line in time order (section 5): "Azure DevOps, 3 of 7 done,
     /// closes about 6:00 PM".
@@ -717,8 +685,6 @@ public enum WorkTimeline {
         // In priority order, then in time (#6089): High first.
         lines.sorted { ($0.priorityBand, $0.from, $0.id) < ($1.priorityBand, $1.from, $1.id) }.map { line in
             let end = switch line.how {
-            case .joined: "closed \(time(line.closedAt ?? line.end, now: now, calendar: calendar))"
-            case .dropped: "closed as not planned"
             case .forecast: "closes about \(time(line.end, now: now, calendar: calendar))"
             case .waits(let n): waitWords(n)
             case .open: "open"
@@ -739,14 +705,13 @@ public enum WorkTimeline {
     }
 
     /// The list of epics in the window, as the web page's `epicRows`: in priority order (High first), then in the order they close: the forecast first (the soonest first), then those that wait for
-    /// the person, then those still open, then those that joined (the latest first).
+    /// the person, then those still open.
     public static func epicRows(_ lines: [Line], window: DateInterval, now: Date, calendar: Calendar = .current) -> [EpicRow] {
         func rank(_ line: Line) -> Int {
             switch line.how {
             case .forecast: 0
             case .waits: 1
             case .open, .held: 2
-            case .joined, .dropped: 3
             }
         }
         func line2(_ line: Line) -> String {
@@ -758,15 +723,12 @@ public enum WorkTimeline {
             case .waits(let n): return waitWords(n)
             case .open: return "open"
             case .held: return WorkPlan.onHoldWords
-            case .joined: return "joined \(time(line.closedAt ?? line.end, now: now, calendar: calendar))"
-            case .dropped: return "closed as not planned"
             }
         }
         return overlapping(lines, window).sorted { a, b in
             if a.priorityBand != b.priorityBand { return a.priorityBand < b.priorityBand }
             if rank(a) != rank(b) { return rank(a) < rank(b) }
-            let x = a.closedAt ?? a.end, y = b.closedAt ?? b.end
-            if x != y { return rank(a) == 3 ? x > y : x < y }
+            if a.end != b.end { return a.end < b.end }
             return a.title < b.title
         }
         .map { line in

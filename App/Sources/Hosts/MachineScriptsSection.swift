@@ -60,14 +60,15 @@ struct MachineScriptsSection: View {
         let script = scripts?.script("setup")
         let pending = model.setupSends.pending[host]
         let standing = MachineScriptWords.standing(step: step, script: script)
-        if let pending {
+        if let pending, pending.ended == nil {
             rowView(name: "setup.sh", note: pending.note, noteTint: .attention,
                     line: "Sends when \(pending.waitsFor) is back. \(row.name) keeps the one it has.") {
                 Button("Cancel Send") { model.setupSends.cancel(host) }
             }
         } else {
-            rowView(name: "setup.sh", note: MachineScriptWords.note(standing, sender: sender), noteTint: .warning,
-                    line: MachineScriptWords.line(standing, step: step, machine: row.name, sender: sender)) {
+            // A send whose tries stopped says why (#7547); Send Set-up… goes again.
+            rowView(name: "setup.sh", note: pending?.note ?? MachineScriptWords.note(standing, sender: sender), noteTint: .warning,
+                    line: pending?.ended ?? MachineScriptWords.line(standing, step: step, machine: row.name, sender: sender)) {
                 if let script, script.present, script.text != nil {
                     Button("Send Set-up…") { sending = script }
                         .modifier(MainButton(isMain: MachineScriptWords.sendIsMain(standing)))
