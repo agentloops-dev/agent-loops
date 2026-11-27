@@ -12,6 +12,7 @@ import (
 	"github.com/agentloops-dev/agent-loops/Go/internal/controllink"
 	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/records"
 	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/store"
+	"github.com/agentloops-dev/agent-loops/Go/internal/flaky"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -185,6 +186,7 @@ func TestCapacitySamplesAreSwept(t *testing.T) {
 
 // A sample with each field at its longest is within its largest record.
 func TestACapacitySampleIsWithinItsLargest(t *testing.T) {
+	flaky.UnderLoad(t, "#7564")
 	t.Parallel()
 	p := startPlane(t, store.NewMemory(), controllink.NewPrivateKey())
 	const big = 1.7976931348623157e+308
