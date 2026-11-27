@@ -5,9 +5,11 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/controllink"
@@ -215,14 +217,19 @@ func TestTheLastTryOfASetupDeliverSaysItIsTheLast(t *testing.T) {
 	t.Parallel()
 	const text = "#!/bin/bash\nbrew install jq\n"
 	d, phone, _, state, _ := senderWith(t, text)
+	var mu sync.Mutex
 	var lasts []bool
 	ask := askControl(func(_ context.Context, method string, params any) (json.RawMessage, error) {
-		b, _ := json.Marshal(params)
-		var call wire.MachineWorkspaceCall
-		mustUnmarshal(t, b, &call)
+		// The host's own jobs ask other things in the background.
+		call, ok := params.(wire.MachineWorkspaceCall)
+		if method != "machine/machines" || !ok || call.Method != wire.CallMachinesSetupDeliver.Name {
+			return nil, errors.New("not here")
+		}
 		var r wire.MachineSetupDeliver
 		mustUnmarshal(t, call.Params, &r)
+		mu.Lock()
 		lasts = append(lasts, r.Last != nil && *r.Last)
+		mu.Unlock()
 		return nil, &controllink.AskError{Code: wire.FailureSetupScriptChanged, Message: "refused"}
 	})
 	d.askControl.Store(&ask)
@@ -235,6 +242,8 @@ func TestTheLastTryOfASetupDeliverSaysItIsTheLast(t *testing.T) {
 	if err := d.deliverSetup(context.Background(), "h-2", text, approval, true, setupDeliverTries); codeOf(err) != wire.FailureSetupScriptChanged {
 		t.Fatalf("twelve tries: %v", err)
 	}
+	mu.Lock()
+	defer mu.Unlock()
 	if len(lasts) != 2 || !lasts[0] || lasts[1] {
 		t.Fatalf("last: %v", lasts)
 	}
