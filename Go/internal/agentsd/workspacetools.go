@@ -245,7 +245,12 @@ func (d *Daemon) makeMachine(agent wire.UUID, args map[string]json.RawMessage) (
 	if len(choices) > 0 {
 		question += " (" + strings.Join(choices, ", ") + ")"
 	}
-	return d.personSaysYesSince(since, agent, d.agentWho(agent)+makeCardTitle, question+"?", "Make it", func(yes bool) (string, error) {
+	// The person's scripts, when this machine sends them (#7157).
+	scripts, err := d.scriptsBeforeMake(string(found.ID))
+	if err != nil {
+		return "", err
+	}
+	return d.personSaysYesSince(since, agent, d.agentWho(agent)+makeCardTitle, question+"?"+scripts, "Make it", func(yes bool) (string, error) {
 		if !yes {
 			return "Nothing was made: the person said no, or didn’t answer.", nil
 		}

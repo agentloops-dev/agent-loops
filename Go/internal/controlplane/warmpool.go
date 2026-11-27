@@ -46,6 +46,10 @@ const (
 	warmPoolMost     = 256 << 10
 	warmPoolSetMost  = 32 << 10
 	warmPoolMakeMost = 128 << 10
+	// poolReviewRoot is the review a pool waits for when root.sh changed (#7157), and why it
+	// stopped then.
+	poolReviewRoot = "root"
+	poolReviewWhy  = "root.sh changed. The pool makes no machines until you review it."
 	// poolStoppedMost is the longest reason a pool keeps for why it stopped.
 	poolStoppedMost = 2 << 10
 	// poolForgetAgain is how long until a removed person's pool whose machines could not all
@@ -143,6 +147,11 @@ type storedPool struct {
 	// it for failed set-ups.
 	SetAt    *time.Time          `json:"setAt,omitempty"`
 	Stopped  string              `json:"stopped,omitempty"`
+	// Review is the script the pool stopped for (#7157): root when its carrier refused a make
+	// because root.sh is not the text the person approved. ReviewedAt is when the person
+	// approved it: the machines made before then ran the older one, so they are replaced.
+	Review     string     `json:"review,omitempty"`
+	ReviewedAt *time.Time `json:"reviewedAt,omitempty"`
 	Machines []storedPoolMachine `json:"machines,omitempty"`
 	LastMade *time.Time          `json:"lastMade,omitempty"`
 	Claims   []storedPoolClaim   `json:"claims,omitempty"`
@@ -241,7 +250,8 @@ func planPool(p *storedPool, machines []poolMachine, now time.Time, version, pin
 		return poolPlan{deletes: ready}
 	}
 	stale := func(m poolMachine) bool {
-		return now.Sub(m.MadeAt) >= p.replaceAfter() || m.Version != version || m.Pins != pins
+		return now.Sub(m.MadeAt) >= p.replaceAfter() || m.Version != version || m.Pins != pins ||
+			p.ReviewedAt != nil && m.MadeAt.Before(*p.ReviewedAt)
 	}
 	var freshReady, staleReady []int
 	for _, i := range ready {
@@ -613,7 +623,7 @@ func (w *warmPools) wire(p *storedPool, now time.Time) wire.WarmPool {
 		Runtimes: p.Runtimes, Projects: p.Projects, MinReady: int64(p.MinReady), MaxSize: int64(p.MaxSize),
 		Target: int64(p.target()), ReplaceAfter: optional(p.ReplaceAfter), Hours: p.Hours, State: state,
 		Ready: optional(ready), SettingUp: optional(settingUp), FailedMakes: optional(int64(p.Failures)),
-		StoppedBecause: optional(p.Stopped), Machines: lines, Claims: w.claims(p, now),
+		StoppedBecause: optional(p.Stopped), Review: optional(p.Review), Machines: lines, Claims: w.claims(p, now),
 	}
 }
 
@@ -734,6 +744,13 @@ func (w *warmPools) makePlanned(p *storedPool, makes int) (made []string, done f
 		w.nowMaking(name, p)
 		making = append(making, name)
 		workspace, err := w.backend.Make(p.Owner, p.Provider, name, p.Size, p.Region)
+		if err != nil && providers.FailureReason(err) == providers.SetupScriptChanged {
+			// Not a failure of the provider: the pool waits for the person's yes (#7157).
+			w.s.log(fmt.Sprintf("warm pool %s: root.sh is not the text approved; waits for a review", p.Name))
+			p.Review = poolReviewRoot
+			w.stop(p, poolReviewWhy)
+			break
+		}
 		if err != nil {
 			p.Failures++
 			w.s.log(fmt.Sprintf("warm pool %s: make failed (%d in a row): %v", p.Name, p.Failures, err))
@@ -933,7 +950,11 @@ func (w *warmPools) set(ctx context.Context, person string, set wire.WarmPoolSet
 	p.Runtimes, p.Projects, p.Hours = set.Runtimes, set.Projects, set.Hours
 	p.MinReady, p.MaxSize, p.ReplaceAfter = int(set.MinReady), int(set.MaxSize), deref(set.ReplaceAfter)
 	now := time.Now()
-	p.Failures, p.Stopped, p.SetAt = 0, "", &now
+	p.Failures, p.Stopped, p.SetAt, p.Review = 0, "", &now, ""
+	if set.Reviewed != nil && *set.Reviewed {
+		// The person approved root.sh: its machines made before now ran the older one.
+		p.ReviewedAt = &now
+	}
 	if p.setSize() > warmPoolSetMost {
 		w.mu.Unlock()
 		return wire.WarmPool{}, fail(invalidParams, "A warm pool's settings are %d KiB at most. Use a shorter name, or fewer projects.", warmPoolSetMost>>10)

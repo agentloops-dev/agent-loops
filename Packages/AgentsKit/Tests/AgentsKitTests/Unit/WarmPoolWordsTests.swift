@@ -88,4 +88,14 @@ struct WarmPoolWordsTests {
         #expect(!WarmPoolWords.isPoolMachine("machine-3-abcdef", pools: ["dev-large"]))
         #expect(WarmPoolWords.slug(String(repeating: "a", count: 23) + " b") == String(repeating: "a", count: 23))
     }
+
+    /// #7157: a pool that waits for root.sh says what a yes does, and the yes keeps its settings.
+    @Test func aPoolThatWaitsForRootSaysWhatAYesDoes() {
+        let pool = DaemonAPI.WarmPool(id: "p", name: "dev-large", provider: ProviderID(rawValue: "do"), size: "s-2vcpu-4gb", minReady: 3, maxSize: 4,
+                                      state: .stopped, ready: 2, review: "root")
+        #expect(WarmPoolWords.reviewAfter(pool) == "After you approve, it replaces its 2 unclaimed machines.")
+        let set = WarmPoolWords.reviewed(pool)
+        #expect(set.id == "p" && set.reviewed == true && set.size == "s-2vcpu-4gb" && set.minReady == 3 && set.maxSize == 4)
+    }
 }
+

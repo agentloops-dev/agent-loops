@@ -2546,10 +2546,32 @@ func (p *Providers) providerCall(id string, work func(Provider) (any, error)) (a
 	}
 	var failure *ProviderFailure
 	if errors.As(err, &failure) {
-		return nil, fail(CodeProviderFailed, "%s", failure.Words)
+		refused := fail(CodeProviderFailed, "%s", failure.Words)
+		if failure.Code != "" {
+			refused.Data, _ = json.Marshal(map[string]string{"reason": failure.Code})
+		}
+		return nil, refused
 	}
 	return out, err
 }
+
+// FailureReason is the code a provider's failure carries as its data's reason (#6072, #7157),
+// such as setup_script_changed; none for any other error.
+func FailureReason(err error) string {
+	var refused *Failure
+	if !errors.As(err, &refused) || len(refused.Data) == 0 {
+		return ""
+	}
+	var data struct {
+		Reason string `json:"reason"`
+	}
+	_ = json.Unmarshal(refused.Data, &data) // data with no reason has none
+	return data.Reason
+}
+
+// SetupScriptChanged is the reason of a make that the carrying machine stopped because the
+// person's root.sh is not the text a client of their lock approved for new machines (#7157).
+const SetupScriptChanged = "setup_script_changed"
 
 // shellQuoted is WorkspaceProviders.shellQuoted.
 func shellQuoted(value string) string { return "'" + strings.ReplaceAll(value, "'", `'\''`) + "'" }

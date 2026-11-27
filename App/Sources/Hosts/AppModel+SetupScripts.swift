@@ -86,6 +86,62 @@ extension AppModel {
         }
     }
 
+    /// Approve and Make, and a warm pool's Review root.sh (#7157): signs an approval of each
+    /// script as it is now, for machines as they are made, with this Mac's lock key, and has this
+    /// Mac keep it. Nil once each is kept; else why not.
+    func approveSetupScripts(_ scripts: [DaemonAPI.SetupScript], scope: String = "made") async -> String? {
+        for script in scripts {
+            guard let hash = script.hash, let size = script.size,
+                  let content = try? JSONEncoder().encode(DaemonAPI.SetupScriptApproval(hash: hash, size: size)) else {
+                return "\(script.file) can’t be read on \(hosts.label(.mac)) now."
+            }
+            guard let approval = lock.signRecord(kind: "setup.script", subject: script.name, scope: scope,
+                                                 seq: script.nextSeq, content: content) else {
+                return "Scripts need your machine lock: a device of your lock signs each one. Set up the lock first."
+            }
+            do {
+                _ = try await client(for: .mac).call(DaemonAPI.Method.setupApprove,
+                                                     DaemonAPI.SetupApprove(script: script.name, approval: approval),
+                                                     returning: DaemonAPI.SetupScript.self)
+            } catch let error as JSONRPCError {
+                return error.code == DaemonAPI.Failure.setupScriptChanged
+                    ? "\(script.file) changed again while you read it. Cancel, and look at it again."
+                    : error.message
+            } catch {
+                return "\(hosts.label(.mac)) can’t keep the approval now: \(error.localizedDescription)"
+            }
+        }
+        return nil
+    }
+
+    /// Whether this Mac carries the provider, and so has the scripts its makes use (#7157).
+    func carriedHere(_ provider: DaemonAPI.ProviderSummary) -> Bool {
+        guard let carrier = provider.machine else { return false }
+        return carrier == .mac || isOnThisMac(carrier)
+    }
+
+    /// New Machine's *Your scripts* (#7157), behind the flag, when this Mac carries the provider
+    /// and so sends the scripts; nil else, and the sheet draws none.
+    func newMachineScripts(_ provider: ProviderID?) -> NewMachineScripts? {
+        guard flags.isOn(.machineScripts), self.host(.mac, has: Capability.hostMachineSetup2) else { return nil }
+        let summary = provider.flatMap { id in machineProviders.first { $0.id == id } } ?? machineProviders.first
+        guard let summary, carriedHere(summary) else { return nil }
+        return NewMachineScripts(sender: hosts.label(.mac), canSign: lock.canSign,
+                                 read: { [weak self] in
+                                     guard let self else { return .failure(NewMachineRefusal("")) }
+                                     do { return .success(try await self.readSetupScripts().scripts) } catch let error as JSONRPCError {
+                                         return .failure(NewMachineRefusal(error.message))
+                                     } catch {
+                                         return .failure(NewMachineRefusal("\(self.hosts.label(.mac))’s scripts can’t be read now."))
+                                     }
+                                 },
+                                 approve: { [weak self] scripts in
+                                     // Nil is a yes: an absent model is the refusal.
+                                     guard let self else { return "The window closed before the scripts were approved." }
+                                     return await self.approveSetupScripts(scripts)
+                                 })
+    }
+
     /// Run Again, and Try Again of a failed Your set-up (#7155): the machine runs its copy again.
     func runSetupAgain(_ host: MachineRef) async {
         do {

@@ -31,6 +31,28 @@ struct NewMachineChoices {
     var hasChanges: @MainActor (URL) async -> Bool
     /// The person's warm pools (#5366), for Start from; none on a control plane before pools.
     var pools: @MainActor () async -> [DaemonAPI.WarmPool] = { [] }
+    /// The person's set-up scripts for a provider (#7157): nil when this Mac does not send them.
+    var scripts: @MainActor (ProviderID?) -> NewMachineScripts? = { _ in nil }
+}
+
+/// The person's set-up scripts on the machine that sends them (#7157, gate 2 boards *new machine
+/// scripts* and *new machine none*): New Machine reads them when it opens and again on Make, and a
+/// script that is new or changed since it was approved for new machines is shown with its diff
+/// before the make, to approve with one press.
+struct NewMachineScripts {
+    /// The machine that has them: this Mac.
+    var sender: String
+    /// This device can sign an approval: with no lock, no script runs, and nothing asks.
+    var canSign: Bool
+    var read: @MainActor () async -> Result<[DaemonAPI.SetupScript], NewMachineRefusal>
+    /// Signs an approval of each for new machines: nil once kept, else why not.
+    var approve: @MainActor ([DaemonAPI.SetupScript]) async -> String?
+}
+
+/// The scripts New Machine asks to approve before it makes.
+struct NewMachineReview: Identifiable {
+    let id = UUID()
+    var scripts: [DaemonAPI.SetupScript]
 }
 
 /// The New Machine sheet up (#4634): for a provider (nil for the default one), or opened
@@ -78,6 +100,12 @@ struct NewMachineSheet: View {
     /// The person's warm pools, and whether Start from is on a pool (#5366).
     @State private var pools: [DaemonAPI.WarmPool] = []
     @State private var fromPool = true
+    /// The person's scripts as read last (#7157), why they could not be, and the review up.
+    @State private var scripts: [DaemonAPI.SetupScript]?
+    @State private var scriptsProblem: String?
+    @State private var review: NewMachineReview?
+    /// The scripts were approved: Make goes on once the review has gone.
+    @State private var makeAfterReview = false
     /// A make that failed opens the sheet again on its choices and its reason.
     private let again: NewMachineDraft?
 
@@ -186,6 +214,9 @@ struct NewMachineSheet: View {
                         }
                     }
                 }
+                if let setup = choices?.scripts(provider) {
+                    scriptsSection(setup)
+                }
                 if showsClones {
                     TextField("Clone these folders", text: $clones,
                               prompt: Text("https://github.com/you/folder.git"), axis: .vertical)
@@ -227,6 +258,27 @@ struct NewMachineSheet: View {
         }
         #endif
         .task { await reload(keeping: again) }
+        // Read when the section first shows, which may be after the sheet opened (the flag
+        // reaches the window), and again for another provider, which may have another sender.
+        .task(id: "\(provider?.rawValue ?? "")·\(choices?.scripts(provider) != nil)") {
+            scripts = nil
+            scriptsProblem = nil
+            await readScripts()
+        }
+        .sheet(item: $review, onDismiss: {
+            guard makeAfterReview else { return }
+            makeAfterReview = false
+            makeNow()
+        }) { review in
+            if let setup = choices?.scripts(provider) {
+                SetupScriptReviewSheet(scripts: review.scripts, sender: setup.sender, action: "Approve and Make",
+                                       approve: setup.approve) {
+                    makeAfterReview = true
+                    self.review = nil
+                }
+                .paperSheet()
+            }
+        }
         .task {
             guard let choices else { return }
             for project in choices.projects where await choices.hasChanges(project) { changed.insert(project) }
@@ -358,7 +410,60 @@ struct NewMachineSheet: View {
     }
 
     private var trimmedName: String { name.trimmingCharacters(in: .whitespacesAndNewlines) }
-    private var ready: Bool { !loading && !working && provider != nil && AddMachine.validName(trimmedName) }
+    private var ready: Bool {
+        !loading && !working && provider != nil && AddMachine.validName(trimmedName) && rootProblem == nil
+    }
+
+    /// A root.sh that is there and can't be used (over its limit, unreadable): a make would stop.
+    private var rootProblem: String? {
+        guard choices?.scripts(provider)?.canSign == true else { return nil }
+        return scripts?.first { $0.name == "root" && $0.present }?.problem
+    }
+
+    /// *Your scripts, from ‹sender›* (#7157): each script there, its size and whether it is
+    /// approved; none, and where they go; or why they can't be read.
+    @ViewBuilder
+    private func scriptsSection(_ setup: NewMachineScripts) -> some View {
+        Section("Your scripts, from \(setup.sender)") {
+            if let scripts {
+                let there = scripts.filter(\.present)
+                if there.isEmpty {
+                    Text("None. Put root.sh or setup.sh in ~/.agents/machine-setup/ on \(setup.sender).")
+                        .foregroundStyle(.secondary)
+                }
+                ForEach(there) { script in
+                    LabeledContent(script.file) {
+                        Text(MachineScriptWords.makeRow(script))
+                            .foregroundStyle(script.problem != nil && script.name == "root"
+                                             ? StateTint.failure.style(or: .secondary) : AnyShapeStyle(.secondary))
+                    }
+                }
+                if !setup.canSign, !there.isEmpty {
+                    Text("Scripts need your machine lock: a device of your lock signs each one. This machine is made without them.")
+                        .appText(.fine).foregroundStyle(.secondary)
+                }
+            } else if let scriptsProblem {
+                Text(scriptsProblem).foregroundStyle(.secondary)
+            } else {
+                ProgressView().controlSize(.small)
+            }
+        }
+    }
+
+    /// Reads the scripts live: an approval must show the text that is there now.
+    private func readScripts() async {
+        guard let setup = choices?.scripts(provider) else {
+            scripts = nil
+            return
+        }
+        switch await setup.read() {
+        case .success(let read):
+            scripts = read
+            scriptsProblem = nil
+        case .failure(let refusal):
+            scriptsProblem = refusal.message
+        }
+    }
 
     /// What the chosen options cost, when the provider names it (`x-costs`).
     private var cost: String {
@@ -399,7 +504,21 @@ struct NewMachineSheet: View {
         }
     }
 
+    /// Make: first the scripts, read again; one that is new or changed since it was approved for
+    /// new machines is reviewed before the make (#7157). Nothing changed shows nothing.
     private func press() {
+        guard let setup = choices?.scripts(provider), setup.canSign else { return makeNow() }
+        working = true
+        Task {
+            await readScripts()
+            working = false
+            let asks = (scripts ?? []).filter(\.needsApprovalForMade)
+            if rootProblem != nil { return }
+            if asks.isEmpty { makeNow() } else { review = NewMachineReview(scripts: asks) }
+        }
+    }
+
+    private func makeNow() {
         guard let provider else { return }
         working = true
         problem = nil

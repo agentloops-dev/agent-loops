@@ -356,3 +356,32 @@ func (d *Daemon) rootBootForMake() (string, *providers.RootBootSent, error) {
 	}
 	return workspacecommands.RootBoot([]byte(text)), &providers.RootBootSent{Hash: scriptHash(text)}, nil
 }
+
+// scriptsBeforeMake is what make_machine's card says of the person's scripts (#7157), when this
+// machine carries the provider and holds the lock: nothing when each is the text approved for new
+// machines. A root.sh that is not refuses before the card, as the make would stop (#855): only a
+// person's client can approve it. A setup.sh that is not is said on the card: the machine is made,
+// and setup.sh is not sent to it.
+func (d *Daemon) scriptsBeforeMake(provider string) (string, error) {
+	if !d.carried().carries(provider) {
+		return "", nil
+	}
+	if state, _ := d.heldLock(); state == nil {
+		// No script runs, and the make says so on the machine's Root set-up.
+		return "", nil
+	}
+	for _, s := range setupScriptFiles {
+		if !d.readSetupScript(s.file, s.most).present {
+			continue
+		}
+		if _, _, err := d.approvedSetupScript(s.name, machinelock.ScopeMade); err == nil {
+			continue
+		}
+		if s.name == "root" {
+			return "", &Error{Code: wire.FailureSetupScriptChanged, Message: "Nothing was made: root.sh on this machine is new or changed since the person " +
+				"approved it, so a make stops. The person reviews it with New Machine in Agent Loops: an agent can’t approve it."}
+		}
+		return " setup.sh is new or changed since you approved it, so it is not sent to the new machine. Approve it with New Machine or Send Set-up.", nil
+	}
+	return "", nil
+}
