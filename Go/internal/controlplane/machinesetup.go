@@ -191,7 +191,8 @@ func (st *storedSetup) waitUser(now time.Time) bool {
 		return false
 	}
 	if user := st.step(wire.MachineSetupStepIDUser); user != nil {
-		return user.State != wire.MachineSetupStateDone
+		// A failed one ends the wait (#7546): the projects do not start (userFailed).
+		return user.State != wire.MachineSetupStateDone && user.State != wire.MachineSetupStateFailed
 	}
 	if st.Expect == "" || st.UserAsked {
 		return false
@@ -201,6 +202,48 @@ func (st *storedSetup) waitUser(now time.Time) bool {
 		return false
 	}
 	return compare.Ended == nil || now.Sub(*compare.Ended) < userAskPatience
+}
+
+// userFailed is machine/setupWork's userFailed (#7546, gate 1 of #7151, section 1, "Failure"):
+// Your set-up came before the projects and failed, so they, sign-in and smoke do not start. Run
+// Again, Send Set-up or Try Again runs it again, and the host asks again then.
+func (st *storedSetup) userFailed() bool {
+	if st.userAfterProjects() {
+		return false
+	}
+	user := st.step(wire.MachineSetupStepIDUser)
+	return user != nil && user.State == wire.MachineSetupStateFailed
+}
+
+// notStartedWords are what a step that waits for a failed Your set-up says (#7546).
+const notStartedWords = "Not started: Your set-up failed. It starts when Run Again or Send Set-up runs setup.sh well."
+
+// waitsOn says that step id waits for step on, itself or by a step it waits for.
+func (st *storedSetup) waitsOn(id, on wire.MachineSetupStepID) bool {
+	for _, w := range st.waits(id) {
+		if w == on || st.waitsOn(w, on) {
+			return true
+		}
+	}
+	return false
+}
+
+// sayNotStarted gives each waiting step that waits for Your set-up notStartedWords while it has
+// failed, and takes them away when it runs again (#7546).
+func (st *storedSetup) sayNotStarted() {
+	failed := st.userFailed()
+	for i := range st.Steps {
+		s := &st.Steps[i]
+		if s.State != wire.MachineSetupStateWaiting || !st.waitsOn(s.ID, wire.MachineSetupStepIDUser) {
+			continue
+		}
+		switch {
+		case failed:
+			s.Detail = notStartedWords
+		case s.Detail == notStartedWords:
+			s.Detail = ""
+		}
+	}
 }
 
 // waits is what step id waits for in this set-up: the steps of waitsFor that it has.
@@ -341,6 +384,7 @@ func (st *storedSetup) report(r wire.MachineSetupReport, now time.Time) (time.Du
 		return 0, false, nil
 	}
 	if step.runsAgain(r, now, detail, problem) {
+		st.sayNotStarted()
 		return 0, false, nil
 	}
 	if step.State == wire.MachineSetupStateDone {
@@ -378,6 +422,9 @@ func (st *storedSetup) report(r wire.MachineSetupReport, now time.Time) (time.Du
 	}
 	if r.State == wire.MachineSetupStateDone {
 		st.endWarned(now)
+	}
+	if r.Step == wire.MachineSetupStepIDUser {
+		st.sayNotStarted()
 	}
 	if st.allDone() {
 		t := now

@@ -248,3 +248,29 @@ func TestAPoolMachineThatIsNotLinkedYetHasItsProjects(t *testing.T) {
 		t.Fatalf("%+v", work)
 	}
 }
+
+// #7546: a failed Your set-up ends the host's wait: machine/setupWork says userFailed, not
+// waitUser, and gives no projects to get. When it runs again, the host waits for it again.
+func TestAFailedYourSetUpStopsTheProjects(t *testing.T) {
+	t.Parallel()
+	p, _, made, _ := poolPlane(t)
+	ctx := context.Background()
+	for _, state := range []wire.MachineSetupState{wire.MachineSetupStateRunning, wire.MachineSetupStateFailed} {
+		must(t, p.s.setupStep(ctx, made, rep(wire.MachineSetupStepIDUser, state)))
+	}
+	work, err := p.s.setupWork(ctx, made)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if work.UserFailed == nil || !*work.UserFailed || work.WaitUser != nil || len(work.Projects) != 0 {
+		t.Fatalf("%+v", work)
+	}
+	stored, _, _ := p.s.readMachineSetup(ctx, made)
+	if projects := stored.step(wire.MachineSetupStepIDProjects); projects.State != wire.MachineSetupStateWaiting || projects.Detail != notStartedWords {
+		t.Fatalf("%+v", projects)
+	}
+	must(t, p.s.setupStep(ctx, made, rep(wire.MachineSetupStepIDUser, wire.MachineSetupStateRunning)))
+	if work, err = p.s.setupWork(ctx, made); err != nil || work.WaitUser == nil || !*work.WaitUser || work.UserFailed != nil {
+		t.Fatalf("%+v %v", work, err)
+	}
+}

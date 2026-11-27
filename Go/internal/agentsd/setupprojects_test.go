@@ -288,3 +288,45 @@ func TestTheProjectsWaitForYourSetUp(t *testing.T) {
 		t.Fatalf("%q", said)
 	}
 }
+
+// #7546: while Your set-up has failed, the projects step does not start and stops asking; a run
+// of setup.sh here wakes it, and it goes on once the control plane says the run went well.
+func TestAFailedYourSetUpHoldsTheProjectsUntilItRunsAgain(t *testing.T) {
+	t.Parallel()
+	d, p, _, here := setupMachine(t)
+	defer d.Shutdown()
+	p.set(func() { p.work.UserFailed = new(true) })
+	done := make(chan wire.MachineSetupProjects, 1)
+	go func() {
+		done <- d.getSetupProjects(context.Background(), time.Second, 5*time.Millisecond, func(string) {})
+	}()
+	waitFor(t, "asked once", func() bool {
+		p.mu.Lock()
+		defer p.mu.Unlock()
+		return p.asked >= 1
+	})
+	select {
+	case got := <-done:
+		t.Fatalf("the projects began after Your set-up failed: %s", mustJSON(got))
+	default:
+	}
+	// Run Again: setup.sh begins here, which wakes the step at once; it asks while the run goes
+	// on, and goes on once the control plane says the run went well.
+	d.userSetupMu.Lock()
+	d.userSetupRuns = true
+	d.userSetupChangedLocked()
+	d.userSetupMu.Unlock()
+	waitFor(t, "asked again when setup.sh began", func() bool {
+		p.mu.Lock()
+		defer p.mu.Unlock()
+		return p.asked >= 3
+	})
+	d.userSetupMu.Lock()
+	d.userSetupRuns = false
+	d.userSetupMu.Unlock()
+	p.set(func() { p.work.UserFailed = nil })
+	got := <-done
+	if got.Problem != nil || len(got.Folders) != 1 || got.Folders[0] != here {
+		t.Fatalf("%s", mustJSON(got))
+	}
+}

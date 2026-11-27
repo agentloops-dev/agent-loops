@@ -38,10 +38,21 @@ const (
 	setupProjectsEvery = 5 * time.Second
 	// setupWorkEvery is how often a pool machine asks if it was claimed, until it is ready.
 	setupWorkEvery = 5 * time.Second
-	// setupUserEvery is how often the projects step asks again while it waits for Your set-up
-	// (#7416): often, as a machine with no setup.sh waits only for the sender's answer.
+	// setupUserEvery is how soon the projects step asks again while it waits for Your set-up
+	// (#7416): soon, as a machine with no setup.sh waits only for the sender's answer. Each ask
+	// after waits twice as long, up to setupUserMost (#7546): a setup.sh runs for up to 10 minutes.
 	setupUserEvery = time.Second
+	setupUserMost  = 15 * time.Second
 )
+
+// setupUserFailedEvery is how often the projects step asks again while Your set-up has failed
+// (#7546), when it does not run again here: a run here wakes it at once. A test sets it shorter.
+var setupUserFailedEvery = 10 * time.Minute
+
+// setupUserSettle is how long after setup.sh began or ended here the projects step still asks
+// as it does while Your set-up runs: the control plane can say the last run's end until this
+// host's report of the new one reaches it.
+const setupUserSettle = time.Minute
 
 type machineSetupBook struct {
 	poolGetMu sync.Mutex
@@ -119,14 +130,9 @@ func (d *Daemon) getSetupProjects(ctx context.Context, patience, every time.Dura
 	}
 	// Your set-up first, so that a project's script can use what it installed (#7416): the
 	// control plane says to wait while setup.sh is on its way or runs. The step begins after.
-	work, err := d.askSetupWork(ctx)
-	for err == nil && work.WaitUser != nil && *work.WaitUser {
-		select {
-		case <-ctx.Done():
-			return problem("The set-up stopped while it waited for Your set-up.")
-		case <-time.After(min(every, setupUserEvery)):
-		}
-		work, err = d.askSetupWork(ctx)
+	work, err := d.waitForUserSetup(ctx, every)
+	if err == nil && ctx.Err() != nil {
+		return problem("The set-up stopped while it waited for Your set-up.")
 	}
 	say("Looking for projects")
 	deadline := time.Now().Add(patience)
@@ -185,6 +191,45 @@ func (d *Daemon) getSetupProjects(ctx context.Context, patience, every time.Dura
 		return problem(strings.Join(problems, "\n"))
 	}
 	return out
+}
+
+// waitForUserSetup asks machine/setupWork until it says neither waitUser nor userFailed, or ctx
+// ends. While Your set-up is on its way or runs, it asks again less often each time, from 1 s
+// to 15 s (#7546). While it has failed, the projects do not start (gate 1 of #7151, section 1):
+// the host asks again only when setup.sh begins or ends here (Run Again, Send Set-up), or after
+// setupUserFailedEvery.
+func (d *Daemon) waitForUserSetup(ctx context.Context, every time.Duration) (wire.MachineSetupWork, error) {
+	first := min(every, setupUserEvery)
+	most := setupUserMost
+	if every < setupUserEvery {
+		most = every
+	}
+	pause := first
+	var changed time.Time
+	for {
+		again := d.userSetupChanges()
+		work, err := d.askSetupWork(ctx)
+		if err != nil || ctx.Err() != nil {
+			return work, err
+		}
+		failed := work.UserFailed != nil && *work.UserFailed
+		var wake <-chan time.Time
+		switch {
+		case failed && !d.userSetupRunning() && time.Since(changed) >= setupUserSettle:
+			wake, pause = time.After(setupUserFailedEvery), first
+		case failed || work.WaitUser != nil && *work.WaitUser:
+			wake, pause = time.After(pause), min(2*pause, most)
+		default:
+			return work, nil
+		}
+		select {
+		case <-ctx.Done():
+			return work, nil
+		case <-again:
+			changed, pause = time.Now(), first
+		case <-wake:
+		}
+	}
 }
 
 // getOrWait gets work's project i into folder. It waits for a source, but not on a claim that
