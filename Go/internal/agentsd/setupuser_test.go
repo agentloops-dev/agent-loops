@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/agentloops-dev/agent-loops/Go/internal/controllink"
 	"github.com/agentloops-dev/agent-loops/Go/internal/hostsetup"
 	"github.com/agentloops-dev/agent-loops/Go/internal/machinelock"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
@@ -205,5 +206,36 @@ func TestSetupWantedSaysWhetherItSends(t *testing.T) {
 	}
 	if !d.setupWanted("h-2") {
 		t.Fatal("it does not send with an approval for made machines")
+	}
+}
+
+// #7528: the sender's last try says it is the last, so that the control plane fails the
+// target's Your set-up when it is refused; a try that is tried again does not.
+func TestTheLastTryOfASetupDeliverSaysItIsTheLast(t *testing.T) {
+	t.Parallel()
+	const text = "#!/bin/bash\nbrew install jq\n"
+	d, phone, _, state, _ := senderWith(t, text)
+	var lasts []bool
+	ask := askControl(func(_ context.Context, method string, params any) (json.RawMessage, error) {
+		b, _ := json.Marshal(params)
+		var call wire.MachineWorkspaceCall
+		mustUnmarshal(t, b, &call)
+		var r wire.MachineSetupDeliver
+		mustUnmarshal(t, call.Params, &r)
+		lasts = append(lasts, r.Last != nil && *r.Last)
+		return nil, &controllink.AskError{Code: wire.FailureSetupScriptChanged, Message: "refused"}
+	})
+	d.askControl.Store(&ask)
+	approval := approvalOf(t, phone, state, "setup", machinelock.ScopeMade, 1, text)
+	if err := d.deliverSetup(context.Background(), "h-2", text, approval, true, 1); codeOf(err) != wire.FailureSetupScriptChanged {
+		t.Fatalf("one try: %v", err)
+	}
+	// A refusal that is not "not in the lock" is not tried again: the control plane fails the
+	// step for it whatever last says.
+	if err := d.deliverSetup(context.Background(), "h-2", text, approval, true, setupDeliverTries); codeOf(err) != wire.FailureSetupScriptChanged {
+		t.Fatalf("twelve tries: %v", err)
+	}
+	if len(lasts) != 2 || !lasts[0] || lasts[1] {
+		t.Fatalf("last: %v", lasts)
 	}
 }

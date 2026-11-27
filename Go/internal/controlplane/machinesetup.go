@@ -3,11 +3,13 @@ package controlplane
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"slices"
 	"sort"
 	"strings"
 	"time"
 
+	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/providers"
 	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/records"
 	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/store"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
@@ -923,6 +925,45 @@ func (s *Service) setupAsked(ctx context.Context, host string, sending bool) {
 	})
 	if err != nil {
 		s.log("machine " + host + ": its set-up could not say that setup.sh is on its way: " + err.Error())
+		return
+	}
+	s.setupChanged(ctx, host)
+}
+
+// errSetupBegun says that Your set-up began on its machine: a send that failed after it does not
+// change it.
+var errSetupBegun = errors.New("your set-up began")
+
+// setupNotSent is the providers' SetupNotSent hook (#7528): the sender's machines/setupDeliver
+// to host failed. Your set-up, when it is in host's set-up and has not begun there, says why: it
+// needs you while the sender tries again (host is not in the lock yet, section 3 of #7151), and
+// it fails when the sender does not try again, so the person knows to use Send Set-up. A step
+// that began on the machine says what the machine says.
+func (s *Service) setupNotSent(host, sender string, refusal *providers.Failure, last bool) {
+	report := wire.MachineSetupReport{Step: wire.MachineSetupStepIDUser}
+	if refusal.Code == wire.FailureNotInLock && !last {
+		report.State = wire.MachineSetupStateNeedsYou
+		report.Detail = new("Waiting for this machine to be in your lock. A device that can sign must be online.")
+	} else {
+		report.State = wire.MachineSetupStateFailed
+		reason := strings.TrimSuffix(strings.TrimSpace(refusal.Message), ".")
+		report.Error = new(sender + " could not send setup.sh: " + reason + ". Use Send Set-up to send it again.")
+	}
+	ctx := context.Background()
+	_, err := s.changeMachineSetup(ctx, host, false, func(st *storedSetup) error {
+		user := st.step(wire.MachineSetupStepIDUser)
+		if user == nil || user.Hash != "" ||
+			user.State != wire.MachineSetupStateWaiting && user.State != wire.MachineSetupStateNeedsYou {
+			return errSetupBegun
+		}
+		_, _, err := st.report(report, time.Now())
+		return err
+	})
+	if errors.Is(err, errSetupBegun) {
+		return
+	}
+	if err != nil {
+		s.log("machine " + host + ": its set-up could not say that setup.sh did not come: " + err.Error())
 		return
 	}
 	s.setupChanged(ctx, host)

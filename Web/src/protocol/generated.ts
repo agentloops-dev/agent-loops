@@ -9556,6 +9556,12 @@ export interface MachineSetup {
 export interface MachineSetupDeliver {
   /** The machine's id, as the person's lock names it. */
   host: string;
+  /**
+   * The sender's last try (#7528): it does not send again when this one fails. The control plane
+   * then fails that machine's Your set-up, with the reason, when the step has not begun. Absent: a
+   * refusal as not in the lock is tried again.
+   */
+  last?: boolean;
 }
 
 /**
@@ -19706,7 +19712,7 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   MachineSessionCall: { required: ["host", "call"], optional: [] },
   MachineSessionStart: { required: ["host", "start"], optional: [] },
   MachineSetup: { required: ["steps", "startedAt"], optional: ["readyAt"] },
-  MachineSetupDeliver: { required: ["host"], optional: [] },
+  MachineSetupDeliver: { required: ["host"], optional: ["last"] },
   MachineSetupProject: { required: ["path", "sources"], optional: ["project"] },
   MachineSetupProjects: { required: ["pool", "finished", "folders"], optional: ["detail", "problem"] },
   MachineSetupReport: { required: ["step", "state"], optional: ["detail", "error", "fromPool", "code", "hash", "warning"] },

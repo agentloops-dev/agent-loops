@@ -9988,6 +9988,9 @@ type MachineSetup struct {
 type MachineSetupDeliver struct {
 	// The machine's id, as the person's lock names it.
 	Host string `json:"host"`
+
+	// The sender's last try (#7528): it does not send again when this one fails. The control plane then fails that machine's Your set-up, with the reason, when the step has not begun. Absent: a refusal as not in the lock is tried again.
+	Last *bool `json:"last,omitzero"`
 }
 
 // A project folder a pool machine gets: path is the folder on its sources, project the project id it joins there, and sources the person's machines that have it, those online first.
