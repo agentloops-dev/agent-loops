@@ -226,6 +226,9 @@ func (d *Daemon) setupScripts() (wire.SetupScripts, error) {
 	}
 	state, _ := d.heldLock()
 	out := wire.SetupScripts{Scripts: []wire.SetupScript{}}
+	if folder := d.setupScriptsFolder(); folder != "" {
+		out.Folder = &folder
+	}
 	for _, s := range setupScriptFiles {
 		out.Scripts = append(out.Scripts, scriptState(s.name, d.readSetupScript(s.file, s.most), approved, state))
 	}

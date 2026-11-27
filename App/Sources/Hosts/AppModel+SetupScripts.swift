@@ -159,3 +159,32 @@ extension AppModel {
             && self.host(.mac, has: Capability.hostMachineSetup2)
     }
 }
+
+// MARK: Settings ▸ Machines ▸ Machine scripts (#7512)
+
+extension AppModel {
+    /// The Machine scripts page in Settings ▸ Machines: behind its flag, on a Mac whose host
+    /// reads the scripts.
+    var showsMachineScriptsSettings: Bool {
+        flags.isOn(.machineScripts) && host(.mac, has: Capability.hostMachineSetup2)
+    }
+
+    /// New root.sh and New setup.sh: writes the example into `folder` when there is no file of
+    /// that name, and never over one. Nil once written; else why not.
+    nonisolated static func writeExampleScript(_ name: String, folder: String) -> String? {
+        let dir = URL(fileURLWithPath: folder, isDirectory: true)
+        let file = dir.appendingPathComponent(name + ".sh")
+        do {
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true,
+                                                    attributes: [.posixPermissions: 0o700])
+            // .withoutOverwriting: a file made since the read stays as it is.
+            // store-bounds: not a store: one of the person's two scripts, a fixed example, written once
+            try Data(MachineScriptWords.example(name).utf8).write(to: file, options: .withoutOverwriting)
+            return nil
+        } catch CocoaError.fileWriteFileExists {
+            return "\(name).sh is there already."
+        } catch {
+            return "\(name).sh can’t be written: \(error.localizedDescription)"
+        }
+    }
+}

@@ -60,6 +60,10 @@ func TestASenderKeepsOnlyAClientsApprovalOfTheTextThere(t *testing.T) {
 		scripts.Scripts[1].NextSeq != 1 || *scripts.Scripts[1].Hash != scriptHash(text) {
 		t.Fatalf("%+v", scripts)
 	}
+	// #7512: the answer names the folder, so Settings ▸ Machines opens the one read here.
+	if scripts.Folder == nil || *scripts.Folder != filepath.Join(d.PersonalHome, ".agents", "machine-setup") {
+		t.Fatalf("folder: %v", scripts.Folder)
+	}
 	if _, _, err := d.approvedSetupScript("setup", machinelock.ScopeMade); codeOf(err) != wire.FailureSetupScriptChanged {
 		t.Fatalf("a script no client approved is used: %v", err)
 	}

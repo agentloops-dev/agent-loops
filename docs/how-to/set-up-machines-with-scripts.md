@@ -17,6 +17,11 @@ Put them in `~/.agents/machine-setup/` on the machine that makes your new machin
 machine that carries the provider, such as your Mac. Your dotfiles can keep them. Agent Loops
 opens them; it does not edit them.
 
+On the Mac, **Settings ▸ Machines ▸ Machine scripts** lists them, with **Open** (in your
+editor) and **Reveal in Finder**. With none there, **New root.sh** and **New setup.sh** write
+the example below, and open it. A script that is new, or changed since you approved it for new
+machines, has **Review…**: it shows what changed, and **Approve** approves it for new machines.
+
 | | `root.sh` | `setup.sh` |
 |---|---|---|
 | Runs as | root | the new machine's user |
