@@ -396,7 +396,8 @@ func (d *Daemon) withRuntimeOwnEnv(r *runtimeDef, dir string, account *wire.Acco
 		// the adapter sends as the session's plan: the plan strip and a first build's plan
 		// page read it. The person's own value, when set, is kept.
 		env = withClaudeTodoTools(env)
-		if rl := d.relayFor("claude"); rl != nil && account == nil {
+		// A sign-in made on this server wins over the Mac's relay (#7470, 056 D7 replaced).
+		if rl := d.relayFor("claude"); rl != nil && account == nil && d.storedClaudeSignIn() == "" {
 			env = without(env, "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX",
 				"ANTHROPIC_BASE_URL", "CLAUDE_CODE_OAUTH_TOKEN", "NODE_EXTRA_CA_CERTS")
 			env = append(env, "ANTHROPIC_BASE_URL=https://127.0.0.1:"+strconv.Itoa(rl.port), "CLAUDE_CODE_OAUTH_TOKEN="+rl.standIn,
@@ -408,7 +409,7 @@ func (d *Daemon) withRuntimeOwnEnv(r *runtimeDef, dir string, account *wire.Acco
 			}
 		}
 	case "codex":
-		if rl := d.relayFor("codex"); rl != nil && account == nil {
+		if rl := d.relayFor("codex"); rl != nil && account == nil && !ownCodexSignIn() {
 			env = without(env, "OPENAI_API_KEY", "CODEX_HOME", "CODEX_CA_CERTIFICATE")
 			env = append(env, "CODEX_HOME="+filepath.Join(root, "runtimes", "codex-relay-home"), "CODEX_CA_CERTIFICATE="+rl.caFile)
 		}
