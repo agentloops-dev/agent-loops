@@ -87,8 +87,8 @@ func SecretCommand(args []string, getenv func(string) string, socket string, out
 	case len(b) > 0:
 		fmt.Fprintln(errOut, "agents-secret: "+strings.TrimSpace(string(b)))
 	case resp.StatusCode == http.StatusNotFound:
-		fmt.Fprintln(errOut, "agents-secret: agentsd does not know this session's grant: the session's runtime has ended or started again. "+
-			"A new start of the session gets a new one.")
+		fmt.Fprintln(errOut, "agents-secret: agentsd does not know this grant: the session's runtime has ended or started again, "+
+			"or the run of setup.sh it was for has ended. A new start of the session gets a new one.")
 	default:
 		fmt.Fprintln(errOut, "agents-secret: agentsd said "+resp.Status)
 	}
@@ -134,13 +134,25 @@ func (d *Daemon) withSecretCommand(env []string, agent wire.UUID) []string {
 
 // serveSecretValue answers `agentsd secret`: the value of the secret ?name= for the grant's
 // session, as plain text, when it does not ask; else words that say why not.
+// A run of setup.sh's grant (#7156) gets only the names it declared.
 func (d *Daemon) serveSecretValue(w http.ResponseWriter, r *http.Request) {
-	agent, ok := d.commandGrantPost(w, r)
-	if !ok {
-		return
-	}
+	var value, words string
+	var status int
 	name := strings.TrimSpace(r.URL.Query().Get("name"))
-	value, status, words := d.secretForCommand(agent, name)
+	if g, ok := d.scriptGrantOf(r); ok {
+		if r.Method != http.MethodPost {
+			w.Header().Set("Allow", "POST")
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		value, status, words = d.secretForScript(g, name)
+	} else {
+		agent, ok := d.commandGrantPost(w, r)
+		if !ok {
+			return
+		}
+		value, status, words = d.secretForCommand(agent, name)
+	}
 	w.Header().Set("Content-Type", "text/plain")
 	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(status)

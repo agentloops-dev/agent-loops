@@ -223,12 +223,13 @@ func UserScriptEnv(machine string, fromPool bool) []string {
 	return append(env[:1:1], env[2:]...) // no AGENTS_PROJECT
 }
 
-// RunUserScript runs the person's setup.sh at script as this user, in home, after any other run
-// on this machine ends (one at a time, beside no project's script).
-func RunUserScript(ctx context.Context, script, home, machine string, fromPool bool, timeout time.Duration, log io.Writer, progress func(string)) error {
+// RunUserScript runs the person's setup.sh at script as this user, in home, with env (from
+// UserScriptEnv), after any other run on this machine ends (one at a time, beside no project's
+// script).
+func RunUserScript(ctx context.Context, script, home string, env []string, timeout time.Duration, log io.Writer, progress func(string)) error {
 	scriptMu.Lock()
 	defer scriptMu.Unlock()
-	return runBash(ctx, script, home, UserScriptEnv(machine, fromPool), "setup.sh", timeout, log, progress)
+	return runBash(ctx, script, home, env, "setup.sh", timeout, log, progress)
 }
 
 // OpenScriptLog is the log of project's script in logs, cut at scriptLogMost, and the function

@@ -138,6 +138,22 @@ Your own set-up, the tools and sign-ins you want on each machine, can go in `~/.
 
 A machine that a provider made, or that you claimed from a warm pool, gets it by itself when you approved it for new machines. **Run Again** runs the copy the machine has again, so write it to be safe to run again. When you change the file, the row says *changed on This Mac*: send it again. While a machine is offline, the send waits for it. Scripts are not secret: keep tokens in Secrets, not in a script.
 
+#### Secrets in setup.sh
+
+To use a secret, name it in a `# secrets:` line in the comments at the top of the script, at most 20 names:
+
+```bash
+#!/bin/bash
+# secrets: GH_TOKEN NPM_TOKEN
+gh auth login --with-token <<<"$(agents-secret GH_TOKEN)"
+```
+
+- The run gets `agents-secret` on its `PATH`. It gives only the names that the script declares, and only while the run goes on. Each read is recorded, with the place `setup.sh` and the script's hash.
+- A new machine has no copy of your secrets until one of your apps seals one for it. Until then the step waits, as **Needs you**, and says *Open Agent Loops to send GH_TOKEN to this machine.* The wait is not part of the 10 minutes.
+- A declared secret that is not one of yours, or that has **Ask before use**, fails the step before the script runs, and the step names it. Nothing asks while the script runs.
+- A project's `.agents/setup.sh` gets no secrets.
+- A tool that writes a token to its own file (`gh auth login`, `npm login`, `~/.netrc`) leaves it there, and every agent on that machine can read that file.
+
 ### Choose its folders
 
 Nothing on the server becomes a folder by itself (#656). Once it joins, Add a Machine lists each

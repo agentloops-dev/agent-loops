@@ -55,6 +55,9 @@ type gitCredentialState struct {
 	credGrants map[string]wire.UUID
 	// commandGrants is each agents-secret grant, by the agent it is for (#4178).
 	commandGrants map[string]wire.UUID
+	// scriptGrants is each agents-secret grant of a run of setup.sh (#7156), whose subject is
+	// the run, not a session.
+	scriptGrants map[string]scriptGrant
 	// appReach is whether agent-loops-dev is installed on a repository, by repository.
 	appReach map[string]reachRead
 	// appPush is whether agent-loops-dev may write code on an owner's install, by owner.
