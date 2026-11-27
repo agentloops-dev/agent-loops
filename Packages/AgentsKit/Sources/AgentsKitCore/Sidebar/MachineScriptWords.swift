@@ -256,3 +256,35 @@ public extension MachineScriptWords {
 
         """
 }
+
+// MARK: Send Set-up's tries (#7547)
+
+public extension MachineScriptWords {
+    /// How long a Send Set-up that waits is tried again for, from the first try.
+    static let sendTriesFor: Duration = .seconds(2 * 60 * 60)
+
+    /// The pause before try `n` again (1 is the first one after the first try) of a Send Set-up
+    /// that waits: 15 s, twice as long each time up to 5 min, for `sendTriesFor` in all. Nil
+    /// after that: the tries stop.
+    static func sendPause(before n: Int) -> Duration? {
+        guard n >= 1 else { return nil }
+        let first = 15, most = 5 * 60
+        var waited = 0, pause = first
+        for _ in 1..<n {
+            waited += pause
+            pause = min(2 * pause, most)
+        }
+        return waited + pause > Int(sendTriesFor.components.seconds) ? nil : .seconds(pause)
+    }
+
+    /// The row's note while a send waits: *· waiting for dev-3 to be online*.
+    static func sendWaitNote(_ waitsFor: String) -> String { "waiting for \(waitsFor) to be online" }
+
+    /// The row's note once the tries stopped with nothing sent.
+    static let sendEndedNote = "not sent"
+
+    /// The row's line once the tries stopped because `waitsFor` was not online.
+    static func sendGaveUpLine(_ waitsFor: String) -> String {
+        "\(waitsFor) was not online for 2 hours. Send Set-up again when it is."
+    }
+}

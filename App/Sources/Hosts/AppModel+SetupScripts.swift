@@ -3,31 +3,40 @@ import Foundation
 import Observation
 
 /// Send Set-up's sends that wait (#7155, gate 2 board *page sender offline*): one a machine, tried
-/// again every 15 seconds until it goes, or until Cancel Send. Kept while the window runs.
+/// again less often each time, from 15 s to 5 min, for 2 hours (#7547), or until Cancel Send. Kept
+/// while the window runs.
 @MainActor @Observable
 final class SetupSendState {
     struct Pending: Equatable {
         /// The machine it waits for: this Mac (the sender) or the target.
         var waitsFor: String
-        var note: String { "waiting for \(waitsFor) to be online" }
+        /// Why the tries stopped with nothing sent; nil while they go on.
+        var ended: String?
+        var note: String { ended == nil ? MachineScriptWords.sendWaitNote(waitsFor) : MachineScriptWords.sendEndedNote }
     }
 
     private(set) var pending: [MachineRef: Pending] = [:]
     @ObservationIgnored private var tries: [MachineRef: Task<Void, Never>] = [:]
 
-    /// Waits for `waitsFor`, and tries `send` again until it says it went (nil) or why it cannot.
+    /// Waits for `waitsFor`, and tries `send` again until it says it went, or why it cannot, or
+    /// the tries stop; the last two stay in `pending` with why.
     func wait(_ host: MachineRef, for waitsFor: String, send: @escaping @MainActor () async -> SendResult) {
         tries[host]?.cancel()
         pending[host] = Pending(waitsFor: waitsFor)
         tries[host] = Task { [weak self] in
-            while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(15))
+            var n = 1
+            while let pause = MachineScriptWords.sendPause(before: n) {
+                n += 1
+                try? await Task.sleep(for: pause)
                 guard !Task.isCancelled else { return }
                 switch await send() {
                 case .waits(let who): self?.pending[host] = Pending(waitsFor: who)
-                case .sent, .refused: self?.done(host); return
+                case .sent: self?.done(host); return
+                case .refused(let why): self?.end(host, why: why); return
                 }
             }
+            guard !Task.isCancelled, let self else { return }
+            end(host, why: MachineScriptWords.sendGaveUpLine(pending[host]?.waitsFor ?? waitsFor))
         }
     }
 
@@ -39,6 +48,11 @@ final class SetupSendState {
     private func done(_ host: MachineRef) {
         tries[host] = nil
         pending[host] = nil
+    }
+
+    private func end(_ host: MachineRef, why: String) {
+        tries[host] = nil
+        pending[host]?.ended = why
     }
 
     enum SendResult { case sent, waits(String), refused(String) }
@@ -63,6 +77,8 @@ extension AppModel {
             return "Scripts need your machine lock: a device of your lock signs each one. Set up the lock first."
         }
         let send = DaemonAPI.SetupSend(host: host.rawValue, approval: approval)
+        // A send whose tries stopped is replaced by this one.
+        setupSends.cancel(host)
         switch await trySetupSend(host, send) {
         case .sent: return nil
         case .refused(let why): return why
@@ -82,7 +98,8 @@ extension AppModel {
             if error.code == DaemonAPI.Failure.hostOffline { return .waits(hosts.label(host)) }
             return .refused(error.message)
         } catch {
-            return .waits(hosts.label(.mac))
+            // Not a wait: this Mac's daemon did not answer at all (#7547).
+            return .refused("\(hosts.label(.mac)) can’t be asked now: \(error.localizedDescription)")
         }
     }
 

@@ -132,3 +132,23 @@ struct MachineScriptWordsTests {
         #expect(MachineScriptWords.declaredSecrets(MachineScriptWords.exampleRoot).isEmpty)
     }
 }
+
+/// Send Set-up's tries while a machine is offline (#7547).
+struct SetupSendPauseTests {
+    @Test func theTriesBackOffAndStopAfterTwoHours() {
+        let pauses = (1...40).map { MachineScriptWords.sendPause(before: $0) }
+        #expect(Array(pauses.prefix(6)) == [.seconds(15), .seconds(30), .seconds(60), .seconds(120), .seconds(240), .seconds(300)])
+        let tried = pauses.compactMap(\.self)
+        #expect(tried.count < 40)
+        #expect(pauses.drop(while: { $0 != nil }).allSatisfy { $0 == nil })
+        let total = tried.reduce(Duration.zero, +)
+        #expect(total <= MachineScriptWords.sendTriesFor)
+        #expect(total > MachineScriptWords.sendTriesFor - .seconds(300))
+        #expect(MachineScriptWords.sendPause(before: 0) == nil)
+    }
+
+    @Test func theRowSaysWhatItWaitsFor() {
+        #expect(MachineScriptWords.sendWaitNote("dev-3") == "waiting for dev-3 to be online")
+        #expect(MachineScriptWords.sendGaveUpLine("dev-3") == "dev-3 was not online for 2 hours. Send Set-up again when it is.")
+    }
+}
