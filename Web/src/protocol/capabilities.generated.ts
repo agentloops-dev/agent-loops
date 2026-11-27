@@ -661,6 +661,7 @@ export const HostCapabilities: Readonly<Record<string, Capability>> = {
   "setup/run": "host.machine-setup/2",
   "setup/scripts": "host.machine-setup/1",
   "setup/send": "host.machine-setup/2",
+  "setup/wanted": "host.machine-setup/2",
   "shell/attach": "shell/1",
   "shell/close": "shell/1",
   "shell/detach": "shell/1",
@@ -1103,7 +1104,6 @@ export const ControlCapabilities: Readonly<Record<string, Capability>> = {
   "machine/user": "bots/1",
   "machine/userSettings": "host.user-settings/2",
   "notices/delivered": "notices/1",
-  "setup/wanted": "host.machine-setup/2",
   "user/suspended": "host.suspend/1",
 };
 
