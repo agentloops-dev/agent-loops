@@ -356,6 +356,11 @@ type fakeForgeGitLab struct {
 	blocked []string
 	// parented are the numbers Parents was asked about (#4335).
 	parented []string
+	// epics, parents and blockers, when set, are what a list of label epic, Parents and
+	// Blockers say instead (#7343).
+	epics    []gitlabmcp.Item
+	parents  map[int]gitlabmcp.Ref
+	blockers map[int][]gitlabmcp.Ref
 	// wrote are the writes asked for (#3130).
 	wrote []string
 }
@@ -369,6 +374,9 @@ func (f *fakeForgeGitLab) Search(_ context.Context, projects []string, sf gitlab
 	}
 	if after != "" {
 		return gitlabmcp.SearchPage{Items: []gitlabmcp.Item{}, Cursors: []string{}}, nil
+	}
+	if f.epics != nil && sf.Label == "epic" {
+		return gitlabmcp.SearchPage{Items: f.epics, Cursors: []string{}}, nil
 	}
 	return gitlabmcp.SearchPage{Next: "gl-end", Cursors: []string{"gl-1", "gl-2"}, Items: []gitlabmcp.Item{
 		{Project: "Group/App", Number: 4, MR: sf.MRs, State: "open", Title: "GitLab newest", UpdatedAt: "2026-11-01T11:00:00Z",
