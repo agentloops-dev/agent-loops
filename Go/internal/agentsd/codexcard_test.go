@@ -171,16 +171,31 @@ func TestAServersClaudeCardChecksBeforeTheLendCloses(t *testing.T) {
 	if d.storedClaudeSignIn() == "" || d.relayFor("claude") != nil || len(d.pendingElicitations()) != 0 {
 		t.Fatal("not signed in on the server after a passing check")
 	}
-	// The token is in its own file and nowhere else on the server: not in the record.
-	for _, dir := range []string{root, home} {
+	assertNoClaudeSignInLeak(t, []string{root, home}, d.claudeSignInFile())
+}
+
+func assertNoClaudeSignInLeak(t *testing.T, roots []string, signInFile string) {
+	t.Helper()
+	for _, dir := range roots {
+		files, err := os.OpenRoot(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
 		_ = filepath.WalkDir(dir, func(path string, e fs.DirEntry, err error) error {
-			if err != nil || e.IsDir() || path == d.claudeSignInFile() || strings.HasSuffix(path, ".local/bin/claude") {
+			if err != nil || e.IsDir() || path == signInFile || strings.HasSuffix(path, ".local/bin/claude") {
 				return nil
 			}
-			if b, err := os.ReadFile(path); err == nil && (bytes.Contains(b, []byte("sk-ant-oat01-abc_DEF-123")) || bytes.Contains(b, []byte(`"good"`))) {
+			rel, err := filepath.Rel(dir, path)
+			if err != nil {
+				return err
+			}
+			if b, err := files.ReadFile(rel); err == nil && (bytes.Contains(b, []byte("sk-ant-oat01-abc_DEF-123")) || bytes.Contains(b, []byte(`"good"`))) {
 				t.Errorf("the token or the code is in %s", path)
 			}
 			return nil
 		})
+		if err := files.Close(); err != nil {
+			t.Fatal(err)
+		}
 	}
 }
