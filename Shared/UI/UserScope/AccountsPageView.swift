@@ -37,7 +37,6 @@ struct AccountsPageView: View {
     @State private var problem: String?
     /// The control plane's `control/status`, for its capabilities (#4190); nil until it comes.
     @State private var status: DaemonAPI.ControlStatus?
-    @FocusState private var searchFocused: Bool
 
     private var secrets: [DaemonAPI.UserSecretRow] { state.secrets?.secrets ?? [] }
 
@@ -60,27 +59,21 @@ struct AccountsPageView: View {
                         .fixedSize(horizontal: false, vertical: true)
                         .padding(16)
                     Spacer()
-                } else if wide {
-                    HStack(spacing: 0) {
-                        list(items)
-                            .frame(width: min(440, geo.size.width * 0.45))
-                        Divider()
-                        detailOrEmpty(items)
-                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                    }
                 } else {
-                    narrow(items)
+                    PageListAndDetail(wide: wide, width: geo.size.width) {
+                        list(items)
+                    } detail: {
+                        detailOrEmpty(items)
+                    } narrow: {
+                        narrow(items)
+                    }
                 }
             }
         }
         .task(id: control != nil) { await reload() }
         .refreshable { await reload() }
-        .onChange(of: state.secrets) { _, names in show?.secretsChanged(names?.secrets ?? []) }
+        .hidesShownSecret(show, secrets: state.secrets)
         .onChange(of: selection) { _, _ in show?.hide() }
-        .onDisappear { show?.hide() }
-        #if os(macOS)
-        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didResignActiveNotification)) { _ in show?.hide() }
-        #endif
         .sheet(isPresented: $adding) {
             AccountSheet { account in
                 let failed = await save(adding: account, replacing: nil)
@@ -116,35 +109,8 @@ struct AccountsPageView: View {
         let counts = AccountsPage.counts(items, search: search, project: project, service: service)
         return VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
-                HStack(spacing: 6) {
-                    Image(icon: "magnifyingglass").foregroundStyle(.secondary)
-                    TextField(AccountsPage.searchPrompt, text: $search)
-                        .textFieldStyle(.plain)
-                        .focused($searchFocused)
-                        .autocorrectionDisabled()
-                        #if os(iOS)
-                        .textInputAutocapitalization(.never)
-                        #endif
-                        .accessibilityLabel("Search accounts")
-                        #if os(macOS)
-                        .onExitCommand { search = "" }
-                        #endif
-                    if !search.isEmpty {
-                        Button { search = "" } label: { Image(icon: "xmark.circle.fill") }
-                            .buttonStyle(.borderless)
-                            .accessibilityLabel(AccountsPage.clearSearch)
-                    }
-                }
-                .padding(.horizontal, 8)
-                .padding(.vertical, 5)
-                .frame(minWidth: 160)
-                .paperWell(in: RoundedRectangle(cornerRadius: Paper.Radius.control))
-                // ⌘F puts the cursor in the search (wireframes §2).
-                Button("") { searchFocused = true }
-                    .keyboardShortcut("f", modifiers: .command)
-                    .hidden()
-                    .frame(width: 0, height: 0)
-                    .accessibilityHidden(true)
+                PageSearchField(prompt: AccountsPage.searchPrompt, label: "Search accounts", clearLabel: AccountsPage.clearSearch,
+                                text: $search)
                 Button { adding = true } label: { Label(AccountsPage.add, icon: "plus") }
                     .fixedSize()
                     .disabled(control == nil || AccountsWords.refusal(status) != nil)
@@ -397,14 +363,10 @@ private struct AccountDetail: View {
                 grid
                 SecretInfoLine(parts: AccountsWords.line(account))
             }
-            if let problem {
-                Text(problem).appText(.fine).tinted(.failure).fixedSize(horizontal: false, vertical: true)
-            }
+            PageProblemLine(problem: problem)
             if !isEditing { actions }
         }
-        .frame(maxWidth: 560, alignment: .leading)
-        .onAppear { reset() }
-        .onChange(of: isEditing) { _, _ in reset() }
+        .pageDetail(isEditing: isEditing, reset: reset)
     }
 
     private func reset() {

@@ -37,7 +37,6 @@ struct SecretsPageView<Source: LocalSecretsSource>: View {
     @State private var replacing: DaemonAPI.UserSecretRow?
     @State private var removing: SecretsPage.Item?
     @State private var editing: String?
-    @FocusState private var searchFocused: Bool
 
     /// Which Add sheet is open.
     enum Adding: String, Identifiable {
@@ -60,26 +59,18 @@ struct SecretsPageView<Source: LocalSecretsSource>: View {
                     .padding(.horizontal, 16)
                     .padding(.vertical, 10)
                 Divider()
-                if wide {
-                    HStack(spacing: 0) {
-                        list(items)
-                            .frame(width: min(440, geo.size.width * 0.45))
-                        Divider()
-                        detailOrEmpty(items)
-                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                    }
-                } else {
+                PageListAndDetail(wide: wide, width: geo.size.width) {
+                    list(items)
+                } detail: {
+                    detailOrEmpty(items)
+                } narrow: {
                     narrow(items)
                 }
             }
         }
         .task(id: control != nil) { await reload() }
         .refreshable { await reload() }
-        .onChange(of: state.secrets) { _, names in show?.secretsChanged(names?.secrets ?? []) }
-        .onDisappear { show?.hide() }
-        #if os(macOS)
-        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didResignActiveNotification)) { _ in show?.hide() }
-        #endif
+        .hidesShownSecret(show, secrets: state.secrets)
         .sheet(item: $adding) { kind in addSheet(kind) }
         .sheet(item: $replacing) { row in replaceSheet(row) }
         .confirmationDialog(removing.map { "Remove \($0.name)?" } ?? "",
@@ -102,35 +93,8 @@ struct SecretsPageView<Source: LocalSecretsSource>: View {
         let counts = SecretsPage.counts(items, search: search, project: project)
         return VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
-                HStack(spacing: 6) {
-                    Image(icon: "magnifyingglass").foregroundStyle(.secondary)
-                    TextField(SecretsPage.searchPrompt, text: $search)
-                        .textFieldStyle(.plain)
-                        .focused($searchFocused)
-                        .autocorrectionDisabled()
-                        #if os(iOS)
-                        .textInputAutocapitalization(.never)
-                        #endif
-                        .accessibilityLabel("Search secrets")
-                        #if os(macOS)
-                        .onExitCommand { search = "" }
-                        #endif
-                    if !search.isEmpty {
-                        Button { search = "" } label: { Image(icon: "xmark.circle.fill") }
-                            .buttonStyle(.borderless)
-                            .accessibilityLabel(SecretsPage.clearSearch)
-                    }
-                }
-                .padding(.horizontal, 8)
-                .padding(.vertical, 5)
-                .frame(minWidth: 160)
-                .paperWell(in: RoundedRectangle(cornerRadius: Paper.Radius.control))
-                // ⌘F puts the cursor in the search (wireframes §2).
-                Button("") { searchFocused = true }
-                    .keyboardShortcut("f", modifiers: .command)
-                    .hidden()
-                    .frame(width: 0, height: 0)
-                    .accessibilityHidden(true)
+                PageSearchField(prompt: SecretsPage.searchPrompt, label: "Search secrets", clearLabel: SecretsPage.clearSearch,
+                                text: $search)
                 addMenu
                 // A narrow page gives the search the room: the line goes under it, after the chips.
                 if wide, let read = state.readAt {
@@ -519,14 +483,10 @@ private struct SecretDetail: View {
                 Divider()
                 facts
             }
-            if let problem {
-                Text(problem).appText(.fine).tinted(.failure).fixedSize(horizontal: false, vertical: true)
-            }
+            PageProblemLine(problem: problem)
             if !isEditing { actions }
         }
-        .frame(maxWidth: 560, alignment: .leading)
-        .onAppear { reset() }
-        .onChange(of: isEditing) { _, _ in reset() }
+        .pageDetail(isEditing: isEditing, reset: reset)
     }
 
     private func reset() {
