@@ -583,7 +583,7 @@ struct WorkTimelinePane: View {
             .overlay {
                 // S11: no line in the window itself; the margin on each side is only for the scroll.
                 if shows == .empty {
-                    emptyCard(timeline, now: now)
+                    emptyCard()
                 }
             }
             }
@@ -608,7 +608,7 @@ struct WorkTimelinePane: View {
             case .loading:
                 WorkPlaceholderRows()
             case .empty:
-                emptyCard(timeline, now: now)
+                emptyCard()
                     .frame(maxWidth: .infinity)
                     .listRowSeparator(.hidden)
             case .epics:
@@ -687,16 +687,10 @@ struct WorkTimelinePane: View {
         .overlay(alignment: .trailing) { Rectangle().fill(Paper.rule).frame(width: 1) }
     }
 
-    /// S11: no epic in the window. The axis and Now stay; the card says when the last one
-    /// joined, when the read knows, and offers the week.
-    private func emptyCard(_ timeline: DaemonAPI.WorkTimeline, now: Date) -> some View {
-        let window = state.range.window(now: state.anchor)
-        let joined = WorkTimeline.lastJoined(timeline, before: window.start)
-        return VStack(spacing: 6) {
+    /// S11: no open epic in the window (#7334). The axis and Now stay; the card offers the week.
+    private func emptyCard() -> some View {
+        VStack(spacing: 6) {
             Text(WorkTimeline.noEpicsWords(state.range)).appText(.supporting).fontWeight(.semibold)
-            if let joined {
-                Text(WorkTimeline.lastJoinedWords(joined, now: now)).appText(.fine).foregroundStyle(.secondary)
-            }
             if state.range != .week {
                 Button(WorkTimeline.showTheWeek) { state.range = .week }
                     .buttonStyle(.paper)
@@ -815,7 +809,7 @@ struct WorkTimelinePane: View {
 
     private func lineRow(_ line: WorkTimeline.Line, drawing: Drawing) -> some View {
         let epic = state.timeline?.epics.first { $0.item.node.ref == line.epic.ref }
-        let glyph = AnyView(WorkStateIcon(kind: "issue", state: epic?.item.state ?? (line.open ? "open" : "closed"),
+        let glyph = AnyView(WorkStateIcon(kind: "issue", state: epic?.item.state ?? "open",
                                           stateReason: epic?.stateReason))
         return miniRow(glyph: glyph, title: line.title, labels: epic?.item.labels ?? [],
                        line: WorkTimeline.lineLine(line, now: drawing.now),
@@ -919,12 +913,11 @@ private struct Drawing {
     var plot: Color { night ? Self.navy : .white }
     var faint: Color { night ? Color(white: 0.6) : Color(white: 0.55) }
 
-    /// A block's fill: its feature's colour, darkened until white has 4.5:1; grey when closed as not
-    /// planned.
+    /// A block's fill: its feature's colour, darkened until white has 4.5:1.
     func colour(_ line: WorkTimeline.Line) -> Color { Self.colour(line) }
 
     static func colour(_ line: WorkTimeline.Line) -> Color {
-        fills[line.how == .dropped ? fills.count - 1 : WorkTimeline.colour(line.feature, of: fills.count)]
+        fills[WorkTimeline.colour(line.feature, of: fills.count)]
     }
 
     /// The list of epics' edge (#6044): the block's fill, lighter at night as the words after Now are.
@@ -1041,7 +1034,7 @@ private struct Drawing {
                 drawChip(&gc, chip, line: line, x: words.chipX, y: words.chipInside ? WorkTimeline.titleY(line.row) : mid)
             }
             if let outside = words.outside {
-                let text = line.how == .dropped || line.how == .held
+                let text = line.how == .held
                     ? Text(outside).stepped(.fine).foregroundStyle(faint)
                     : Text(outside).stepped(.fine).fontWeight(.semibold).foregroundStyle(later(line))
                 gc.draw(text, at: CGPoint(x: words.outsideX, y: mid), anchor: .leading)
