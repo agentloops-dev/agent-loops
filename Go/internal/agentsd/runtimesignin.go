@@ -34,8 +34,8 @@ import (
 // A Mac signs its runtimes in in Runtimes, and lends servers its sign-in (056): none of this
 // is served there.
 
-// headlessSignInTime is how long a sign-in waits for the person before it is stopped.
-const headlessSignInTime = 15 * time.Minute
+// headlessSignInTime is how long a device code is valid before the card gets a new one.
+var headlessSignInTime = 15 * time.Minute
 
 // codexFinishWait is how long Done waits for Codex to see the code typed; a test shortens it.
 var codexFinishWait = 20 * time.Second
@@ -130,7 +130,10 @@ func (d *Daemon) startHeadlessSignIn(ctx context.Context, runtimeID string) (wir
 	if err := noticeRefusal(d.orgPolicy(), runtimeID); err != nil {
 		return wire.RuntimeSignInStep{}, err
 	}
-	env := d.signInEnvironment(rt)
+	env, err := d.signInEnvironment(rt)
+	if err != nil {
+		return wire.RuntimeSignInStep{}, err
+	}
 	var args []string
 	if runtimeID == "claude" {
 		args = []string{"setup-token"}
@@ -177,6 +180,10 @@ func (d *Daemon) startHeadlessSignIn(ctx context.Context, runtimeID string) (wir
 		<-life.Done()
 		s.end()
 		d.dropHeadless(s)
+		// Only the code's own time gives a new card: a Codex that fails at once must not loop.
+		if life.Err() == context.DeadlineExceeded && runtimeID == "codex" {
+			d.replaceExpiredSignInCard(s.id)
+		}
 	})
 	d.headlessMu.Lock()
 	if d.headless == nil {
@@ -290,7 +297,7 @@ func (d *Daemon) finishHeadlessSignIn(ctx context.Context, r wire.RuntimeSignInF
 		return wire.RuntimeStatus{}, ctx.Err()
 	}
 	d.dropHeadless(s)
-	if s.waitErr != nil || !ownCodexSignIn() {
+	if s.waitErr != nil || !d.ownCodexSignIn() {
 		return wire.RuntimeStatus{}, &Error{Code: wire.FailureNeedsSignIn, Message: "Codex did not sign in" + lastLine(s.out.text())}
 	}
 	d.closeRelayForOwnSignIn("codex")
@@ -323,7 +330,11 @@ func (d *Daemon) signInWithKey(ctx context.Context, runtimeID, key string) (wire
 	}
 	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
-	cmd, err := runtimeTool(runtimeID, d.signInEnvironment(rt), "login", "--with-api-key")
+	env, err := d.signInEnvironment(rt)
+	if err != nil {
+		return wire.RuntimeStatus{}, err
+	}
+	cmd, err := runtimeTool(runtimeID, env, "login", "--with-api-key")
 	if err != nil {
 		return wire.RuntimeStatus{}, err
 	}
@@ -443,10 +454,17 @@ var terminalOSC = regexp.MustCompile(`\x1b\][^\x07\x1b]*(\x07|\x1b\\)?|[\x00-\x0
 
 // signInEnvironment is the runtime's launch environment without the sign-in a sign-in
 // replaces, and with a terminal for Claude's.
-func (d *Daemon) signInEnvironment(rt *runtimeDef) []string {
+func (d *Daemon) signInEnvironment(rt *runtimeDef) ([]string, error) {
 	env := without(loginEnvironment(),
 		"CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "OPENAI_API_KEY", "TERM", "BROWSER")
-	return append(env, "TERM=xterm-256color", "BROWSER=true")
+	if rt.ID == "codex" && macToolsHome == "" && d.Store != nil {
+		home, err := d.ensureCodexHome()
+		if err != nil {
+			return nil, err
+		}
+		env = append(without(env, "CODEX_HOME"), "CODEX_HOME="+home)
+	}
+	return append(env, "TERM=xterm-256color", "BROWSER=true"), nil
 }
 
 // runtimeTool is the runtime's own command line on this machine: the one its toolset
@@ -576,7 +594,7 @@ func (d *Daemon) noteSignIn(s *wire.RuntimeStatus) {
 	case "claude":
 		in.SignedIn = ownClaudeSignIn() || d.storedClaudeSignIn() != ""
 	case "codex":
-		in.SignedIn = ownCodexSignIn()
+		in.SignedIn = d.ownCodexSignIn()
 	}
 	if d.relayFor(s.Runtime.ID) != nil && (s.Runtime.ID != "claude" || d.storedClaudeSignIn() == "") && (s.Runtime.ID != "codex" || !in.SignedIn) {
 		relayed := true

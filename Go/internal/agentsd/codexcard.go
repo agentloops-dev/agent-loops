@@ -18,21 +18,53 @@ import (
 
 // signInCards are the open cards of a sign-in made here: request ID to sign-in ID.
 type signInCardState struct {
-	cards   map[wire.UUID]string
+	cards   map[wire.UUID]signInCard
 	raising map[string]bool
+}
+
+type signInCard struct {
+	signInID string
+	agentID  wire.UUID
 }
 
 // signInCardOf is the sign-in a card (a request) is for, or "".
 func (d *Daemon) signInCardOf(request wire.UUID) string {
 	d.headlessMu.Lock()
 	defer d.headlessMu.Unlock()
-	return d.signInCards.cards[request]
+	return d.signInCards.cards[request].signInID
 }
 
 func (d *Daemon) forgetSignInCard(request wire.UUID) {
 	d.headlessMu.Lock()
 	delete(d.signInCards.cards, request)
 	d.headlessMu.Unlock()
+}
+
+func (d *Daemon) forgetSignInCardFor(id string) {
+	d.headlessMu.Lock()
+	for request, card := range d.signInCards.cards {
+		if card.signInID == id {
+			delete(d.signInCards.cards, request)
+		}
+	}
+	d.headlessMu.Unlock()
+}
+
+// replaceExpiredSignInCard starts a fresh device code when Codex expires its current one.
+// The normal turn path does not need to run again to raise the card.
+func (d *Daemon) replaceExpiredSignInCard(id string) {
+	d.headlessMu.Lock()
+	var agent wire.UUID
+	for _, card := range d.signInCards.cards {
+		if card.signInID == id {
+			agent = card.agentID
+			break
+		}
+	}
+	d.headlessMu.Unlock()
+	if agent != "" {
+		d.raiseSignInCard(agent, "codex")
+	}
 }
 
 // raiseSignInCard shows the card for runtimeID's sign-in on agent, in the background, once:
@@ -43,8 +75,8 @@ func (d *Daemon) raiseSignInCard(agent wire.UUID, runtimeID string) {
 	}
 	var stale []wire.UUID
 	d.headlessMu.Lock()
-	for req, sid := range d.signInCards.cards {
-		if d.headless[sid] != nil {
+	for req, card := range d.signInCards.cards {
+		if d.headless[card.signInID] != nil {
 			d.headlessMu.Unlock()
 			return
 		}
@@ -91,9 +123,9 @@ func (d *Daemon) raiseSignInCard(agent wire.UUID, runtimeID string) {
 		}
 		d.headlessMu.Lock()
 		if d.signInCards.cards == nil {
-			d.signInCards.cards = map[wire.UUID]string{}
+			d.signInCards.cards = map[wire.UUID]signInCard{}
 		}
-		d.signInCards.cards[req.ID] = step.SignInID
+		d.signInCards.cards[req.ID] = signInCard{signInID: step.SignInID, agentID: agent}
 		d.headlessMu.Unlock()
 		// Not held by a call: it is drawn as a lost form is (#4990), and answered the same way.
 		d.record(agent, wire.TranscriptEntryKind{ElicitationAsked: &wire.TranscriptEntryKindElicitationAsked{Value: req}})
@@ -113,9 +145,13 @@ func (d *Daemon) cancelSignIn(id string) {
 // code, or the card stays open and says so. Anything else stops the sign-in.
 func (d *Daemon) answerSignInCard(signInID string, action wire.AnswerElicitationRequestAction) error {
 	if action != wire.AnswerElicitationRequestActionAccept {
+		d.forgetSignInCardFor(signInID)
 		d.cancelSignIn(signInID)
 		return nil
 	}
 	_, err := d.finishHeadlessSignIn(d.ctx, wire.RuntimeSignInFinish{SignInID: signInID})
+	if err == nil {
+		d.forgetSignInCardFor(signInID)
+	}
 	return err
 }

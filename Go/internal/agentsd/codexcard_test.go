@@ -54,7 +54,7 @@ func TestAServersCodexSignsInFromACard(t *testing.T) {
 	if len(d.pendingElicitations()) != 0 {
 		t.Fatal("the card stayed")
 	}
-	if !ownCodexSignIn() {
+	if !d.ownCodexSignIn() {
 		t.Fatal("not signed in")
 	}
 	if d.relayFor("codex") != nil {
@@ -91,6 +91,37 @@ func TestDismissingTheCodexCardStopsTheSignIn(t *testing.T) {
 	d.headlessMu.Unlock()
 	if n != 0 || len(d.pendingElicitations()) != 0 {
 		t.Fatalf("sign-ins %d, cards %d", n, len(d.pendingElicitations()))
+	}
+}
+
+func TestExpiredCodexCardIsReplacedWithoutAnotherTurn(t *testing.T) {
+	fakeRuntimes(t)
+	fakeSignInTools(t)
+	setFor(t, &headlessSignInTime, 800*time.Millisecond)
+	d, c := start(t, t.TempDir())
+	defer d.Shutdown()
+	asAServer(t)
+	id := startAgent(t, c, 1, t.TempDir(), "")
+	d.raiseSignInCard(id, "codex")
+	first := theCard(t, d)
+
+	var replacement wire.ElicitationRequest
+	waitFor(t, "a replacement device-code card", func() bool {
+		for _, card := range d.pendingElicitations() {
+			if card.ID != first.ID {
+				replacement = card
+				return true
+			}
+		}
+		return false
+	})
+	if replacement.Mode.URL == nil || replacement.Mode.URL.Value != first.Mode.URL.Value {
+		t.Fatalf("replacement card %+v, first card %+v", replacement, first)
+	}
+	for _, card := range d.pendingElicitations() {
+		if card.ID == first.ID {
+			t.Fatal("expired card stayed open")
+		}
 	}
 }
 

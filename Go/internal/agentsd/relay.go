@@ -87,7 +87,7 @@ func (d *Daemon) offerRelay(o wire.RelayOffer) error {
 		log.Printf("relay: claude's lent sign-in is not opened: this server has its own")
 		return nil
 	}
-	if o.Runtime == "codex" && ownCodexSignIn() {
+	if o.Runtime == "codex" && d.ownCodexSignIn() {
 		log.Printf("relay: codex's lent sign-in is not opened: this server has its own")
 		return nil
 	}
@@ -215,7 +215,7 @@ func (d *Daemon) keepRelay(runtime string, k *keptRelay) error {
 // connected; the lender's kept hash answers the kept stand-in (#7170).
 func (d *Daemon) reopenRelays() {
 	for runtime, k := range d.keptRelays() {
-		if runtime == "claude" && d.storedClaudeSignIn() != "" || runtime == "codex" && ownCodexSignIn() {
+		if runtime == "claude" && d.storedClaudeSignIn() != "" || runtime == "codex" && d.ownCodexSignIn() {
 			d.dropRelay(runtime, "this server has its own sign-in")
 			continue
 		}
@@ -359,8 +359,35 @@ func ownCodexSignIn() bool {
 	if codexHome == "" {
 		codexHome = filepath.Join(home, ".codex")
 	}
+	return codexSignInIn(codexHome)
+}
+
+func codexSignInIn(codexHome string) bool {
 	_, err := os.Stat(filepath.Join(codexHome, "auth.json"))
 	return err == nil
+}
+
+// ownCodexSignIn reads this server's sign-in from the daemon-owned home. The Mac keeps its
+// own Codex home, and added accounts have their own folders.
+func (d *Daemon) ownCodexSignIn() bool {
+	if os.Getenv("OPENAI_API_KEY") != "" || macToolsHome != "" || d.Store == nil {
+		return ownCodexSignIn()
+	}
+	return codexSignInIn(filepath.Join(d.Store.Loc.Root, "runtimes", "codex", "home"))
+}
+
+func (d *Daemon) ensureCodexHome() (string, error) {
+	if d.Store == nil {
+		return os.Getenv("CODEX_HOME"), nil
+	}
+	home := filepath.Join(d.Store.Loc.Root, "runtimes", "codex", "home")
+	if err := os.MkdirAll(home, 0o700); err != nil {
+		return "", err
+	}
+	if err := os.Chmod(home, 0o700); err != nil {
+		return "", err
+	}
+	return home, nil
 }
 
 // signedIn says whether this machine has Claude's own sign-in.

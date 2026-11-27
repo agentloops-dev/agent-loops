@@ -409,7 +409,14 @@ func (d *Daemon) withRuntimeOwnEnv(r *runtimeDef, dir string, account *wire.Acco
 			}
 		}
 	case "codex":
-		if rl := d.relayFor("codex"); rl != nil && account == nil && !ownCodexSignIn() {
+		if account == nil && macToolsHome == "" {
+			home, err := d.ensureCodexHome()
+			if err != nil {
+				return nil, err
+			}
+			env = append(without(env, "CODEX_HOME"), "CODEX_HOME="+home)
+		}
+		if rl := d.relayFor("codex"); rl != nil && account == nil && !d.ownCodexSignIn() {
 			env = without(env, "OPENAI_API_KEY", "CODEX_HOME", "CODEX_CA_CERTIFICATE")
 			env = append(env, "CODEX_HOME="+filepath.Join(root, "runtimes", "codex-relay-home"), "CODEX_CA_CERTIFICATE="+rl.caFile)
 		}
@@ -474,7 +481,7 @@ func (d *Daemon) needsSignIn(runtimeID string) error {
 			return nil
 		}
 	case "codex":
-		if ownCodexSignIn() {
+		if d.ownCodexSignIn() {
 			return nil
 		}
 	default:
