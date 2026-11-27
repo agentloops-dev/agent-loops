@@ -349,10 +349,12 @@ func (d *Daemon) setupWanted(host string) bool {
 }
 
 // deliverSetup gives host setup.sh's text and approval, signed by this machine for host, through
-// the control plane. A refusal as not in the lock is tried again, tries times in all.
+// the control plane. A refusal as not in the lock is tried again, tries times in all. The last try
+// says it is the last, so that the control plane fails the target's Your set-up when it fails
+// (#7528).
 func (d *Daemon) deliverSetup(ctx context.Context, host, text string, approval wire.LockRecord, made bool, tries int) error {
 	for try := 1; ; try++ {
-		err := d.deliverSetupOnce(ctx, host, text, approval, made)
+		err := d.deliverSetupOnce(ctx, host, text, approval, made, try >= tries)
 		if err == nil || failureCode(err) != wire.FailureNotInLock || try >= tries {
 			return err
 		}
@@ -364,7 +366,7 @@ func (d *Daemon) deliverSetup(ctx context.Context, host, text string, approval w
 	}
 }
 
-func (d *Daemon) deliverSetupOnce(ctx context.Context, host, text string, approval wire.LockRecord, made bool) error {
+func (d *Daemon) deliverSetupOnce(ctx context.Context, host, text string, approval wire.LockRecord, made, last bool) error {
 	ask := d.askControl.Load()
 	if ask == nil {
 		return &Error{Code: wire.FailureNotSupported, Message: "This machine isn’t on a control plane."}
@@ -373,6 +375,10 @@ func (d *Daemon) deliverSetupOnce(ctx context.Context, host, text string, approv
 	if made {
 		step.Made = new(true)
 	}
-	return d.askPeerSigned(ctx, *ask, host, "set-up", wire.CallMachinesSetupDeliver.Name, wire.MachineSetupDeliver{Host: host},
+	relay := wire.MachineSetupDeliver{Host: host}
+	if last {
+		relay.Last = new(true)
+	}
+	return d.askPeerSigned(ctx, *ask, host, "set-up", wire.CallMachinesSetupDeliver.Name, relay,
 		wire.CallSetupDeliver.Name, step)
 }

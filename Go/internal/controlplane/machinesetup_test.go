@@ -2,6 +2,7 @@ package controlplane
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -356,5 +357,65 @@ func TestMachineSetupTimesAgeOut(t *testing.T) {
 	}
 	if got := st.wire(later, s.readSetupTimes(ctx, st)).Steps[0].Slower; got != nil {
 		t.Fatal("slower with no times left")
+	}
+}
+
+// #7528: a made machine's Your set-up, sent by itself, says why while the sender tries again,
+// and fails with the reason when it gives up, so its projects do not wait with no words. A step
+// that began on the machine keeps what the machine says.
+func TestYourSetUpSaysWhyItsAutomaticSendFailed(t *testing.T) {
+	t.Parallel()
+	p := startPlane(t, store.NewMemory(), controllink.NewPrivateKey())
+	ctx := context.Background()
+	const made = "notsent"
+	for _, id := range setupSteps[:4] {
+		p.s.madeStep(made, rep(id, wire.MachineSetupStateRunning))
+		p.s.madeStep(made, rep(id, wire.MachineSetupStateDone))
+	}
+	notInLock := &providers.Failure{Code: wire.FailureNotInLock, Message: "This machine is not in your lock."}
+	// No Your set-up in the set-up: nothing changes.
+	p.s.setupNotSent(made, "mac", notInLock, true)
+	if stored, _, _ := p.s.readMachineSetup(ctx, made); stored.index(wire.MachineSetupStepIDUser) >= 0 {
+		t.Fatalf("a set-up with no Your set-up got one: %+v", stored.Steps)
+	}
+	p.s.setupAsked(ctx, made, true)
+	user := func() storedSetupStep {
+		t.Helper()
+		stored, _, err := p.s.readMachineSetup(ctx, made)
+		if err != nil || stored == nil {
+			t.Fatal(err)
+		}
+		return *stored.step(wire.MachineSetupStepIDUser)
+	}
+	p.s.setupNotSent(made, "mac", notInLock, false)
+	if u := user(); u.State != wire.MachineSetupStateNeedsYou || !strings.Contains(u.Detail, "lock") {
+		t.Fatalf("while the sender tries again: %+v", u)
+	}
+	p.s.setupNotSent(made, "mac", notInLock, true)
+	u := user()
+	if u.State != wire.MachineSetupStateFailed || !strings.Contains(u.Error, "mac could not send setup.sh: This machine is not in your lock. Use Send Set-up") {
+		t.Fatalf("after the last try: %+v", u)
+	}
+	// Send Set-up then reaches it, and it runs: a send that fails after does not change it.
+	hash := strings.Repeat("a", 64)
+	if err := p.s.setupStep(ctx, made, wire.MachineSetupReport{Step: wire.MachineSetupStepIDUser, State: wire.MachineSetupStateRunning, Hash: &hash}); err != nil {
+		t.Fatal(err)
+	}
+	p.s.setupNotSent(made, "mac", &providers.Failure{Code: providers.CodeHostOffline, Message: "notsent is offline."}, false)
+	if u := user(); u.State != wire.MachineSetupStateRunning || u.Error != "" {
+		t.Fatalf("a failed send changed a running Your set-up: %+v", u)
+	}
+
+	// Any other refusal fails the step at once: the sender does not try it again.
+	const other = "refused"
+	for _, id := range setupSteps[:4] {
+		p.s.madeStep(other, rep(id, wire.MachineSetupStateRunning))
+		p.s.madeStep(other, rep(id, wire.MachineSetupStateDone))
+	}
+	p.s.setupAsked(ctx, other, true)
+	p.s.setupNotSent(other, "mac", &providers.Failure{Code: providers.CodeHostOffline, Message: "refused did not answer"}, false)
+	stored, _, _ := p.s.readMachineSetup(ctx, other)
+	if u := stored.step(wire.MachineSetupStepIDUser); u.State != wire.MachineSetupStateFailed || !strings.Contains(u.Error, "refused did not answer. Use") {
+		t.Fatalf("an offline target: %+v", u)
 	}
 }

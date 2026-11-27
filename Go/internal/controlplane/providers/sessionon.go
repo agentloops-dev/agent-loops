@@ -2,6 +2,7 @@ package providers
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -428,9 +429,14 @@ func (p *Providers) setupDeliver(from, fromName string, params json.RawMessage, 
 	if deliver == nil || deliver.Method != wire.CallSetupDeliver.Name {
 		return nil, invalid("A set-up script goes only as its machine signed it.")
 	}
-	return p.relaySigned(from, request.Host, deliver, deliver.Method, caller, func(name string) string {
+	out, err := p.relaySigned(from, request.Host, deliver, deliver.Method, caller, func(name string) string {
 		return fmt.Sprintf("workspace: %s sends setup.sh to %s", fromName, name)
 	})
+	var refusal *Failure
+	if errors.As(err, &refusal) && p.hooks.SetupNotSent != nil {
+		p.hooks.SetupNotSent(request.Host, fromName, refusal, request.Last != nil && *request.Last)
+	}
+	return out, err
 }
 
 // CarrierOf is the machine that carries provider (#3398), or "": the sender of the person's
