@@ -269,32 +269,55 @@ func TestYourSetUpRunsAgainAndItsFailureHoldsOnlyTheProjects(t *testing.T) {
 	}
 	// Runtimes do not wait for it; projects, and the steps after them, do (#7416).
 	runSteps(t, st, now, wire.MachineSetupStepIDRuntimes)
-	if _, _, err := st.report(rep(wire.MachineSetupStepIDProjects, wire.MachineSetupStateRunning), now); err == nil || !st.waitUser(now) {
+	if _, _, err := st.report(rep(wire.MachineSetupStepIDProjects, wire.MachineSetupStateRunning), now); err == nil {
 		t.Fatalf("projects began after your set-up failed: %v", err)
+	}
+	// #7546: the failure ends the wait, and the later steps say that they did not start.
+	if st.waitUser(now) || !st.userFailed() {
+		t.Fatalf("waitUser %v, userFailed %v", st.waitUser(now), st.userFailed())
+	}
+	notStarted := func() []wire.MachineSetupStepID {
+		var out []wire.MachineSetupStepID
+		for _, s := range st.Steps {
+			if s.Detail == notStartedWords {
+				out = append(out, s.ID)
+			}
+		}
+		return out
+	}
+	later := []wire.MachineSetupStepID{wire.MachineSetupStepIDProjects, wire.MachineSetupStepIDSignIn, wire.MachineSetupStepIDSmoke}
+	if got := notStarted(); !slices.Equal(got, later) {
+		t.Fatalf("not started: %v", got)
 	}
 	if st.Ready != nil || !st.failed() {
 		t.Fatalf("a failed set-up is ready, or not failed: %v %v", st.Ready, st.failed())
 	}
 	// Try Again: it runs again from failed, the projects go on, and the set-up is ready when it ends well.
+	if _, _, err := st.report(rep(wire.MachineSetupStepIDUser, wire.MachineSetupStateRunning), now); err != nil {
+		t.Fatal(err)
+	}
+	if !st.waitUser(now) || st.userFailed() || len(notStarted()) != 0 {
+		t.Fatalf("Run Again: waitUser %v, userFailed %v, not started %v", st.waitUser(now), st.userFailed(), notStarted())
+	}
 	runSteps(t, st, now, wire.MachineSetupStepIDUser)
 	runSteps(t, st, now, wire.MachineSetupStepIDProjects, wire.MachineSetupStepIDSignIn, wire.MachineSetupStepIDSmoke)
 	if st.Ready == nil || st.failed() {
 		t.Fatal("not ready once your set-up ran well")
 	}
 	ready := *st.Ready
-	later := now.Add(time.Hour)
-	if _, _, err := st.report(rep(wire.MachineSetupStepIDUser, wire.MachineSetupStateRunning), later); err != nil {
+	again := now.Add(time.Hour)
+	if _, _, err := st.report(rep(wire.MachineSetupStepIDUser, wire.MachineSetupStateRunning), again); err != nil {
 		t.Fatalf("Run Again was refused: %v", err)
 	}
 	step := st.step(wire.MachineSetupStepIDUser)
-	if step.State != wire.MachineSetupStateRunning || !step.Started.Equal(later) || step.Ended != nil || st.Ready == nil || !st.Ready.Equal(ready) {
+	if step.State != wire.MachineSetupStateRunning || !step.Started.Equal(again) || step.Ended != nil || st.Ready == nil || !st.Ready.Equal(ready) {
 		t.Fatalf("Run Again: %+v ready %v", step, st.Ready)
 	}
-	if _, _, err := st.report(rep(wire.MachineSetupStepIDUser, wire.MachineSetupStateDone), later); err != nil {
+	if _, _, err := st.report(rep(wire.MachineSetupStepIDUser, wire.MachineSetupStateDone), again); err != nil {
 		t.Fatal(err)
 	}
 	// Another step that is done does not run again.
-	if _, _, err := st.report(rep(wire.MachineSetupStepIDSmoke, wire.MachineSetupStateRunning), later); err == nil {
+	if _, _, err := st.report(rep(wire.MachineSetupStepIDSmoke, wire.MachineSetupStateRunning), again); err == nil {
 		t.Fatal("smoke ran again")
 	}
 }

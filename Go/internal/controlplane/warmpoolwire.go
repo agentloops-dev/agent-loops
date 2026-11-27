@@ -247,6 +247,10 @@ func (s *Service) setupWork(ctx context.Context, host string) (wire.MachineSetup
 		// Your set-up first (#7416): the host asks again.
 		return wire.MachineSetupWork{WaitUser: new(true), Projects: []wire.MachineSetupProject{}}, nil
 	}
+	if err == nil && stored != nil && stored.userFailed() {
+		// It failed (#7546): the projects do not start, and the host asks again when it runs again.
+		return wire.MachineSetupWork{UserFailed: new(true), Projects: []wire.MachineSetupProject{}}, nil
+	}
 	if s.pools == nil {
 		return none, nil
 	}

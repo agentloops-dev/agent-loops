@@ -9674,11 +9674,14 @@ export type MachineSetupStepID =
  * pool made it. claimed: a person claimed it, and from is the first of steps 6 to 8 that waits to
  * run (absent: none does now). done: nothing is left to ask for. projects: the project folders to
  * get, at their last commit. An unclaimed machine does step 6 and stops. waitUser (#7416): Your
- * set-up is on its way to this machine or runs there, and its projects wait for it: ask again.
+ * set-up is on its way to this machine or runs there, and its projects wait for it: ask again, less
+ * often each time. userFailed (#7546): Your set-up failed, so the projects, sign-in and smoke do
+ * not start: ask again only when Your set-up runs again (Run Again, Send Set-up).
  */
 export interface MachineSetupWork {
   pool: boolean;
   waitUser?: boolean;
+  userFailed?: boolean;
   claimed: boolean;
   done: boolean;
   from?: MachineSetupStepID;
@@ -19718,7 +19721,7 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   MachineSetupReport: { required: ["step", "state"], optional: ["detail", "error", "fromPool", "code", "hash", "warning"] },
   MachineSetupSource: { required: ["machine", "name", "online"], optional: [] },
   MachineSetupStep: { required: ["id", "state"], optional: ["startedAt", "endedAt", "detail", "error", "fromPool", "slower", "hash", "warning"] },
-  MachineSetupWork: { required: ["pool", "claimed", "done", "projects"], optional: ["waitUser", "from"] },
+  MachineSetupWork: { required: ["pool", "claimed", "done", "projects"], optional: ["waitUser", "userFailed", "from"] },
   MachineStatus: { required: ["idle", "running"], optional: ["schedule"] },
   MachineStop: { required: ["host"], optional: ["confirmRunning"] },
   MachineTunnel: { required: ["up"], optional: ["problem"] },

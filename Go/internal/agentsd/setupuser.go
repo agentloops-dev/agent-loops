@@ -65,6 +65,34 @@ type userSetupState struct {
 	userSetupMu sync.Mutex
 	// userSetupRuns says setup.sh runs now.
 	userSetupRuns bool
+	// userSetupChanged is closed, and made again, when a run begins or ends: it wakes the
+	// projects step that waits for a failed Your set-up (#7546).
+	userSetupChanged chan struct{}
+}
+
+// userSetupChanges is closed when setup.sh next begins or ends here.
+func (d *Daemon) userSetupChanges() <-chan struct{} {
+	d.userSetupMu.Lock()
+	defer d.userSetupMu.Unlock()
+	if d.userSetupChanged == nil {
+		d.userSetupChanged = make(chan struct{})
+	}
+	return d.userSetupChanged
+}
+
+// userSetupRunning says setup.sh runs here now.
+func (d *Daemon) userSetupRunning() bool {
+	d.userSetupMu.Lock()
+	defer d.userSetupMu.Unlock()
+	return d.userSetupRuns
+}
+
+// userSetupChangedLocked wakes userSetupChanges. userSetupMu is held.
+func (d *Daemon) userSetupChangedLocked() {
+	if d.userSetupChanged != nil {
+		close(d.userSetupChanged)
+		d.userSetupChanged = nil
+	}
 }
 
 func (d *Daemon) registerUserSetup() {
@@ -207,10 +235,12 @@ func (d *Daemon) resumeUserSetup() {
 // startUserSetupLocked starts u's run in the background. userSetupMu is held.
 func (d *Daemon) startUserSetupLocked(u userSetup) {
 	d.userSetupRuns = true
+	d.userSetupChangedLocked()
 	d.goJob("your set-up", func() {
 		defer func() {
 			d.userSetupMu.Lock()
 			d.userSetupRuns = false
+			d.userSetupChangedLocked()
 			d.userSetupMu.Unlock()
 		}()
 		d.runUserSetup(d.hostCtx(), u)
