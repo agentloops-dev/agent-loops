@@ -19,13 +19,9 @@ struct AutoSettingsView: View {
                 ForEach(order, id: \.self) { runtimeID in
                     runtimeRow(runtimeID)
                 }
-                .onMove { from, to in
-                    var ids = order
-                    ids.move(fromOffsets: from, toOffset: to)
-                    var s = model.autoSettings
-                    s.order = ids
-                    Task { await model.setAutoSettings(s) }
-                }
+                // A grouped Form is no List, so `onMove` never starts a drag on the Mac
+                // (#6889): the container's own reorder does, in a Form too.
+                .reorderable()
             } header: {
                 HStack(alignment: .firstTextBaseline) {
                     Text(LevelWords.runtimesTitle)
@@ -47,6 +43,16 @@ struct AutoSettingsView: View {
                 }
                 .paperListRow()
             }
+        }
+        .reorderContainer(for: String.self, itemID: \.self) { difference in
+            let moving = Set(difference.sources)
+            var ids = order.filter { !moving.contains($0) }
+            let moved = order.filter { moving.contains($0) }
+            switch difference.destination.position {
+            case .before(let id): ids.insert(contentsOf: moved, at: ids.firstIndex(of: id) ?? ids.endIndex)
+            case .end: ids.append(contentsOf: moved)
+            }
+            setOrder(ids)
         }
         .paperForm()
         .task {
@@ -87,6 +93,11 @@ struct AutoSettingsView: View {
         var ids = order
         guard let i = ids.firstIndex(of: runtimeID), ids.indices.contains(i + step) else { return }
         ids.swapAt(i, i + step)
+        setOrder(ids)
+    }
+
+    private func setOrder(_ ids: [String]) {
+        guard ids != order else { return }
         var s = model.autoSettings
         s.order = ids
         Task { await model.setAutoSettings(s) }
