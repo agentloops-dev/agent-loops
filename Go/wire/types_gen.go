@@ -18302,6 +18302,8 @@ type WorkTimeline struct {
 
 	Partial *bool `json:"partial,omitzero"`
 
+	Schedule *WorkTimelineSchedule `json:"schedule,omitzero"`
+
 	// What was read (#7029): one entry per repo, as forge:name (github:example/shop). Two machines with the same scopes give the same epics, so a client asks one of them. Absent when a repo could not be read, and from an earlier daemon.
 	Scopes []string `json:"scopes,omitzero"`
 }
@@ -18386,6 +18388,51 @@ type WorkTimelineRequest struct {
 	First *bool `json:"first,omitzero"`
 
 	OnHold *bool `json:"onHold,omitzero"`
+
+	// How many epics are worked at once in the schedule (#7525), 1 to 20: 3 when absent.
+	Places *int64 `json:"places,omitzero"`
+}
+
+// work/timeline's schedule (#7525, epic #7067): when each open epic starts and finishes if places epics are worked at once. A started epic holds a place from its start to its predicted finish, whatever blocks it. The others take the free places in the order of forge/next (level: epic), each no earlier than now and the predicted finish of its last open epic blocker; places that free at the same time go to the next in that order. readAt is the time of the read. incomplete says a list was cut short (more than 100 open epics, a repo not read): no row is dated then. Rows: the started epics, then those planned, by planned start, then those with no date; ties in the order of forge/next. Absent from a partial answer and from an earlier daemon.
+type WorkTimelineSchedule struct {
+	Places int64 `json:"places"`
+
+	ReadAt Date `json:"readAt"`
+
+	Incomplete *bool `json:"incomplete,omitzero"`
+
+	Rows []WorkTimelineScheduleRow `json:"rows"`
+}
+
+// Why an open epic has no date in the schedule (#7525): onHold, it is on hold (shown only with onHold); noIssues, it has no sub-issues; blockerOnHold, an open blocker is on hold; blockerNotEpic, an open blocker is not an epic; blockerNotRead, an open blocker epic is not in the read (another project, or more than the read gives); cycle, its blockers lead back to it; blockerUndated, an open blocker epic has no date; noForecast, there is too little history to forecast it; noPlace, no place frees (every place is held by a started epic with no forecast); incomplete, a list was cut short.
+type WorkTimelineScheduleReason string
+
+const WorkTimelineScheduleReasonOnHold WorkTimelineScheduleReason = "onHold"
+const WorkTimelineScheduleReasonNoIssues WorkTimelineScheduleReason = "noIssues"
+const WorkTimelineScheduleReasonBlockerOnHold WorkTimelineScheduleReason = "blockerOnHold"
+const WorkTimelineScheduleReasonBlockerNotEpic WorkTimelineScheduleReason = "blockerNotEpic"
+const WorkTimelineScheduleReasonBlockerNotRead WorkTimelineScheduleReason = "blockerNotRead"
+const WorkTimelineScheduleReasonCycle WorkTimelineScheduleReason = "cycle"
+const WorkTimelineScheduleReasonBlockerUndated WorkTimelineScheduleReason = "blockerUndated"
+const WorkTimelineScheduleReasonNoForecast WorkTimelineScheduleReason = "noForecast"
+const WorkTimelineScheduleReasonNoPlace WorkTimelineScheduleReason = "noPlace"
+const WorkTimelineScheduleReasonIncomplete WorkTimelineScheduleReason = "incomplete"
+
+// An open epic in the schedule (#7525). startedAt is its observed start, the earliest of its children's, and startSource where that came from: session (a session linked to the child in lineage), pullRequest (a pull request that closes the child opened) or closed (the child closed); both absent while it has not started. plannedStart is when a not-started epic takes a place. finish is its predicted finish: low to high the band, mid the P50; for a planned epic its forecast from its planned start. blockers are its open blockers, of every kind, for the arrows. reason says why it has no finish; absent when it has one.
+type WorkTimelineScheduleRow struct {
+	Epic LineageNode `json:"epic"`
+
+	StartedAt *Date `json:"startedAt,omitzero"`
+
+	StartSource *string `json:"startSource,omitzero"`
+
+	PlannedStart *Date `json:"plannedStart,omitzero"`
+
+	Finish *WorkTimelineForecast `json:"finish,omitzero"`
+
+	Blockers []LineageNode `json:"blockers,omitzero"`
+
+	Reason *WorkTimelineScheduleReason `json:"reason,omitzero"`
 }
 
 // A line of an epic in work/timeline (#4172): from its first child's start to its last child's close.
