@@ -576,6 +576,10 @@ private struct SettingsRail: View {
 /// Runtimes' runtimes, Agent Configuration's pages and the control plane's. Each line is a
 /// `PageLine`.
 struct PageList<Content: View>: View {
+    /// As wide as the smallest window leaves beside the rail and a form pane (1,000 − 236 − 560,
+    /// less the divider; #7268): room for the longest runtime's name and its status icon.
+    static var width: CGFloat { 200 }
+
     @ViewBuilder var content: Content
 
     var body: some View {
@@ -585,7 +589,7 @@ struct PageList<Content: View>: View {
                     .padding(12)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .frame(width: 180)
+            .frame(width: Self.width)
             .frame(maxHeight: .infinity)
             Divider()
         }
@@ -609,6 +613,8 @@ struct PageLine<Trailing: View>: View {
                 trailing
             }
         }
+        // A name longer than the column (a named runtime) ends in "…": the whole name on hover.
+        .help(title)
     }
 }
 
