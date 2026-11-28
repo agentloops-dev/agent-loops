@@ -87,8 +87,15 @@ struct WalkAX {
     var label: String {
         let modern = ["accessibilityTitle", "accessibilityLabel", "accessibilityValue", "accessibilityHelp", "accessibilityPlaceholderValue"]
         let legacy = ["AXTitle", "AXDescription", "AXValue", "AXHelp", "AXPlaceholderValue"]
-        return zip(modern, legacy).compactMap { (call($0) as? String) ?? (value($1) as? String) }
+        return zip(modern, legacy).compactMap { Self.text(call($0)) ?? Self.text(value($1)) }
             .filter { !$0.isEmpty }.joined(separator: " | ")
+    }
+
+    /// A label's words: a plain string, or the words of an attributed one, which is how
+    /// SwiftUI's element for a `Menu` drawn in SwiftUI gives its title ("Add" on the Secrets
+    /// page, #7530), while it refuses `accessibilityLabel` from in process.
+    private static func text(_ said: Any?) -> String? {
+        (said as? String) ?? (said as? NSAttributedString)?.string
     }
 
     /// On the screen, with the origin at the bottom left, as AppKit counts in process.
@@ -134,6 +141,17 @@ struct WalkAX {
         }
         guard performs || !Self.forwardsPress(object) else { return false }
         return flag("accessibilityPerformPress") ?? false
+    }
+
+    /// A menu button's menu shown, through `AXShowMenu` where the element takes it, else a
+    /// press (#7530). Either runs the menu's tracking loop, so it returns when the menu closes.
+    func showMenu() -> Bool {
+        let perform = NSSelectorFromString("accessibilityPerformAction:")
+        if object.responds(to: perform), actionNames.contains("AXShowMenu") {
+            unsafeBitCast(object.method(for: perform), to: Act.self)(object, perform, "AXShowMenu" as NSString)
+            return true
+        }
+        return flag("accessibilityPerformShowMenu") == true || press()
     }
 
     /// The element's `accessibilityPerformPress` is `NSAccessibilityElement`'s own, which

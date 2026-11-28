@@ -10,6 +10,8 @@ public enum FeatureFlag: String, CaseIterable, Sendable {
     case dashboard = "dashboard"
     /// Docs (#6572).
     case docs = "docs"
+    /// Labelled workflows (#6951).
+    case labelledWorkflows = "labelled-workflows"
     /// Machine scripts (#7151).
     case machineScripts = "machine-scripts"
     /// Meeting mode (#7327).
@@ -35,6 +37,7 @@ public enum FeatureFlag: String, CaseIterable, Sendable {
         case .commitTrailers: "Commit trailers"
         case .dashboard: "Dashboard"
         case .docs: "Docs"
+        case .labelledWorkflows: "Labelled workflows"
         case .machineScripts: "Machine scripts"
         case .meetingMode: "Meeting mode"
         case .sessionParents: "Session parents"
@@ -53,6 +56,7 @@ public enum FeatureFlag: String, CaseIterable, Sendable {
         case .commitTrailers: "The Commit trailers group in Agents ▸ Policy: the trailers on each agent's commits."
         case .dashboard: "The Dashboard on the Mac: each work item with its sessions. The window opens to it."
         case .docs: "Docs in the sidebar, and the Docs section on a work item's page. On the Mac and the web page."
+        case .labelledWorkflows: "On the Mac: a workflow with agent: labelled sends a message to each session with its labels, until: ends it, and the workflow's page shows it active with End now."
         case .machineScripts: "On the Mac: your root.sh and setup.sh set up each new machine. A failed Root set-up shows its last lines and what to do."
         case .meetingMode: "On the Mac: the app listens to a meeting, and an agent keeps the notes and files the action items."
         case .sessionParents: "Put a session under a lead or director: in New Session, and by a drag in the sidebar. On the Mac."
@@ -71,6 +75,7 @@ public enum FeatureFlag: String, CaseIterable, Sendable {
         case .commitTrailers: 6373
         case .dashboard: 6572
         case .docs: 6572
+        case .labelledWorkflows: 6951
         case .machineScripts: 7151
         case .meetingMode: 7327
         case .sessionParents: 7535

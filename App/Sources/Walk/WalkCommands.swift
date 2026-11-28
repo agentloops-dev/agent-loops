@@ -31,11 +31,15 @@ enum WalkCommands {
     }
 
     /// Before `run`, on the main thread: a shot first asks the window's web views for their
-    /// pictures (#3854), which come back on the main thread, so the socket waits on `group`
-    /// off it.
+    /// pictures (#3854), and a pick opens a menu that SwiftUI draws (#7530); each comes back
+    /// on the main thread, so the socket waits on `group` off it.
     static func before(_ line: Data, group: DispatchGroup) {
-        guard let request = try? JSONSerialization.jsonObject(with: line) as? [String: Any],
-              request["cmd"] as? String == "shot", let window = try? target(request) else { return }
+        guard let request = try? JSONSerialization.jsonObject(with: line) as? [String: Any] else { return }
+        if request["cmd"] as? String == "pick", let found = try? matches(request) {
+            WalkPick.open(found, group: group)
+            return
+        }
+        guard request["cmd"] as? String == "shot", let window = try? target(request) else { return }
         WalkShot.snapshotWebViews(in: window, group: group)
     }
 
@@ -232,6 +236,9 @@ enum WalkCommands {
             guard let path = request["path"] as? [String], !path.isEmpty else { throw WalkError("menu wants a path") }
             guard let bar = NSApp.mainMenu else { throw WalkError("no menu bar") }
             return try menu(path, in: bar)
+        case "pick":
+            // A menu button's menu (#7530: Secrets ▸ Add): its items, or an item chosen.
+            return try WalkPick.run(request, matches: try matches(request), menu: { try menu($0, in: $1) })
         case "context":
             // A row's context menu (#1123), as a right click on its middle builds it, and an
             // item of it chosen; no menu is shown, so nothing waits on its tracking.
@@ -413,7 +420,7 @@ enum WalkCommands {
 
     // MARK: the menu bar, in place of a keyboard shortcut
 
-    private static func menu(_ path: [String], in start: NSMenu) throws -> [String: Any] {
+    static func menu(_ path: [String], in start: NSMenu) throws -> [String: Any] {
         var menu = start
         for (at, title) in path.enumerated() {
             // As opening it does: SwiftUI brings a menu's items up to date only then, so

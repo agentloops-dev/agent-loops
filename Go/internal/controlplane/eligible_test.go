@@ -8,6 +8,7 @@ import (
 	"net/netip"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/controllink"
@@ -205,6 +206,40 @@ func TestReachDialsTheUplinksAddress(t *testing.T) {
 	delete(dns, "ams3-1.example.dev")
 	if _, why := reach(); !strings.Contains(why, "can’t find ams3-1.example.dev") {
 		t.Fatal(why)
+	}
+}
+
+// The reach and machine/usage run at the same time (#7397): here the domain's lookup answers
+// only once the machine was asked for its usage, so run one after the other it would fail.
+func TestEligibleFactsAskAtTheSameTime(t *testing.T) {
+	t.Parallel()
+	p := startPlane(t, store.NewMemory(), controllink.NewPrivateKey())
+	usageAsked := make(chan struct{})
+	var once sync.Once
+	p.asked = func(_, method string, _ json.RawMessage) (any, bool) {
+		if method == wire.CallMachineUsage.Name {
+			once.Do(func() { close(usageAsked) })
+			return goodUsage(), true
+		}
+		return nil, false
+	}
+	box := p.host("MACHINE-2")
+	p.s.router.mu.Lock()
+	p.s.router.hosts[box.member.Host].conn.(*Conn).Remote = "203.0.113.7"
+	p.s.router.mu.Unlock()
+	p.s.router.SetControlAddress(box.member.Host, &wire.MachineControlAddress{Domain: new("ams3-1.example.dev"), Port: 443})
+	p.s.lookupMachine = func(ctx context.Context, _ string) ([]netip.Addr, error) {
+		select {
+		case <-usageAsked:
+			return []netip.Addr{netip.MustParseAddr("198.51.100.9")}, nil
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
+	p.s.dialMachine = func(context.Context, string) error { return nil }
+	f := p.s.eligibleFacts(context.Background(), records.MachineRecord{ID: box.member.Host}, false)
+	if f.unreachable != "" || f.address != "ams3-1.example.dev" || f.usage == nil {
+		t.Fatalf("%q %q %v", f.address, f.unreachable, f.usage)
 	}
 }
 

@@ -130,7 +130,7 @@ What the control plane passes to ssh, and how each common `~/.ssh/config` option
 
 ### Send it your setup.sh
 
-Your own set-up, the tools and sign-ins you want on each machine, can go in `~/.agents/machine-setup/setup.sh` on this Mac. It needs your machine lock, and it is behind the early feature **Machine scripts** in Settings.
+Your own set-up, the tools and sign-ins you want on each machine, can go in `~/.agents/machine-setup/setup.sh` on this Mac. It needs your machine lock, and it is behind **Machine scripts**, a feature that is not ready yet, in Settings ▸ This app ▸ Features.
 
 1. On the machine's page, under **Your scripts**, press **Send Set-up…**.
 2. Read the script, then press **Approve and Send**. This Mac's lock key approves that text for that machine only.

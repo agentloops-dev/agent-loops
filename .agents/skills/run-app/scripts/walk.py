@@ -17,6 +17,7 @@
     walk.py ROOT size WIDTH HEIGHT [--x X --y Y]  the window's frame (top left from the main screen's)
     walk.py ROOT menu Session "New Session"      a menu item, in place of its shortcut
     walk.py ROOT context TEXT [ITEM…]            TEXT's context menu (#1123): its items, or ITEM chosen
+    walk.py ROOT pick TEXT [ITEM…]               a menu button's menu (a SwiftUI Menu, #7530): its items, or ITEM chosen
     walk.py ROOT click TEXT [--count 2]          a click on TEXT's middle, for a tap gesture
     walk.py ROOT click --x X --y Y               a click at a point of the shot
     walk.py ROOT drag X Y TOX TOY                a drag with the button down, as a selection is made (#5155)
@@ -200,7 +201,7 @@ def main(argv):
         args["width"], args["height"] = float(positional[0]), float(positional[1])
     elif verb == "menu":
         args["path"] = positional
-    elif verb == "context":
+    elif verb in ("context", "pick"):
         args["text"], args["path"] = positional[0], positional[1:]
     elif verb == "key":
         args["key"] = positional[0]
