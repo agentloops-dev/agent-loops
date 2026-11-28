@@ -170,17 +170,8 @@ func New(ctx context.Context, cfg Config) (*Service, error) {
 	if cfg.Now == nil {
 		cfg.Now = time.Now
 	}
-	if cfg.SignUp == "" {
-		cfg.SignUp = SignUpInvite
-	}
-	if cfg.SignUp != SignUpInvite && cfg.SignUp != SignUpOpen && cfg.SignUp != SignUpClosed {
-		return nil, fmt.Errorf("sign-up is invite, open or closed, not %q", cfg.SignUp)
-	}
-	if cfg.IdleAccounts == "" {
-		cfg.IdleAccounts = IdleDelete
-	}
-	if cfg.IdleAccounts != IdleOff && cfg.IdleAccounts != IdlePause && cfg.IdleAccounts != IdleDelete {
-		return nil, fmt.Errorf("idle accounts is off, pause or delete, not %q", cfg.IdleAccounts)
+	if err := modes(&cfg); err != nil {
+		return nil, err
 	}
 	orDefault(&cfg.MaxAccounts, defaultMaxAccounts)
 	orDefault(&cfg.SignUpsPerAddress, defaultSignUpsPerAddress)
@@ -381,6 +372,23 @@ func (s *Service) certificateRoom() bool {
 		len(recent(c.times, now.Add(-time.Hour))) < s.cfg.CertsPerHour
 }
 
+// modes checks Config.SignUp and Config.IdleAccounts, and makes "" their defaults.
+func modes(cfg *Config) error {
+	if cfg.SignUp == "" {
+		cfg.SignUp = SignUpInvite
+	}
+	if cfg.SignUp != SignUpInvite && cfg.SignUp != SignUpOpen && cfg.SignUp != SignUpClosed {
+		return fmt.Errorf("sign-up is invite, open or closed, not %q", cfg.SignUp)
+	}
+	if cfg.IdleAccounts == "" {
+		cfg.IdleAccounts = IdleDelete
+	}
+	if cfg.IdleAccounts != IdleOff && cfg.IdleAccounts != IdlePause && cfg.IdleAccounts != IdleDelete {
+		return fmt.Errorf("idle accounts is off, pause or delete, not %q", cfg.IdleAccounts)
+	}
+	return nil
+}
+
 func orDefault(v *int, def int) {
 	if *v == 0 {
 		*v = def
@@ -395,7 +403,7 @@ func (s *Service) accountURL(id string) string { return "https://" + id + "." + 
 func plain(w http.ResponseWriter, status int, text string) {
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	w.WriteHeader(status)
-	_, _ = w.Write([]byte(text))
+	_, _ = w.Write([]byte(text)) //nolint:gosec // G705: text/plain, which no browser runs as HTML
 }
 
 func splitHostPort(hostport string) (string, string, error) {
