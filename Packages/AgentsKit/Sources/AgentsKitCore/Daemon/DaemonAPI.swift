@@ -160,6 +160,8 @@ public enum DaemonAPI {
         public static let browserAck = "browser/ack"
         public static let browserInput = "browser/input"
         public static let browserNavigate = "browser/navigate"
+        /// Take over in the browser's own window, on the Mac that runs it (#7259).
+        public static let browserWindow = "browser/window"
         /// Stop one shell or task an agent left running in the background, and nothing
         /// else it is doing (057).
         public static let agentsStopBackground = "agents/stopBackground"

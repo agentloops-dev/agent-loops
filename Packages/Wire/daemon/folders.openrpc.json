@@ -454,6 +454,27 @@
       }
     },
     {
+      "name": "browser/window",
+      "x-capability": "browser.window/1",
+      "description": "Take over in the browser's own window (#7259): show true brings the window with the session's tab onto this machine's screen and the browser to the front, for a person at this Mac, in place of the screencast; show false puts it back below the screen and the app that was in front before. It takes the screen lease for the session, now or not at all, and shown says false when it cannot (another agent has the screen, the browser is headless or not on this screen, or no agents-drive). The window also goes back when the client's connection ends. The person's own clients only.",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "schema/files.schema.json#/definitions/BrowserWindowRequest"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema/files.schema.json#/definitions/BrowserWindowResult"
+        }
+      }
+    },
+    {
       "name": "browserControl/set",
       "x-capability": "host.drive-approval/1",
       "tags": [

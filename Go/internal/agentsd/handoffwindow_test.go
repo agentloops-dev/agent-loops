@@ -160,3 +160,58 @@ func TestRealWindowWords(t *testing.T) {
 		t.Fatal(got)
 	}
 }
+
+// Take over on the Mac that runs the browser (#7259): browser/window gives the person the
+// window with the session's tab, with the screen lease, and puts it back with the app before
+// it when the client says so or its connection ends. An agent cannot ask for it.
+func TestATakeOverInTheRealWindow(t *testing.T) {
+	w := realWindow(t)
+	_, c, d, id := handOffSetUp(t)
+	var got wire.BrowserWindowResult
+	mustUnmarshal(t, c.call(t, 1, "browser/window", map[string]any{"agent": id, "show": true}), &got)
+	if !got.Shown || got.Window == nil || *got.Window != "the agents' Chrome window, in front" || !d.holdsScreen(id) {
+		t.Fatalf("%+v, screen held %v", got, d.holdsScreen(id))
+	}
+	mustUnmarshal(t, c.call(t, 2, "browser/window", map[string]any{"agent": id, "show": false}), &got)
+	if shown, hidden, fronted := w.calls(); got.Shown || len(shown) != 1 || len(hidden) != 1 || !slices.Equal(fronted, []int{chromePid, beforePid}) {
+		t.Fatalf("%+v: shown %v, hidden %v, fronted %v", got, shown, hidden, fronted)
+	}
+	if d.holdsScreen(id) {
+		t.Fatal("the screen is still held after the take over ended")
+	}
+
+	// The connection's end puts the window back too.
+	mac := &Client{ID: 9001, Role: RoleControl, d: d}
+	if r, err := d.takeOverWindow(mac, id, true); err != nil || !r.Shown {
+		t.Fatal(r, err)
+	}
+	d.removeClient(mac)
+	waitFor(t, "the window back", func() bool { _, hidden, _ := w.calls(); return len(hidden) == 2 && !d.holdsScreen(id) })
+
+	// Another agent has the screen: the screencast, and no lease kept.
+	other := seeded(t, d, t.TempDir(), func(a *wire.Agent) { a.State, a.EndedReason = wire.AgentStateRunning, nil })
+	if _, err := d.leaseResource(other.ID, screenNowArgs); err != nil {
+		t.Fatal(err)
+	}
+	if r, err := d.takeOverWindow(mac, id, true); err != nil || r.Shown || d.holdsScreen(id) {
+		t.Fatal(r, err)
+	}
+
+	must(t, errOnly(d.releaseResource(other.ID, screenLeaseName)))
+
+	// agents-drive cannot bring the browser to the front (the Mac app is in front, not it):
+	// the window stays, and the client brings the browser's pid to the front.
+	front := frontApp
+	frontApp = func(int) (int, error) { return 0, errors.New("not frontmost") }
+	r, err := d.takeOverWindow(mac, id, true)
+	frontApp = front
+	if err != nil || !r.Shown || r.Pid == nil || *r.Pid != chromePid {
+		t.Fatal(r, err)
+	}
+	d.endTakeOvers(mac)
+	waitFor(t, "the window back", func() bool { return !d.holdsScreen(id) })
+
+	if _, err := d.takeOverWindow(&Client{ID: 9002, Role: RoleAgent, d: d}, id, true); err == nil {
+		t.Fatal("an agent took over the window")
+	}
+}

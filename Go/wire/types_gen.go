@@ -1912,6 +1912,27 @@ type BrowserWatchRequest struct {
 	Agent *UUID `json:"agent,omitzero"`
 }
 
+// browser/window (#7259): show or put back the browser's own window with the session's tab, for a person at this machine.
+type BrowserWindowRequest struct {
+	// The session whose tab the window shows: the newest tab its agent opened.
+	Agent UUID `json:"agent"`
+
+	// true: onto the screen and to the front. false: back below the screen.
+	Show bool `json:"show"`
+}
+
+// browser/window's answer (#7259).
+type BrowserWindowResult struct {
+	// The window is on the screen, in front, for the person. false: the client shows the screencast.
+	Shown bool `json:"shown"`
+
+	// The window as the client names it, such as the agents' Chrome window, in front (accounts.google.com). Only when shown.
+	Window *string `json:"window,omitzero"`
+
+	// The browser's process, for the client to bring to the front: macOS lets only the app in front give the front away. Only when shown.
+	Pid *int64 `json:"pid,omitzero"`
+}
+
 // A budget raised for one person for one UTC day (#998, FR-019), kept in the policy and swept the day after.
 type BudgetRaise struct {
 	User string `json:"user"`

@@ -125,7 +125,8 @@ type process struct {
 	// store is its cookies, for Settings ▸ Browser (sites.go).
 	store cookieStore
 	// below is whether its windows are kept below the screen (keepBelow, #5313): Google
-	// Chrome on a screen a person sees, not on an Xvfb screen.
+	// Chrome on a screen a person sees, not on an Xvfb screen, and Chrome for Testing on a
+	// Mac (#7259). ShowWindow gives a person only such a window.
 	below bool
 	// shown is how many hand-offs have its window on the screen now (ShowWindow), under
 	// the machine's lock: the keeper moves nothing then.
@@ -138,9 +139,17 @@ type process struct {
 }
 
 // mode is how Chromium starts: Google Chrome stable (#5207), always with a window; with a
-// window, off-screen (#4272); and with WebAuthn, for a software passkey (#4085). The zero
-// mode is Chrome for Testing, headless with no WebAuthn.
-type mode struct{ chrome, headed, webauthn bool }
+// window, off-screen (#4272), or below the screen of the Mac it runs on, kept there (below,
+// #7259); and with WebAuthn, for a software passkey (#4085). The zero mode is Chrome for
+// Testing, headless with no WebAuthn.
+type mode struct{ chrome, headed, below, webauthn bool }
+
+// windowBelowHere is whether Chrome for Testing always has a window, below the screen, as
+// Google Chrome has (#7259): on a Mac, where a person can be given that window (ShowWindow)
+// with the page as it is. A headless Chromium has no window to give, and a start with one
+// loses what is typed in its pages. A test sets it.
+var windowBelowHere = runtime.GOOS == "darwin"
+
 
 // New is the machine's browser with its binaries under cache and its profile under root.
 func New(cache, root string, install func(func(string)) (Toolset, error), busy func() bool, env func() []string) *Machine {
@@ -225,6 +234,8 @@ func (m *Machine) Endpoint(progress func(string)) (string, error) {
 		started = "as Google Chrome, on the Xvfb screen " + p.display
 	} else if p.chrome {
 		started = "as Google Chrome, with a window below the screen"
+	} else if p.below {
+		started = "with a window below the screen"
 	} else if p.headed {
 		started = "with a window off-screen"
 	}
@@ -285,12 +296,13 @@ func (m *Machine) startForTesting(t Toolset, env []string, progress func(string)
 			return nil, fmt.Errorf("Playwright installed no Chromium at %s", exe)
 		}
 	}
-	how := mode{headed: m.headed && canHead(env), webauthn: m.webauthn}
+	below := windowBelowHere && canHead(env)
+	how := mode{headed: below || m.headed && canHead(env), below: below, webauthn: m.webauthn}
 	p, err := m.start(exe, m.Profile, env, how, progress)
 	if err != nil && how.headed {
 		// A window it cannot open is no reason to have no browser: headless, as always.
 		log.Printf("browser: Chromium did not start with a window (%v); starting it headless", err)
-		m.headed, how.headed = false, false
+		m.headed, how.headed, how.below = false, false, false
 		p, err = m.launch(exe, m.Profile, env, how)
 	}
 	if err != nil {
@@ -736,11 +748,18 @@ func startChromium(exe, profile string, env []string, userAgent string, how mode
 	if how.headed {
 		opts = append(opts, headedOptions...)
 	}
-	return run(opts, how, func(ctx context.Context) {
-		if how.headed {
+	p, ua, err := run(opts, how, func(ctx context.Context) {
+		switch {
+		case how.below:
+			moveBelowScreen(ctx)
+		case how.headed:
 			moveOffScreen(ctx)
 		}
 	}, func() (string, error) { return activePort(profile) })
+	if p != nil {
+		p.below = how.below
+	}
+	return p, ua, err
 }
 
 // run starts a browser with opts, and, after its first tab opens, places its window. It says
@@ -809,7 +828,8 @@ func moveOffScreen(ctx context.Context) {
 // offScreen is where a headed window goes, left and top: beyond any screen.
 const offScreen = -32000
 
-// moveBelowScreen puts Google Chrome's window just below the screen (#5207). macOS keeps
+// moveBelowScreen puts the browser's window just below the screen (#5207; Chrome for
+// Testing on a Mac too, #7259). macOS keeps
 // part of a window on a screen: 40 points across when it is moved further left (spike
 // #5127: -32000, -32000 became -1240, 33), but only one at x = -(width-1); and down, it
 // stops at the bottom of the lowest display or a little above it (a 2560×1440 display

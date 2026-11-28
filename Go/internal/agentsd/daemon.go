@@ -388,6 +388,7 @@ func (d *Daemon) removeClient(c *Client) {
 	d.forgetWatches(c)
 	d.forgetPresence(c)
 	d.unwatchBrowser(c)
+	d.endTakeOvers(c)
 }
 
 // clientsToTell is every client, or none once Shutdown has begun (#3828): what is said as

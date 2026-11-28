@@ -82,6 +82,7 @@ var CallBrowserNavigate = Method[BrowserNavigateRequest, Empty]{"browser/navigat
 var CallBrowserState = Method[Empty, BrowserState]{"browser/state"}
 var CallBrowserUnwatch = Method[Empty, Empty]{"browser/unwatch"}
 var CallBrowserWatch = Method[BrowserWatchRequest, BrowserPageState]{"browser/watch"}
+var CallBrowserWindow = Method[BrowserWindowRequest, BrowserWindowResult]{"browser/window"}
 var CallBrowserControlSet = Method[BrowserControlSettings, BrowserControlSettings]{"browserControl/set"}
 var CallBrowserControlState = Method[Empty, BrowserControlSettings]{"browserControl/state"}
 var CallBuildsHistory = Method[BuildsHistoryRequest, BuildsHistory]{"builds/history"}

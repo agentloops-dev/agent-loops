@@ -1,4 +1,5 @@
 import AgentsKitCore
+import AppKit
 import SwiftUI
 
 /// The agent browser or a simulator in a window of its own (#4138, #4141), from Open on a
@@ -46,11 +47,97 @@ struct TakeOverWindow: View {
                             .padding(12)
                         Divider()
                     }
-                    AgentBrowserPane(agent: agent, isVisible: true)
+                    if source == .browser, model.host(ofAgent: agent.id) == .mac,
+                       model.agent(agent.id, has: Capability.browserWindow1) {
+                        BrowserOwnWindow(agent: agent)
+                    } else {
+                        AgentBrowserPane(agent: agent, isVisible: true)
+                    }
                 }
             } else {
                 HostNeedsUpdateView()
             }
         }
+    }
+}
+
+/// Take over in the browser's own window (#7259): on the Mac that runs the agents' browser,
+/// the person gets its real window with the session's tab, in front, in place of the
+/// screencast, as `hand_to_person` gives it. This window then says where the page is, and
+/// the browser's window goes back below the screen when this one closes. When the host
+/// cannot give it (another agent has the screen, the browser has no window here), or the
+/// person asks for it, the page is the screencast here, as on every other client.
+private struct BrowserOwnWindow: View {
+    @Environment(AppModel.self) private var model
+    let agent: Agent
+
+    private enum Place: Equatable {
+        /// Asking the host for the window.
+        case asking
+        /// The browser's own window is in front: its name, as the host says it.
+        case ownWindow(String)
+        /// The screencast, in this window.
+        case here
+    }
+
+    @State private var place = Place.asking
+
+    private var browser: MachineBrowser { model.machineBrowser(for: agent.id) }
+
+    var body: some View {
+        Group {
+            switch place {
+            case .asking:
+                ProgressView()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            case .ownWindow(let window):
+                ContentUnavailableView {
+                    Label("The page is in its own window", icon: "safari")
+                } description: {
+                    Text(Self.words(window))
+                } actions: {
+                    Button("Bring to Front") { Task { await show() } }
+                        .keyboardShortcut(.defaultAction)
+                    Button("Show Here") { Task { await showHere() } }
+                }
+            case .here:
+                AgentBrowserPane(agent: agent, isVisible: true)
+            }
+        }
+        .task(id: agent.id) { await show() }
+        .onDisappear {
+            guard case .ownWindow = place else { return }
+            let browser = browser, session = agent.id
+            Task { await browser.putBackWindow(session: session) }
+        }
+    }
+
+    /// The browser's own window with the session's tab, in front; the screencast when the
+    /// host cannot.
+    private func show() async {
+        guard let said = await browser.showWindow(session: agent.id) else {
+            place = .here
+            return
+        }
+        place = .ownWindow(said.window ?? "")
+        // macOS lets only the app in front give the front away: this one, which the person
+        // just used, hands it to the browser.
+        if let pid = said.pid, let app = NSRunningApplication(processIdentifier: pid_t(pid)) {
+            NSApp.yieldActivation(to: app)
+            app.activate()
+        }
+    }
+
+    /// The screencast here, and the browser's own window back below the screen.
+    private func showHere() async {
+        place = .here
+        await browser.putBackWindow(session: agent.id)
+    }
+
+    /// "Use the page in the agents' Chrome window, in front (github.com). It goes back when
+    /// you close this window."
+    static func words(_ window: String) -> String {
+        let named = window.isEmpty ? "the agents' browser window" : window
+        return "Use the page in \(named). It goes back when you close this window."
     }
 }

@@ -729,6 +729,47 @@
       ],
       "additionalProperties": false
     },
+    "BrowserWindowRequest": {
+      "type": "object",
+      "description": "browser/window (#7259): show or put back the browser's own window with the session's tab, for a person at this machine.",
+      "properties": {
+        "agent": {
+          "$ref": "core.schema.json#/definitions/UUID",
+          "description": "The session whose tab the window shows: the newest tab its agent opened."
+        },
+        "show": {
+          "type": "boolean",
+          "description": "true: onto the screen and to the front. false: back below the screen."
+        }
+      },
+      "required": [
+        "agent",
+        "show"
+      ],
+      "additionalProperties": false
+    },
+    "BrowserWindowResult": {
+      "type": "object",
+      "description": "browser/window's answer (#7259).",
+      "properties": {
+        "shown": {
+          "type": "boolean",
+          "description": "The window is on the screen, in front, for the person. false: the client shows the screencast."
+        },
+        "window": {
+          "type": "string",
+          "description": "The window as the client names it, such as the agents' Chrome window, in front (accounts.google.com). Only when shown."
+        },
+        "pid": {
+          "type": "integer",
+          "description": "The browser's process, for the client to bring to the front: macOS lets only the app in front give the front away. Only when shown."
+        }
+      },
+      "required": [
+        "shown"
+      ],
+      "additionalProperties": false
+    },
     "ChangeSource": {
       "type": "string",
       "enum": [

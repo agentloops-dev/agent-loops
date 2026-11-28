@@ -11,23 +11,24 @@ import (
 	"github.com/chromedp/chromedp"
 )
 
-// The hand-off in the real window (#5208): when the browser is Google Chrome (#5207), its
-// window is real, just below the screen. hand_to_person moves the window with the agent's
-// tab onto the screen, so the person does the step there (a press-and-hold check, a Touch
-// ID or iCloud Keychain passkey prompt, a CAPTCHA), and puts it back below the screen when
-// the person is done. The screencast cannot carry those steps.
+// The hand-off in the real window (#5208): when the browser is Google Chrome (#5207), or
+// Chrome for Testing on a Mac (#7259), its window is real, just below the screen.
+// hand_to_person, and a person's take over on the Mac that runs it (#7259), move the window
+// with the agent's tab onto the screen, so the person does the step there (a press-and-hold
+// check, a Touch ID or iCloud Keychain passkey prompt, a CAPTCHA), and put it back below the
+// screen when the person is done. The screencast cannot carry those steps.
 
 // ErrNoWindow is ShowWindow's refusal when the browser has no real window to show: it is
-// not running, or it is Chrome for Testing, whose window (when it has one) is off every
-// screen and has no place there.
-var ErrNoWindow = errors.New("the browser has no window to show: it is not Google Chrome")
+// not running, it is headless, or its window is on an Xvfb screen or off every screen,
+// where nobody sees it.
+var ErrNoWindow = errors.New("the browser has no window on this machine's screen to show")
 
 // onScreen is where the window goes for the person, left and top: on the main display,
 // clear of the menu bar. macOS keeps it on a smaller screen.
 const onScreen = 100
 
 // ShowWindow brings tab's window onto the screen and tab to the front of it, and says
-// Google Chrome's pid, for the app to come to the front. tab "" is the window of the
+// the browser's pid, for the app to come to the front. tab "" is the window of the
 // browser's first tab.
 func (m *Machine) ShowWindow(ctx context.Context, tab string) (int, error) {
 	p, err := m.realWindow()
@@ -70,12 +71,12 @@ func (m *Machine) HideWindow(ctx context.Context, tab string) error {
 	return setWindow(c, tab, &cdpbrowser.Bounds{Left: &left, Top: &top})
 }
 
-// realWindow is the running Google Chrome, or ErrNoWindow.
+// realWindow is the running browser whose windows are kept below the screen, or ErrNoWindow.
 func (m *Machine) realWindow() (*process, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	p := m.running
-	if p == nil || !p.chrome || p.ctxOf() == nil {
+	if p == nil || !p.below || p.ctxOf() == nil {
 		return nil, ErrNoWindow
 	}
 	select {
@@ -122,8 +123,8 @@ func setWindow(ctx context.Context, tab string, bounds *cdpbrowser.Bounds) error
 // keepEvery is how often the keeper looks at every window.
 const keepEvery = 2 * time.Second
 
-// keepBelow keeps p's windows below the screen until p ends. Started once per Google
-// Chrome whose window is below the screen (not on an Xvfb screen, where nobody sees it).
+// keepBelow keeps p's windows below the screen until p ends. Started once per browser
+// whose window is below the screen (not on an Xvfb screen, where nobody sees it).
 func (m *Machine) keepBelow(p *process) {
 	ctx := p.ctxOf()
 	if ctx == nil {
