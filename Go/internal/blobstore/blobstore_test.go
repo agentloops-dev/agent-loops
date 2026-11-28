@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/store"
 )
 
 func init() { SyncWrites = false }
@@ -17,6 +19,7 @@ func each(t *testing.T, fn func(t *testing.T, s Store)) {
 	t.Run("memory", func(t *testing.T) { fn(t, NewMemory()) })
 	t.Run("folder", func(t *testing.T) { fn(t, NewFolder(t.TempDir())) })
 	t.Run("bucket", func(t *testing.T) { fn(t, fakeBucket(t, "org/a")) })
+	t.Run("keyed", func(t *testing.T) { fn(t, NewKeyed(store.NewMemory(), "v1/artifacts/")) })
 }
 
 func TestPutGetHeadDedupeDelete(t *testing.T) {

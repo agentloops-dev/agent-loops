@@ -16,6 +16,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/agentloops-dev/agent-loops/Go/internal/artifacts"
+	"github.com/agentloops-dev/agent-loops/Go/internal/blobstore"
 	"github.com/agentloops-dev/agent-loops/Go/internal/controllink"
 	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/apns"
 	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/maturity"
@@ -35,6 +37,8 @@ type Methods struct {
 	records  *records.Records
 	maturity *maturity.Records
 	router   *Router
+	// The artifacts' records and versions (#5953), in the organisation's store.
+	artifacts *artifacts.Store
 
 	mu sync.Mutex
 	// The web remote's listener as it stands (071 R3), set as it binds.
@@ -48,13 +52,17 @@ func newMethods(s *Service) *Methods {
 	s.startAudit()
 	// Each service uses the store for its organisation. A caller cannot select a store.
 	maturityRecords, _ := maturity.New(s.cfg.Store, maturity.RegisteredFeatureIDs())
-	return &Methods{s: s, records: s.records, maturity: maturityRecords, router: s.router}
+	return &Methods{s: s, records: s.records, maturity: maturityRecords, router: s.router,
+		artifacts: artifacts.New(blobstore.NewKeyed(s.cfg.Store, artifacts.Prefix), s.cfg.Store, artifacts.Prefix)}
 }
 
 // own is ControlMethods.own: the methods with no host named that are the control
 // plane's. Workspace methods join them once providers are ported. One a line, sorted, so
 // two features that each add one touch different lines (#2020).
 var own = methodSet(
+	"artifacts/get",
+	"artifacts/put",
+	"artifacts/versions",
 	"audit/export",
 	"audit/list",
 	"audit/setSinks",
@@ -254,6 +262,7 @@ func (m *Methods) setFrozen(frozen bool) {
 // writes is ControlMethods.writes: what changes records, refused while frozen. One a
 // line, sorted (#2020).
 var writes = methodSet(
+	"artifacts/put",
 	"audit/setSinks",
 	"bots/make",
 	"bots/setCaps",
@@ -377,6 +386,8 @@ func (m *Methods) Handle(method string, params json.RawMessage, from Caller) (an
 		return m.completeMaturity(ctx, params, from)
 	case "machines/list":
 		return m.hostList(from, params)
+	case "artifacts/get", "artifacts/put", "artifacts/versions":
+		return m.artifactsMethod(ctx, method, params, from)
 	case "clients/list", "devices/list":
 		return m.ownClients(from), nil
 	case "people/list", "people/invite", "people/setRole", "people/remove", "people/removePreview", "people/removeRequests",

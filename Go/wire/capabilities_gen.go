@@ -15,6 +15,7 @@ const CapAgentsStartNow1 = "agents.start-now/1"
 const CapAgents1 = "agents/1"
 const CapApprovals1 = "approvals/1"
 const CapArtifact1 = "artifact/1"
+const CapArtifacts1 = "artifacts/1"
 const CapAttention1 = "attention/1"
 const CapAttention2 = "attention/2"
 const CapAuditSinks1 = "audit.sinks/1"
@@ -860,6 +861,9 @@ var HostNotifications = set([]string{
 var ControlCapabilities = pairs([][2]string{
 	{"approvals/list", "approvals/1"},
 	{"approvals/put", "approvals/1"},
+	{"artifacts/get", "artifacts/1"},
+	{"artifacts/put", "artifacts/1"},
+	{"artifacts/versions", "artifacts/1"},
 	{"attention/need", "attention/2"},
 	{"attention/turn", "liveactivity/1"},
 	{"audit/export", "events.audit/1"},

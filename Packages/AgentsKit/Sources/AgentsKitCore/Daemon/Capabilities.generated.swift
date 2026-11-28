@@ -16,6 +16,7 @@ public enum Capability {
     public static let agents1 = "agents/1"
     public static let approvals1 = "approvals/1"
     public static let artifact1 = "artifact/1"
+    public static let artifacts1 = "artifacts/1"
     public static let attention1 = "attention/1"
     public static let attention2 = "attention/2"
     public static let auditSinks1 = "audit.sinks/1"
@@ -797,6 +798,9 @@ public enum Capability {
     public static let control: [String: String] = [
         "approvals/list": "approvals/1",
         "approvals/put": "approvals/1",
+        "artifacts/get": "artifacts/1",
+        "artifacts/put": "artifacts/1",
+        "artifacts/versions": "artifacts/1",
         "attention/need": "attention/2",
         "attention/turn": "liveactivity/1",
         "audit/export": "events.audit/1",
