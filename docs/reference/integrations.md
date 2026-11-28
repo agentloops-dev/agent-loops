@@ -231,6 +231,7 @@ Open issues: `is:open label:integration "control plane"`.
 | Integration | Clients that show it | State | Last checked | Where | Gaps |
 | --- | --- | --- | --- | --- | --- |
 | S3 or MinIO store | control plane | built | — | `Go/internal/controlplane/s3store/s3store.go`; not on the Mac since #4227 | |
+| S3-compatible bucket for the artifacts' blobs (#5954): the blob store's `Bucket` backend on aws-sdk-go-v2, with the folder's layout under a prefix, a conditional create (`If-None-Match: *`) and the bytes' SHA-256 on each put | control plane (not wired yet; epic #5713) | built, tested with a fake S3 | 2026-11-27, against gofakes3 in the process (`Go/internal/blobstore/s3_test.go`); `TestBucketOnARealEndpoint` runs on a real endpoint when `AGENTS_TEST_S3_ENDPOINT` is set | `Go/internal/blobstore/s3.go` | not yet on a real MinIO or AWS bucket: this Mac has no MinIO or container; Object Lock is #5713's policy child |
 | KMS (local, HashiCorp Vault, Google Cloud KMS) | control plane | built | — | `Go/internal/controlplane/kms/kms.go` | |
 | Caddy with ACME | control plane | tested on a real account | 2026-10-18, Let's Encrypt certificates for control.agentloops.dev and views.agentloops.dev (`specs/058-control-plane/walks/1461.md`) | `deploy/` | |
 | Bonjour discovery | Mac, control plane | built | — | `Host/Sources/LocalServices.swift`, `Go/internal/controlplane/machine.go` | |
