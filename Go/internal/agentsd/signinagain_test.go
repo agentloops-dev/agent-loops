@@ -154,6 +154,16 @@ func TestSignInAgainOutlivesARestart(t *testing.T) {
 		got := d.pendingElicitations()
 		return len(got) == 1 && got[0].ID != old.ID
 	})
+	// The chat says the old card was replaced, so it does not draw it as open (#4990).
+	waitFor(t, "the old card answered in the chat", func() bool {
+		entries, _, _ := d.Store.Transcript(id, 0)
+		for _, e := range entries {
+			if a := e.Kind.ElicitationAnswered; a != nil && a.ID == old.ID && a.Summary == signInCardReplaced {
+				return true
+			}
+		}
+		return false
+	})
 	if got := d.pendingElicitations()[0]; got.Mode.Form == nil || got.Mode.Form.Value.Title == nil ||
 		*got.Mode.Form.Value.Title != signedOutTitle("Claude", d.serverName()) {
 		t.Fatalf("%+v", got)

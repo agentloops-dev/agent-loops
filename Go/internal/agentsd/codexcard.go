@@ -21,6 +21,10 @@ import (
 // sealed or sent through the control plane, and the Mac's host is not part of it. Once it is
 // made, the Mac's lent sign-in is closed and this one wins.
 
+// signInCardReplaced is what the chat says of a sign-in card whose code ran out or went with
+// a restart, once a new card takes its place.
+const signInCardReplaced = "Replaced by a new sign-in card."
+
 // signInCodeField is the one field of Claude's sign-in card.
 const signInCodeField = "code"
 
@@ -127,7 +131,11 @@ func (d *Daemon) raiseSignInCard(agent wire.UUID, runtimeID string) {
 		}
 		for _, c := range stale {
 			d.forgetSignInCard(c.req)
-			d.endRequest(c.req, wire.RequestStateDropped, nil, wire.RequestEndedWhyAskerEnded, nil)
+			if d.endRequest(c.req, wire.RequestStateDropped, nil, wire.RequestEndedWhyAskerEnded, nil) {
+				// Said in the chat too, which draws a card asked and never answered (#4990).
+				d.record(c.agent, wire.TranscriptEntryKind{ElicitationAnswered: &wire.TranscriptEntryKindElicitationAnswered{ID: c.req,
+					Summary: signInCardReplaced}})
+			}
 			d.formDown(c.agent, c.req)
 		}
 		step, err := d.startHeadlessSignIn(d.ctx, runtimeID)
