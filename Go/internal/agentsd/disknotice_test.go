@@ -123,3 +123,42 @@ func TestADaemonATestMakesWithNewReadsARoomyDisk(t *testing.T) {
 		}
 	}
 }
+
+// The notice of a critical disk stays while free space is between the low line and the ok
+// line, and goes with machine.disk_ok at the ok line (#6953): 20% at the default 10% line.
+func TestADiskNoticeClearsAtTheOKLine(t *testing.T) {
+	t.Parallel()
+
+	d, c := start(t, t.TempDir())
+	defer d.Shutdown()
+	percent := func(p int64) {
+		testHooksOf(t).change(func(h *testHooks) {
+			h.opts.diskFree = func(r wire.DiskReading) int64 { return r.TotalBytes/100*p + 1_000_000 }
+		})
+		d.checkDisk()
+	}
+	percent(0)
+	if got := diskNotices(t, c, 1); len(got) != 1 {
+		t.Fatalf("no notice at 0%% free: %+v", got)
+	}
+	for i, p := range []int64{15, 9, 19, 12} {
+		percent(p)
+		if got := diskNotices(t, c, 2+i); len(got) != 1 {
+			t.Fatalf("notice gone at %d%% free: %+v", p, got)
+		}
+	}
+	if n := len(raised(d, "machine.disk_ok")); n != 0 {
+		t.Fatalf("%d machine.disk_ok under the ok line", n)
+	}
+	percent(20)
+	if got := diskNotices(t, c, 10); len(got) != 0 {
+		t.Fatalf("still posted at 20%% free: %+v", got)
+	}
+	ok := raised(d, "machine.disk_ok")
+	if len(ok) != 1 || ok[0].Details["free_percent"] != "20" {
+		t.Fatalf("%+v", ok)
+	}
+	if low := raised(d, "machine.disk_low"); len(low) != 1 {
+		t.Fatalf("%d machine.disk_low, want 1 (critical, then no new crossing)", len(low))
+	}
+}
