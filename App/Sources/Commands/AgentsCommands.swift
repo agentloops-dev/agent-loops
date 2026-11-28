@@ -341,6 +341,11 @@ struct AgentsCommands: Commands {
             Button("Branch") { act { await model.fork($0.id) } }
                 .keyboardShortcut(MenuKeys.branch)
                 .disabled(agent == nil || agent?.state == .archived)
+            // Under a lead, at the top or under its starter (#7539, flag session-parents).
+            if model.sessionParentsOn {
+                Button(SessionParents.moveUnderLead) { model.movingUnderLead = agent?.id }
+                    .disabled(!(agent.map(model.canSetParent) ?? false))
+            }
             Divider()
             // Beside the main window or on another screen (#826). Its own window is
             // already one. ⇧ since ⌥⌘O opens the folder's window (#1089).
@@ -609,6 +614,7 @@ struct AgentsCommands: Commands {
         add("Next Session", MenuKeys.nextSession, list: .next, when: !sessionsHere.isEmpty) { step(by: 1) }
         add("Previous Session", MenuKeys.previousSession, list: .previous, when: !sessionsHere.isEmpty) { step(by: -1) }
         add("Branch Session", MenuKeys.branch, when: live) { act { await model.fork($0.id) } }
+        add("Move Session Under Lead…", when: agent.map(model.canSetParent) ?? false) { model.movingUnderLead = agent?.id }
         let pinned = agent.map(model.isPinned) ?? false
         add(pinned ? "Unpin Session" : "Pin Session", when: live) {
             guard let agent else { return }

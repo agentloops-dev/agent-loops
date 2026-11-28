@@ -459,6 +459,13 @@ struct ContentView: View {
                                     set: { requests.showsReportProblem = $0 })) {
             ReportProblemSheet().paperSheet()
         }
+        // Move Under Lead…, from the row's menu, the Session menu or VoiceOver (#7539).
+        .sheet(isPresented: Binding(get: { model.movingUnderLead != nil },
+                                    set: { if !$0 { model.movingUnderLead = nil } })) {
+            if let id = model.movingUnderLead, let agent = model.work.agent(id) {
+                MoveUnderLeadSheet(agent: agent).paperSheet()
+            }
+        }
         // An agent that needs its runtime signed in gets the sign-in, not an error.
         .sheet(isPresented: Binding(get: { model.signInRuntimeID != nil },
                                     set: { if !$0 { model.putAwaySignIn() } })) {

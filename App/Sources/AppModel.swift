@@ -1301,6 +1301,8 @@ final class AppModel {
     /// Deliberately not kept with the rest of the form: a worktree is decided per
     /// agent, so it goes back to the folder after every start (FR-004).
     var draftWorktree: WorktreeChoice?
+    /// The lead New Session puts the session under (#7539, flag `session-parents`); nil for none.
+    var draftParentID: UUID?
     /// What the draft folder's repository has, for the Worktree chooser. Not a
     /// repository until the daemon says otherwise, which keeps the chooser hidden.
     var draftWorktrees: DaemonAPI.WorktreesListResponse = .notARepository
@@ -5433,6 +5435,13 @@ final class AppModel {
     /// (#4793). One toast at a time: it and Archive's replace each other.
     var sessionUndo: SessionUndo?
 
+    /// The row being dragged onto a lead in the sidebar (#7539), while the drag lasts.
+    var parentDrag: ParentDrag?
+    /// The session the Move Under Lead… sheet is open for (#7539).
+    var movingUnderLead: UUID?
+    /// What a drop where the pointer is would do, or why not, while a row is dragged (#7539).
+    var parentDropTip: ParentDropTip?
+
     /// Offer Undo for an action that went.
     func offer(_ undo: SessionUndo?) {
         guard let undo else { return }
@@ -5451,6 +5460,7 @@ final class AppModel {
         case .labels(let id, let add, let remove): await setLabels(on: id, add: add, remove: remove, offeringUndo: false)
         case .mute(let id, let muted): await setMuted(id, muted, offeringUndo: false)
         case .bringBack(let request): await undeferRequest(request)
+        case .parent(let id, let placement): await setParent(id, placement, offeringUndo: false)
         }
     }
 

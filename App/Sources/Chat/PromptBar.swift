@@ -319,6 +319,14 @@ struct PromptBar: View {
                         }
                         SessionLabelEditor(agent: agent)
                             .fixedSize(horizontal: true, vertical: false)
+                        // Its lead, said as the runtime is: it changes in the sidebar (#7539).
+                        if model.sessionParentsOn, let lead = model.lead(of: agent) {
+                            Text(SessionParents.under(SessionParents.title(lead)))
+                                .appText(.fine)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                                .padding(.top, TouchTarget.capsuleVertical)
+                        }
                     }
                 }
                 .task(id: "\(agent.id)-\(agent.cwd.path)") { await model.loadAgentWorktrees(of: agent) }
@@ -328,6 +336,7 @@ struct PromptBar: View {
                 if model.draftWorktrees.isRepository {
                     worktreeChooser
                 }
+                leadChooser
                 reachButton
                 labelDraft
                     .fixedSize(horizontal: true, vertical: false)
@@ -1472,6 +1481,24 @@ struct PromptBar: View {
         draftLabels = Persona.labels(draftLabels,
                                      switchingFrom: model.draftPersonas.first { $0.id == old },
                                      to: model.draftPersonas.first { $0.id == new })
+    }
+
+    // MARK: Under a lead (#7539)
+
+    /// Lead: the live leads of this machine, No lead first; only with the flag on and a lead.
+    @ViewBuilder
+    private var leadChooser: some View {
+        if model.offersDraftLead {
+            let title = model.draftLead.map { SessionParents.under(SessionParents.title($0)) } ?? SessionParents.noLead
+            SelectCapsule(name: SessionParents.chipName, title: title) { dismiss in
+                LeadPickerList(choices: model.leadChoices(for: nil, on: model.draftHost, folder: model.draftCwd),
+                               chosen: model.draftLead?.id,
+                               heading: LeadSearch.heading(model.draftHost, in: model)) { id in
+                    model.draftParentID = id
+                    dismiss()
+                }
+            }
+        }
     }
 
     // MARK: Where in the folder (030)
