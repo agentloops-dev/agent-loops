@@ -13,8 +13,12 @@ import (
 
 const LooksToFall = 2
 
-// The load lines, per core (#4583): near is about two builds' load, full about three.
+// The load lines, per core (#4583): near is about two builds' load, full about three. A
+// machine near or full is ok again only under OkLoad (#6953), well under NearLoad, so a load
+// that hovers at the near line does not flap between machine.busy and machine.ok. 1.5 is a
+// first value; #4583 has the calibration data.
 const (
+	OkLoad   = 1.5
 	NearLoad = 2.0
 	FullLoad = 3.0
 )

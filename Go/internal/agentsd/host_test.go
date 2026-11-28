@@ -50,21 +50,56 @@ func TestCatchUpIsOneAnswer(t *testing.T) {
 	}
 }
 
-func TestDiskLevelsTakeAMarginToGetBetter(t *testing.T) {
+func TestDiskLevelsTakeAWideGapToGetBetter(t *testing.T) {
 	const g = gigabyte
-	low, critical := int64(20*g), int64(2*g)
+	// A 100 GB disk at the default lines: critical below 1 GB, low below 10 GB, ok again at 20 GB.
+	low, critical, ok := int64(10*g), int64(1*g), int64(20*g)
 	steps := []struct {
 		free int64
 		want wire.DiskLevel
-	}{{30 * g, "ok"}, {19 * g, "low"}, {1 * g, "critical"}, {5 * g / 2, "critical"}, {3 * g, "low"}, {21 * g, "low"}, {22 * g, "ok"}}
+	}{{30 * g, "ok"}, {9 * g, "low"}, {g / 2, "critical"}, {5 * g, "critical"}, {9 * g, "critical"},
+		{10 * g, "low"}, {19 * g, "low"}, {20 * g, "ok"}}
 	var level wire.DiskLevel
 	for i, s := range steps {
-		if level = nextDiskLevel(level, s.free, low, critical); level != s.want {
+		if level = nextDiskLevel(level, s.free, low, critical, ok); level != s.want {
 			t.Fatalf("%d: %s at %d GB, want %s", i, level, s.free/g, s.want)
 		}
 	}
-	if defaultDiskThresholds.lowLine(1000*g) != 100*g || defaultDiskThresholds.criticalLine(1000*g) != 10*g {
-		t.Fatal("the lines are a percent of the disk: 10% low, 1% critical")
+	if defaultDiskThresholds.lowLine(1000*g) != 100*g || defaultDiskThresholds.criticalLine(1000*g) != 10*g ||
+		defaultDiskThresholds.okLine(1000*g) != 200*g {
+		t.Fatal("the lines are a percent of the disk: 10% low, 1% critical, ok at 20%")
+	}
+	for _, tc := range []struct{ low, ok float64 }{{5, 15}, {10, 20}, {50, 60}, {95, 100}} {
+		if got := (diskThresholds{lowPercent: tc.low}).okLine(100 * g); got != int64(tc.ok*g) {
+			t.Errorf("low %v%%: ok at %d GB, want %v", tc.low, got/g, tc.ok)
+		}
+	}
+}
+
+// A reading that swings around the low line says machine.disk_low once and machine.disk_ok
+// only once it reaches the ok line, ten points above (#6953).
+func TestDiskOscillatingAtTheLowLineDoesNotFlap(t *testing.T) {
+	const g = gigabyte
+	low, critical, ok := int64(10*g), int64(1*g), int64(20*g)
+	var level wire.DiskLevel = wire.DiskLevelOk
+	lows, oks := 0, 0
+	for range 10 {
+		for _, free := range []int64{9 * g, 11 * g, 15 * g, 19 * g} {
+			was := level
+			level = nextDiskLevel(level, free, low, critical, ok)
+			if was == wire.DiskLevelOk && level != wire.DiskLevelOk {
+				lows++
+			}
+			if was != wire.DiskLevelOk && level == wire.DiskLevelOk {
+				oks++
+			}
+		}
+	}
+	if lows != 1 || oks != 0 || level != wire.DiskLevelLow {
+		t.Fatalf("%d low and %d ok crossings, now %s", lows, oks, level)
+	}
+	if level = nextDiskLevel(level, 20*g, low, critical, ok); level != wire.DiskLevelOk {
+		t.Fatalf("%s at the ok line", level)
 	}
 }
 
