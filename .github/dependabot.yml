@@ -1,7 +1,10 @@
-# Version updates for the runtimes' adapters the app installs (#4512). Each toolset pins its
-# adapter exactly in package.json, with npm's lock beside it; Dependabot bumps both. The
-# manifest's packageVersion and the Node pin are not npm's, so a bump's PR fails
-# TestTheBundlesNodeToolsetsPinOneVersion until scripts/update-toolset.sh is run on it.
+# The runtimes' toolsets (#4512). Each pins its adapter exactly in package.json, with npm's
+# lock beside it, and manifest.json names the same version. Dependabot does not bump the
+# adapters (#7590): its PR changes package.json and the lock but not the manifest, so it fails
+# TestTheBundlesNodeToolsetsPinOneVersion (#7588), and it skips the turn test. The Runtime
+# check (.agents/workflows/nightly-runtimes.md, Tuesday and Friday) re-pins each adapter with
+# scripts/update-toolset.sh and opens a PR for a version that passes a real turn. Dependabot
+# still watches the packages below the adapter in the lock.
 version: 2
 updates:
   - package-ecosystem: npm
@@ -10,6 +13,9 @@ updates:
       - /App/Resources/toolsets/codex
     schedule:
       interval: weekly
+    ignore:
+      - dependency-name: "@agentclientprotocol/claude-agent-acp"
+      - dependency-name: "@agentclientprotocol/codex-acp"
     versioning-strategy: increase
     open-pull-requests-limit: 2
     labels:
