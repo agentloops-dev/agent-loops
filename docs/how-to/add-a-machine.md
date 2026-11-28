@@ -212,9 +212,9 @@ or ssh agent forwarding. The server does not use this Mac's git access.
 
 ### Add another Mac
 
-A second Mac joins with a code from Pair a Mac. Its window pairs and its host joins in one step.
+A second Mac joins with a Mac code from Pair a Client…. Its window pairs and its host joins in one step.
 
-1. In the window on the first Mac, open **Settings ▸ Clients**, click **Pair a Mac…**, and
+1. In the window on the first Mac, open **Settings ▸ Clients**, click **Pair a Client…**, choose **Mac**, and
    copy the code.
 2. On the other Mac, install and open Agent Loops. Open **Settings ▸ Control plane**, click
    **Connect to Another…**, then **Use a Code…**. Paste the code, click **Next**, and then

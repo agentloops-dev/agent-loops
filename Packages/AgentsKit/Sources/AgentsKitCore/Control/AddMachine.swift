@@ -3,7 +3,7 @@ import Foundation
 /// Add a Machine… (#2131): one sheet, reached from Settings ▸ Machines, Connectors set-up ▸
 /// Where agents run and a provider's New Machine…, with three ways in. A provider first, as a
 /// browser-only person gets any machine that way; then a server, by one command; then a
-/// machine that runs agentsd by hand, by a machine code. Another Mac pairs by Pair a Mac… (#4285). The web page's `addMachine.ts` is the same.
+/// machine that runs agentsd by hand, by a machine code. Another Mac pairs by Pair a Client… ▸ Mac (#4285, #7270). The web page's `addMachine.ts` is the same.
 public enum AddMachine {
     public enum Way: String, CaseIterable, Identifiable, Sendable {
         case provider, server, code
@@ -36,7 +36,7 @@ public enum AddMachine {
             case .provider: "A new machine from Docker, DigitalOcean, Codespaces, Coder and the others. It joins by itself."
             case .server: ssh ? "Run one command on it, or install it over ssh. It connects out, so nothing has to reach it."
                 : "Run one command on it. It connects out, so nothing has to reach it."
-            case .code: "For a machine that runs agentsd by hand. For another Mac, use Settings ▸ Clients ▸ Pair a Mac… on this Mac."
+            case .code: "For a machine that runs agentsd by hand. For another Mac, use Settings ▸ Clients ▸ Pair a Client… ▸ Mac on this Mac."
             }
         }
 

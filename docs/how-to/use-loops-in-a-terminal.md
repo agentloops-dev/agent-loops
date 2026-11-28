@@ -96,7 +96,7 @@ paired.
 
 1. In a paired window, open **Settings ▸ Control plane**, and click **Show** beside
    **Clients**. On the web page, open **Settings ▸ Control plane ▸ Clients**.
-2. Click **Pair a Mac…**, then click **Copy**. On the web page, **Copy Command** copies
+2. Click **Pair a Client…**, choose **Mac**, then click **Copy**. On the web page, **Copy Command** copies
    the whole `loops auth login` line.
 3. In the terminal, type:
 

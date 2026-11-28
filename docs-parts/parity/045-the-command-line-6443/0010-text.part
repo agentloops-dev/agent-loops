@@ -8,7 +8,7 @@ What `loops` has of Core:
 - **Continue a session:** the folder's newest (`loops`, `loops sessions follow` or `-c`) or one by id or title (`loops sessions follow <id>` or `-r`).
 - **Chat:** the agent's reply as it comes, the tool calls, and the prompt (Return sends, Option-Return adds a line, Control-C stops the turn).
 - **Question and permission cards:** answered by number in the chat. A secret, a step in a browser or a page to open is answered on another client. Print mode never answers a card: it waits for any client, or ends (`--on-ask=fail`, exit 3).
-- **Pairing:** `loops auth login` with a client code from **Pair a Mac…**, `loops auth logout` and `loops auth status`.
+- **Pairing:** `loops auth login` with a Mac code from **Pair a Client…**, `loops auth logout` and `loops auth status`.
 - **Add Folder:** `loops folders add`, for this computer's machine or `--machine`.
 
 What it does not have: approvals and Changes, notices, the Brief, terminals, files, diffs, worktrees, the Simulator pane and the Agent Browser, runtimes' details, personas, workflows, Settings and every Mac + web, Web + Mac link and Web only feature. Its own, by design: print mode for scripts (`-p`, `--json`, `--detach`, `--timeout`) and its exit codes.

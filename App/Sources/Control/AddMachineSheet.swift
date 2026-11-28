@@ -64,7 +64,7 @@ struct AddMachineSheet: View {
         case .server(let prefill):
             ControlAddServerSheet(control: control, prefill: prefill)
         case .code:
-            CodeSheet(control: control, purpose: .host)
+            CodeSheet(control: control)
         }
     }
 

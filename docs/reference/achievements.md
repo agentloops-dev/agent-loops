@@ -17,7 +17,7 @@ all show the same list. The achievements you have not earned yet are the checkli
 | Achievement | How to earn it |
 | --- | --- |
 | **First agent started** | Start an agent and let it run a turn. |
-| **First phone or browser paired** | Pair a phone or a browser with **Pair a Device…**. |
+| **First phone or browser paired** | Pair a phone or a browser with **Pair a Client…**. |
 | **First question answered away from the Mac** | Answer an agent's question from the Remote or the web page. |
 | **First workflow made** | Make a workflow that runs an agent on a schedule or an event. |
 | **First cloud host started** | Start a machine on a cloud provider. |

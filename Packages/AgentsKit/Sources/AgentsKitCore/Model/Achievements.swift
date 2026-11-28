@@ -29,7 +29,7 @@ public enum Achievement: String, CaseIterable, Codable, Hashable, Sendable, Iden
     public var how: String {
         switch self {
         case .firstAgent: "Start an agent and let it run a turn."
-        case .firstPairing: "Pair a phone or a browser with Pair a Device…."
+        case .firstPairing: "Pair a phone or a browser with Pair a Client…."
         case .firstRemoteAnswer: "Answer an agent's question from the Remote or the web page."
         case .firstWorkflow: "Make a workflow that runs an agent on a schedule or an event."
         case .firstCloudHost: "Start a machine on a cloud provider."

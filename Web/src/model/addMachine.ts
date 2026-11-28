@@ -1,5 +1,5 @@
 // Add a Machine… (#2131): one sheet with three ways in, a provider first; then a server, by one
-// command; then a machine that runs agentsd by hand, by a machine code (another Mac pairs by Pair a Mac…, #4285). Connectors set-up ▸ Where agents run says the machine the
+// command; then a machine that runs agentsd by hand, by a machine code (another Mac pairs by Pair a Client… ▸ Mac, #4285, #7270). Connectors set-up ▸ Where agents run says the machine the
 // folder is on and what else is yours. The window's and the Remote's AddMachine.swift is the same.
 import { namesWords } from "./machineNames";
 
@@ -19,7 +19,7 @@ export const addMachineWords = {
   note: (way: AddMachineWay) => ({
     provider: "A new machine from Docker, DigitalOcean, Codespaces, Coder and the others. It joins by itself.",
     server: "Run one command on it. It connects out, so nothing has to reach it.",
-    code: "For a machine that runs agentsd by hand. For another Mac, use Settings ▸ Clients ▸ Pair a Mac… in the Mac app.",
+    code: "For a machine that runs agentsd by hand. For another Mac, use Settings ▸ Clients ▸ Pair a Client… ▸ Mac in the Mac app.",
   })[way],
   noProviders: "No provider here can make a machine yet.",
   noProvidersAskAdmin: "No provider here can make a machine. An admin adds one in Settings ▸ Machine Providers.",

@@ -2160,7 +2160,7 @@ func codeForPage(stored *storedCode, fromPage bool) error {
 	if browser {
 		return fail(invalidParams, "That code is for a browser. Paste it in the Agent Loops page.")
 	}
-	return fail(invalidParams, "That code is for a window or a phone. Get one from Add a Browser….")
+	return fail(invalidParams, "That code is for a window or a phone. Get a browser’s code from Pair a Client… or Add a Browser….")
 }
 
 // spendHostCode enrols the host that announces itself with a host code.

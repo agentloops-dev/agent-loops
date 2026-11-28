@@ -122,7 +122,7 @@ nothing.
 3. On a Mac, quit Agent Loops and open it again, or wait for its next start. Agent Loops
    reads the profile at each start of the machine.
 4. Join as usual: in **Settings ▸ Control plane**, click **Connect to Another…**, then
-   **Use a Code…**, and paste a code from **Pair a Mac…** on the pinned control plane. See
+   **Use a Code…**, and paste a Mac code from **Pair a Client…** on the pinned control plane. See
    [Add a machine](add-a-machine.md) for codes.
 
 ## Pin a Linux server

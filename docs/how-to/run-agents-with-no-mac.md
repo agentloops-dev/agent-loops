@@ -42,7 +42,7 @@ The first code comes from the control plane's machine.
    your agents**, paste the code and click **Connect**.
 
 The browser is paired. It can do all that a window can. To pair another browser, phone or
-tablet, use **Add a Browser…** in this one; see
+tablet, use **Pair a Client…** in this one; see
 [Use Agent Loops in a browser](use-agents-in-a-browser.md).
 
 ### Add the codespace as a machine

@@ -30,7 +30,7 @@ together.
 
 1. In a paired window, open **Settings ▸ Control plane**, and click **Show** beside
    **Clients**.
-2. Click **Pair a Mac…**, then click **Copy**.
+2. Click **Pair a Client…**, choose **Mac**, then click **Copy**.
 3. On the other Mac, open Agent Loops, then open **Settings ▸ Control plane** and click
    **Connect to Another…**.
 4. Click **Use a Code…**, paste the code, and click **Next**.
@@ -51,7 +51,7 @@ of the one on this Mac:
 2. Choose one:
    - **Sign In to agentloops.dev**, with Apple, Google or GitHub. A new account gets a
      control plane of its own.
-   - **Use a Code…**, with a code from **Settings ▸ Clients ▸ Pair a Mac…** on the control
+   - **Use a Code…**, with a Mac code from **Settings ▸ Clients ▸ Pair a Client…** on the control
      plane that you run. Paste it and click **Next**.
 3. The sheet says what happens: this Mac's agents report to the other control plane, your
    sessions stay on this Mac, your iPhone, iPad and browsers must pair again, and the
@@ -68,7 +68,7 @@ this Mac's host and the window go back to it. Your sessions stay on this Mac.
 
 1. In a paired window, open **Settings ▸ Control plane**, and click **Show** beside
    **Clients**.
-2. Click **Pair a Device…**. The window shows a code to scan.
+2. Click **Pair a Client…**, and choose **iPhone or iPad**. The window shows a code to scan.
 3. On the iPhone or iPad, open Agent Loops. It says **Connect to your agents**, with the sign-in
    first. Tap **Use a Code Instead…**, then **Scan the Code**, and point the camera at the
    code.
@@ -77,7 +77,7 @@ this Mac's host and the window go back to it. Your sessions stay on this Mac.
    heading.
 
 On the Mac that runs the control plane, **Pair a Phone or iPad…** in the Agent Loops menu bar
-item opens the same code.
+item opens the same sheet, with **iPhone or iPad** chosen.
 
 An iPhone or iPad whose Agent Loops predates the control plane can't read these codes. It says
 **That isn't a pairing code from Agent Loops on your Mac.** Install the current Agent Loops on it
@@ -87,12 +87,12 @@ first.
 
 1. In a paired window, open **Settings ▸ Control plane**, and click **Show** beside
    **Clients**.
-2. Click **Add a Browser…**, then click **Copy**.
+2. Click **Pair a Client…**, choose **Browser**, then click **Copy**.
 3. In Safari or Chrome on the Mac that runs Agent Loops, open **http://localhost:8792**,
    paste the code, and click **Connect**.
 
-Only a browser on that Mac can use the code, and a code from **Pair a Device…** or
-**Pair a Mac…** does not pair a browser. **Open in Browser** in the Agent Loops menu bar item
+Only a browser on that Mac can use the code, and a code for an iPhone, an iPad or a Mac does
+not pair a browser. A change of the choice in **Pair a Client…** makes a new code. **Open in Browser** in the Agent Loops menu bar item
 pairs the default browser with no code. See
 [Use Agent Loops in a browser](use-agents-in-a-browser.md) for what the page can do.
 
@@ -112,9 +112,9 @@ that runs the control plane: its window pairs itself again.
 - **That isn't a control plane's code. It starts with agents-control:.** The window was
   given something else. Copy the code again.
 - **This is a code for a machine.** It adds a machine that runs agents, not a window. Ask
-  for a code from **Pair a Mac…** instead, or see [Add a machine](add-a-machine.md).
+  for a Mac code from **Pair a Client…** instead, or see [Add a machine](add-a-machine.md).
 - **That code is for adding a host, not a phone.** On the device: the same mistake. Use a
-  code from **Pair a Device…**.
+  code from **Pair a Client…**, with **iPhone or iPad** chosen.
 - **The control plane didn't take that code. It may have run out: show a new one and try
   again.** A code works once, for five minutes. Close the sheet and open it again for a
   new one.

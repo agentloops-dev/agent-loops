@@ -368,7 +368,7 @@ so a browser anywhere can use it. The first browser can pair by a code from the 
 code from a window, phone or browser that is already paired:
 
 1. In Agent Loops on your Mac, open **Settings ▸ Control plane ▸ Clients** and click
-   **Add a Browser…**. On an iPhone or iPad, tap **Add a Browser…** at the foot of the
+   **Pair a Client…**, then choose **Browser**. On an iPhone or iPad, tap **Add a Browser…** at the foot of the
    sidebar.
 2. In the browser, open `https://agents.example.com/`, paste the code, and click
    **Connect**. The code works once, for five minutes.

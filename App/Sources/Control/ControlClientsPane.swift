@@ -9,9 +9,8 @@ struct ControlClientsPage: View {
     @State private var forgettingClient: ClientRecord?
     /// Forget This Mac (#344): the window's own row, asked the same way as any other's.
     @State private var forgettingThisWindow = false
-    @State private var pairingDevice = false
-    @State private var pairingMac = false
-    @State private var pairingBrowser = false
+    /// Pair a Client… (#7270): one sheet, with the kind of client to choose in it.
+    @State private var pairing = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -21,24 +20,18 @@ struct ControlClientsPage: View {
                     clientRow(client)
                 }
             }
-            HStack(spacing: 8) {
-                Button("Pair a Device…") { pairingDevice = true }.buttonStyle(.paper)
-                Button("Pair a Mac…") { pairingMac = true }.buttonStyle(.paper)
-                Button("Add a Browser…") { pairingBrowser = true }.buttonStyle(.paper)
-            }
+            Button("Pair a Client…") { pairing = true }.buttonStyle(.paper)
             Text("Forgetting cuts a client off at once. To use it again, pair it again.")
                 .appText(.supporting).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
-        .sheet(isPresented: $pairingDevice) { PairDeviceSheet(control: control) }
-        // The menu bar item's Pair a Phone or iPad… (#4227).
+        .sheet(isPresented: $pairing) { PairClientSheet(control: control) }
+        // The menu bar item's Pair a Phone or iPad… (#4227): the same sheet, at iPhone or iPad.
         .onChange(of: model.pairDeviceAsked, initial: true) { _, asked in
             guard asked else { return }
             model.pairDeviceAsked = false
-            pairingDevice = true
+            pairing = true
         }
-        .sheet(isPresented: $pairingMac) { CodeSheet(control: control, purpose: .mac).paperSheet() }
-        .sheet(isPresented: $pairingBrowser) { CodeSheet(control: control, purpose: .browser).paperSheet() }
         .confirmationDialog(forgettingClient.map { "Forget \($0.name)?" } ?? "",
                             isPresented: Binding(get: { forgettingClient != nil }, set: { if !$0 { forgettingClient = nil } }),
                             titleVisibility: .visible, presenting: forgettingClient) { client in

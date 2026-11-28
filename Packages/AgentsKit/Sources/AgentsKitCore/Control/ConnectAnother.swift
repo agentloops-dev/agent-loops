@@ -84,10 +84,10 @@ public enum ConnectAnother {
         public static let signIn = "Sign In to agentloops.dev"
         public static let signInNote = "With Apple, Google or GitHub. A new account gets a control plane of its own."
         public static let useCode = "Use a Code…"
-        public static let useCodeNote = "From a control plane that you run: Settings ▸ Clients ▸ Pair a Mac there."
+        public static let useCodeNote = "From a control plane that you run: Settings ▸ Clients ▸ Pair a Client… ▸ Mac there."
         public static let codeNote = "Paste the code, or its link. It works once, for five minutes."
         public static let notACode = "That isn’t a control plane’s code. It starts with agents-control:."
-        public static let machineCode = "This is a code for a machine. Use a code from Pair a Mac on that control plane: this window makes this Mac’s machine code itself."
+        public static let machineCode = "This is a code for a machine. Use a Mac code from Pair a Client… on that control plane: this window makes this Mac’s machine code itself."
         public static let hostedNoCode = "agentloops.dev gave no code. Try again."
 
         /// What happens, said before it does (the spec's words).
