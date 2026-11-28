@@ -18135,6 +18135,27 @@ export interface Workflow {
   to?: WorkflowTo;
   /** deliver: (#6954), for agent: labelled. Absent is next-turn. */
   deliver?: WorkflowDeliver;
+  /**
+   * until: (#6955), for agent: labelled: the events that end its broadcast, with the grammar of
+   * on:. A server's event is subscribed to only while a broadcast is active.
+   */
+  until?: WorkflowTrigger[];
+  /**
+   * for: (#6955), for agent: labelled: the most a broadcast lasts, in seconds. Absent is 24 h; 7
+   * days at most.
+   */
+  for?: number;
+  /**
+   * match: (#6955), for agent: labelled: the details that a start and an end event must share, so
+   * two low volumes are two broadcasts. A server's event is matched by the server's own details,
+   * not the envelope.
+   */
+  match?: string[];
+  /**
+   * end-message: (#6955), for agent: labelled: the words a session that read the broadcast gets
+   * once, at its next turn after the end.
+   */
+  endMessage?: string;
 }
 
 export interface WorkflowApproval {
@@ -18164,6 +18185,13 @@ export interface WorkflowBroadcastStatus {
   reachable: number;
   /** The sessions that were told. */
   read: number;
+  /** The match: details it is for, such as volume=/ (#6955). Absent with no match:. */
+  matchKey?: string;
+  /**
+   * The level of its starting event, such as low or critical (#6955). A worse level replaces its
+   * words.
+   */
+  level?: string;
 }
 
 export type WorkflowCause =
@@ -21022,11 +21050,11 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   WorkTimelineSchedule: { required: ["places", "readAt", "rows"], optional: ["incomplete"] },
   WorkTimelineScheduleRow: { required: ["epic"], optional: ["startedAt", "startSource", "plannedStart", "finish", "blockers", "reason"] },
   WorkTimelineSegment: { required: [], optional: ["startedAt", "closedAt"] },
-  Workflow: { required: ["workflowID", "folder", "name", "triggers", "mode", "prompt", "unknownFields", "settings"], optional: ["problem", "cooldown", "hours", "enabled", "archived", "whenDone", "continueWhenBack", "muted", "runsOn", "to", "deliver"] },
+  Workflow: { required: ["workflowID", "folder", "name", "triggers", "mode", "prompt", "unknownFields", "settings"], optional: ["problem", "cooldown", "hours", "enabled", "archived", "whenDone", "continueWhenBack", "muted", "runsOn", "to", "deliver", "until", "for", "match", "endMessage"] },
   WorkflowApproval: { required: ["digest", "isNew"], optional: ["note"] },
   WorkflowApproveRequest: { required: ["folder", "workflowID", "digest"], optional: [] },
   WorkflowArchiveRequest: { required: ["folder", "workflowID", "archived"], optional: [] },
-  WorkflowBroadcastStatus: { required: ["id", "startedAt", "endsAt", "reachable", "read"], optional: [] },
+  WorkflowBroadcastStatus: { required: ["id", "startedAt", "endsAt", "reachable", "read"], optional: ["matchKey", "level"] },
   WorkflowClaim: { required: ["workflow", "trigger"], optional: [] },
   WorkflowClaimed: { required: ["won"], optional: [] },
   WorkflowEnableRequest: { required: ["folder", "workflowID", "enabled"], optional: [] },

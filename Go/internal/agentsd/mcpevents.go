@@ -383,6 +383,8 @@ func (d *Daemon) workflowsHearingServers() []hearingWorkflow {
 					ts = append(ts, mt)
 				}
 			}
+			// A labelled workflow's until: is heard only while it has an active broadcast (#6955).
+			ts = append(ts, d.untilServerTriggersLocked(folder, id, w)...)
 			if len(ts) == 0 {
 				continue
 			}

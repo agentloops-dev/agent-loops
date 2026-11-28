@@ -19,7 +19,8 @@ import (
 // default) nothing is queued: each turn's start adds the active broadcasts that the session
 // matches and has not read (broadcastTurnText), so no idle session is started. steer and wake
 // send at once, to 20 sessions at most; the rest hear it at their next turn. A broadcast ends
-// by its 24 h default (#6955 adds until: and for:), and an ended one goes a day later.
+// by until:, for: (24 h by default) and the rest of broadcastend.go (#6955), and an ended one
+// goes a day later.
 
 const (
 	labelledMode         = "labelled"
@@ -40,6 +41,8 @@ type broadcastRead struct {
 	SessionID wire.UUID `json:"sessionID"`
 	Revision  int64     `json:"revision"`
 	ReadAt    wire.Date `json:"readAt"`
+	// EndToldAt is when it was told that the broadcast ended (#6955).
+	EndToldAt *wire.Date `json:"endToldAt,omitzero"`
 }
 
 // broadcast is one in broadcasts.json: one per workflow, folder and match values.
@@ -50,6 +53,8 @@ type broadcast struct {
 	Name       string               `json:"name"`
 	MatchKey   string               `json:"matchKey,omitzero"`
 	Text       string               `json:"text"`
+	EndText    string               `json:"endText,omitzero"`
+	Level      *string              `json:"level,omitzero"`
 	Revision   int64                `json:"revision"`
 	To         wire.WorkflowTo      `json:"to"`
 	Deliver    wire.WorkflowDeliver `json:"deliver"`
@@ -59,6 +64,11 @@ type broadcast struct {
 	EndedAt    *wire.Date           `json:"endedAt,omitzero"`
 	EndedBy    *string              `json:"endedBy,omitzero"`
 	Reads      []broadcastRead      `json:"reads"`
+	// StartEvent and Volume are what started it, and HasUntil whether an event ends it, so
+	// the first disk look after a restart can end it (#6955).
+	StartEvent string `json:"startEvent,omitzero"`
+	Volume     string `json:"volume,omitzero"`
+	HasUntil   bool   `json:"hasUntil,omitzero"`
 	// Unreached is the sessions not told because 200 had read it.
 	Unreached int64 `json:"unreached,omitzero"`
 }
@@ -80,6 +90,9 @@ type broadcastBook struct {
 	broadcastFile *store.JSONFile[broadcast]
 	// broadcastCopy is the file as last written or read; nil before the first read.
 	broadcastCopy map[string]broadcast
+	// diskRechecked is whether the first disk look since the start has ended the broadcasts
+	// that ended while the daemon was away (#6955).
+	diskRechecked bool
 }
 
 func (d *Daemon) openBroadcasts() *store.JSONFile[broadcast] {
@@ -221,17 +234,23 @@ func (d *Daemon) fireBroadcast(fr fireRequest, w wire.Workflow) {
 		refuse(fmt.Sprintf("its words are %d characters, and a labelled workflow sends at most %d", n, broadcastTextMost))
 		return
 	}
-	b, why := d.startBroadcast(fr, w, text)
+	b, raised, why := d.startBroadcast(fr, w, text)
 	if why != "" {
 		refuse(why)
 		return
+	}
+	if !raised {
+		d.scheduleBroadcastEnd(b)
+		// An until: of a server's event is subscribed to now that it is active.
+		d.kickMCPEvents()
 	}
 	told, later, notTold := d.deliverBroadcast(b)
 	d.noteBroadcastRan(fr, w, b, told, later, notTold)
 }
 
-// startBroadcast keeps a new broadcast, or says why it cannot.
-func (d *Daemon) startBroadcast(fr fireRequest, w wire.Workflow, text string) (broadcast, string) {
+// startBroadcast keeps a new broadcast, or says why it cannot. A start of an active one with
+// a worse level replaces its words, so its readers read it again: raised.
+func (d *Daemon) startBroadcast(fr fireRequest, w wire.Workflow, text string) (b broadcast, raised bool, why string) {
 	at := nowFunc()
 	by := "person"
 	if !fr.byHand {
@@ -240,19 +259,30 @@ func (d *Daemon) startBroadcast(fr fireRequest, w wire.Workflow, text string) (b
 	if fr.byAgent != nil {
 		by = "agent"
 	}
-	b := broadcast{ID: store.NewUUID(), Folder: fr.folder, WorkflowID: fr.id, Name: w.Name, Text: text, Revision: 1,
-		To: *w.To, Deliver: deliverOf(w), StartedAt: wire.DateOf(at), StartedBy: by,
-		EndsAt: wire.DateOf(at.Add(broadcastFor)), Reads: []broadcastRead{}}
-	why := ""
+	b = broadcast{ID: store.NewUUID(), Folder: fr.folder, WorkflowID: fr.id, Name: w.Name, Text: text, Revision: 1,
+		EndText: broadcastEndText(w), To: *w.To, Deliver: deliverOf(w), StartedAt: wire.DateOf(at), StartedBy: by,
+		EndsAt: wire.DateOf(at.Add(broadcastForOf(w))), Reads: []broadcastRead{}, HasUntil: len(w.Until) > 0}
+	if fr.event != nil {
+		b.MatchKey, b.StartEvent, b.Volume = broadcastMatchKey(w.Match, fr.event), fr.event.Name, fr.event.Details["volume"]
+		if l := fr.event.Details["level"]; l != "" {
+			b.Level = &l
+		}
+	}
 	d.broadcastMu.Lock()
 	defer d.broadcastMu.Unlock()
 	err := d.updateBroadcastsLocked(func(m map[string]broadcast) error {
-		endBroadcasts(m, at)
-		for _, o := range m {
-			if o.Folder == b.Folder && o.WorkflowID == b.WorkflowID && o.MatchKey == b.MatchKey && o.active(at) {
-				why = "it is still active, until " + clock(o.EndsAt) + ", so a second start changes nothing"
-				return errBroadcastRefused
+		dropEndedBroadcasts(m, at)
+		for k, o := range m {
+			if o.Folder != b.Folder || o.WorkflowID != b.WorkflowID || o.MatchKey != b.MatchKey || !o.active(at) {
+				continue
 			}
+			if b.Level != nil && worseLevel(o.Level, *b.Level) {
+				o.Text, o.Level, o.Revision = b.Text, b.Level, o.Revision+1
+				m[k], b, raised = o, o, true
+				return nil
+			}
+			why = "it is still active, until " + clock(o.EndsAt) + ", so a second start changes nothing"
+			return errBroadcastRefused
 		}
 		if len(m) >= broadcastsMost && !evictEndedBroadcast(m) {
 			why = fmt.Sprintf("%d broadcasts are active on this machine, the most there can be", broadcastsMost)
@@ -264,26 +294,19 @@ func (d *Daemon) startBroadcast(fr fireRequest, w wire.Workflow, text string) (b
 	if err != nil && why == "" {
 		why = "its broadcast could not be kept: " + err.Error()
 	}
-	return b, why
+	return b, raised, why
 }
 
 var errBroadcastRefused = &Error{Code: CodeNotSupported, Message: "refused"}
 
-// endBroadcasts ends each broadcast whose time is up, and drops each that ended a day ago.
-func endBroadcasts(m map[string]broadcast, at time.Time) bool {
-	changed := false
+// dropEndedBroadcasts drops each broadcast that ended a day ago. One whose time is up is
+// ended by endDueBroadcasts, which says so on the log.
+func dropEndedBroadcasts(m map[string]broadcast, at time.Time) {
 	for k, b := range m {
-		switch {
-		case b.EndedAt == nil && !at.Before(b.EndsAt.Time()):
-			end, by := b.EndsAt, "time"
-			b.EndedAt, b.EndedBy = &end, &by
-			m[k], changed = b, true
-		case b.EndedAt != nil && at.Sub(b.EndedAt.Time()) >= broadcastKeptEnded:
+		if b.EndedAt != nil && at.Sub(b.EndedAt.Time()) >= broadcastKeptEnded {
 			delete(m, k)
-			changed = true
 		}
 	}
-	return changed
 }
 
 // evictEndedBroadcast drops the broadcast that ended first, to make room.
@@ -356,12 +379,13 @@ func (d *Daemon) broadcastNowRefusal(b broadcast, a *wire.Agent, sent int) strin
 // turn of an idle session. It marks the read first, so the turn's start does not tell it
 // again, and takes it back when the words did not go. It is "" when told, else why not.
 func (d *Daemon) sendBroadcastNow(b broadcast, a *wire.Agent) string {
-	if !d.markBroadcastRead(b.ID, a.ID) {
+	marked, was := d.markBroadcastRead(b.ID, a.ID)
+	if !marked {
 		return "it had read it already"
 	}
 	why := d.sendBroadcastWords(b, a)
 	if why != "" {
-		d.unmarkBroadcastRead(b.ID, a.ID)
+		d.unmarkBroadcastRead(b.ID, a.ID, was)
 	}
 	return why
 }
@@ -399,14 +423,19 @@ func (d *Daemon) sendBroadcastWords(b broadcast, a *wire.Agent) string {
 }
 
 // markBroadcastRead records that a session was told, unless it was or 200 were. False when
-// it is not to be told.
-func (d *Daemon) markBroadcastRead(id, session wire.UUID) bool {
+// it is not to be told. was is the revision it had read before a worse level, else 0.
+func (d *Daemon) markBroadcastRead(id, session wire.UUID) (marked bool, was int64) {
 	d.broadcastMu.Lock()
 	defer d.broadcastMu.Unlock()
-	marked := false
 	_ = d.updateBroadcastsLocked(func(m map[string]broadcast) error {
 		b, ok := m[string(id)]
 		if !ok || b.readBy(session) {
+			return nil
+		}
+		if i := readIndex(b.Reads, session); i >= 0 {
+			was = b.Reads[i].Revision
+			b.Reads[i].Revision, b.Reads[i].ReadAt = b.Revision, now()
+			m[string(id)], marked = b, true
 			return nil
 		}
 		if len(b.Reads) >= broadcastReadsMost {
@@ -418,10 +447,11 @@ func (d *Daemon) markBroadcastRead(id, session wire.UUID) bool {
 		m[string(id)], marked = b, true
 		return nil
 	})
-	return marked
+	return marked, was
 }
 
-func (d *Daemon) unmarkBroadcastRead(id, session wire.UUID) {
+// unmarkBroadcastRead takes a read back: to the revision it had read, or out with none.
+func (d *Daemon) unmarkBroadcastRead(id, session wire.UUID, was int64) {
 	d.broadcastMu.Lock()
 	defer d.broadcastMu.Unlock()
 	_ = d.updateBroadcastsLocked(func(m map[string]broadcast) error {
@@ -431,7 +461,10 @@ func (d *Daemon) unmarkBroadcastRead(id, session wire.UUID) {
 		}
 		kept := b.Reads[:0]
 		for _, r := range b.Reads {
-			if r.SessionID != session {
+			if r.SessionID == session && was > 0 {
+				r.Revision = was
+			}
+			if r.SessionID != session || was > 0 {
 				kept = append(kept, r)
 			}
 		}
@@ -509,12 +542,14 @@ func (d *Daemon) broadcastTurnText(id wire.UUID) string {
 		return ""
 	}
 	folder := folderPath(a)
+	// A workflow turned off or archived in its file ends its broadcasts before they are given.
+	d.endBroadcastsOfStoppedWorkflows()
 	at := nowFunc()
 	d.broadcastMu.Lock()
 	defer d.broadcastMu.Unlock()
 	due := false
 	for _, b := range d.broadcastsLocked() {
-		if b.active(at) && !b.readBy(id) && broadcastMatches(b.To, folder, a) {
+		if b.endDue(id, at) || b.active(at) && !b.readBy(id) && broadcastMatches(b.To, folder, a) {
 			due = true
 			break
 		}
@@ -530,18 +565,42 @@ func (d *Daemon) broadcastTurnText(id wire.UUID) string {
 	return strings.Join(texts, "\n\n")
 }
 
-// takeBroadcasts marks each due broadcast read by a, and is their words, the oldest first.
+// takeBroadcasts marks each due broadcast read by a, and is their words, the oldest first: the
+// end words of each that ended after a read it, once, then the words of each active one.
 func takeBroadcasts(m map[string]broadcast, a *wire.Agent, folder string, at time.Time) []string {
-	var due []broadcast
+	var due, ended []broadcast
 	for _, b := range m {
-		if b.active(at) && !b.readBy(a.ID) && broadcastMatches(b.To, folder, a) {
+		switch {
+		case b.endDue(a.ID, at):
+			ended = append(ended, b)
+		case b.active(at) && !b.readBy(a.ID) && broadcastMatches(b.To, folder, a):
 			due = append(due, b)
 		}
 	}
-	sort.Slice(due, func(i, j int) bool { return due[i].StartedAt.Time().Before(due[j].StartedAt.Time()) })
+	oldest := func(bs []broadcast) func(i, j int) bool {
+		return func(i, j int) bool { return bs[i].StartedAt.Time().Before(bs[j].StartedAt.Time()) }
+	}
+	sort.Slice(ended, oldest(ended))
+	sort.Slice(due, oldest(due))
 	var texts []string
+	for _, b := range ended {
+		for i := range b.Reads {
+			if b.Reads[i].SessionID == a.ID {
+				told := wire.DateOf(at)
+				b.Reads[i].EndToldAt = &told
+			}
+		}
+		if b.EndText != "" {
+			texts = append(texts, b.EndText)
+		}
+		m[string(b.ID)] = b
+	}
 	for _, b := range due {
-		if len(b.Reads) >= broadcastReadsMost {
+		if i := readIndex(b.Reads, a.ID); i >= 0 {
+			// A worse level replaced the words: it reads the new revision.
+			b.Reads[i].Revision, b.Reads[i].ReadAt = b.Revision, wire.DateOf(at)
+			texts = append(texts, b.Text)
+		} else if len(b.Reads) >= broadcastReadsMost {
 			b.Unreached++
 		} else {
 			b.Reads = append(b.Reads, broadcastRead{SessionID: a.ID, Revision: b.Revision, ReadAt: wire.DateOf(at)})
@@ -550,6 +609,15 @@ func takeBroadcasts(m map[string]broadcast, a *wire.Agent, folder string, at tim
 		m[string(b.ID)] = b
 	}
 	return texts
+}
+
+func readIndex(reads []broadcastRead, id wire.UUID) int {
+	for i, r := range reads {
+		if r.SessionID == id {
+			return i
+		}
+	}
+	return -1
 }
 
 // broadcastStatuses is a workflow's active broadcasts for its summary, the newest first.
@@ -579,8 +647,13 @@ func (d *Daemon) broadcastStatuses(folder, workflowID string) []wire.WorkflowBro
 				reachable++
 			}
 		}
-		out = append(out, wire.WorkflowBroadcastStatus{ID: b.ID, StartedAt: b.StartedAt, EndsAt: b.EndsAt,
-			Reachable: reachable, Read: int64(len(b.Reads))})
+		s := wire.WorkflowBroadcastStatus{ID: b.ID, StartedAt: b.StartedAt, EndsAt: b.EndsAt,
+			Reachable: reachable, Read: int64(len(b.Reads)), Level: b.Level}
+		if b.MatchKey != "" {
+			k := b.MatchKey
+			s.MatchKey = &k
+		}
+		out = append(out, s)
 	}
 	return out
 }
@@ -591,10 +664,12 @@ func (d *Daemon) sweepBroadcasts(at time.Time) {
 	if d.broadcastFile == nil || d.Store == nil {
 		return
 	}
+	d.endDueBroadcasts()
+	d.endBroadcastsOfStoppedWorkflows()
 	d.broadcastMu.Lock()
 	defer d.broadcastMu.Unlock()
 	_ = d.updateBroadcastsLocked(func(m map[string]broadcast) error {
-		endBroadcasts(m, at)
+		dropEndedBroadcasts(m, at)
 		for k, b := range m {
 			kept := b.Reads[:0]
 			for _, r := range b.Reads {

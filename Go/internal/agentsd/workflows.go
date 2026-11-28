@@ -1011,6 +1011,9 @@ func (d *Daemon) enableWorkflow(r wire.WorkflowEnableRequest, by string) (wire.W
 	if err != nil {
 		return wire.WorkflowSummary{}, err
 	}
+	if !r.Enabled {
+		d.endBroadcastsOfStoppedWorkflows() // turning it off ends its broadcasts (#6955)
+	}
 	d.tellEveryWorkflow()
 	return d.oneWorkflow(folder, r.WorkflowID)
 }
@@ -1103,6 +1106,7 @@ func (d *Daemon) archiveWorkflow(r wire.WorkflowArchiveRequest, byPerson bool) (
 	}
 	if r.Archived {
 		d.unpinWorkflow(folder, r.WorkflowID)
+		d.endBroadcastsOfStoppedWorkflows() // archiving it ends its broadcasts (#6955)
 	}
 	d.tellEveryWorkflow()
 	return d.oneWorkflow(folder, r.WorkflowID)
@@ -1148,6 +1152,7 @@ func (d *Daemon) deleteWorkflow(r wire.WorkflowRequest) error {
 	d.scanLocked()
 	d.workflowMu.Unlock()
 	d.unpinWorkflow(folder, r.WorkflowID)
+	d.endBroadcastsOfStoppedWorkflows() // a deleted workflow's broadcasts end (#6955)
 	Broadcast(d, wire.NotifyWorkflowRemoved, wire.WorkflowRemovedNotification{Folder: store.FolderURL(folder), WorkflowID: r.WorkflowID})
 	_, _ = d.sendFolder(folder) // a folder no longer listed has nothing to tell
 	d.tellEveryWorkflow()
