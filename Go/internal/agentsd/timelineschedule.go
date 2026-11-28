@@ -257,56 +257,8 @@ func markCycles(all []*scheduleEpic) {
 // blocker that finishes. Places that free at the same moment are filled together. A queued epic left over waits for
 // an epic with no date, or for a place that never frees.
 func placeEpics(all []*scheduleEpic, places int, now time.Time, at forecastAt) {
-	t := float64(wire.DateOf(now))
-	// finished is when a blocker finishes, ok false while it has no date.
-	finished := func(s *scheduleEpic) (float64, bool) {
-		if s.row.Finish == nil {
-			return 0, false
-		}
-		return float64(s.row.Finish.Mid), true
-	}
-	for {
-		busy := 0
-		for _, s := range all {
-			if (s.holds || s.row.PlannedStart != nil) && s.release > t {
-				busy++
-			}
-		}
-		for _, s := range all {
-			if busy >= places {
-				break
-			}
-			if !s.queued || !s.ready(all, t, finished) {
-				continue
-			}
-			start := wire.Date(t)
-			f := at(s.e, start.Time())
-			if f == nil {
-				s.queued = false
-				s.undated(wire.WorkTimelineScheduleReasonNoForecast)
-				continue
-			}
-			s.queued = false
-			s.row.PlannedStart, s.row.Finish, s.release = &start, f, float64(f.Mid)
-			busy++
-		}
-		next := math.Inf(1)
-		for _, s := range all {
-			if (s.holds || s.row.PlannedStart != nil) && s.release > t {
-				next = min(next, s.release)
-			}
-			if s.queued {
-				for _, d := range s.deps {
-					if f, ok := finished(all[d]); ok && f > t {
-						next = min(next, f)
-					}
-				}
-			}
-		}
-		if math.IsInf(next, 1) {
-			break
-		}
-		t = next
+	for t := float64(wire.DateOf(now)); !math.IsInf(t, 1); t = nextEvent(all, t) {
+		fillPlaces(all, places, t, at)
 	}
 	for _, s := range all {
 		if !s.queued {
@@ -314,19 +266,74 @@ func placeEpics(all []*scheduleEpic, places int, now time.Time, at forecastAt) {
 		}
 		s.queued = false
 		reason := wire.WorkTimelineScheduleReasonNoPlace
-		for _, d := range s.deps {
-			if _, ok := finished(all[d]); !ok {
-				reason = wire.WorkTimelineScheduleReasonBlockerUndated
-			}
+		if slices.ContainsFunc(s.deps, func(d int) bool { _, ok := all[d].finished(); return !ok }) {
+			reason = wire.WorkTimelineScheduleReasonBlockerUndated
 		}
 		s.undated(reason)
 	}
 }
 
+// finished is when an epic finishes, ok false while it has no date.
+func (s *scheduleEpic) finished() (float64, bool) {
+	if s.row.Finish == nil {
+		return 0, false
+	}
+	return float64(s.row.Finish.Mid), true
+}
+
+// busy says the epic holds a place at t.
+func (s *scheduleEpic) busy(t float64) bool { return (s.holds || s.row.PlannedStart != nil) && s.release > t }
+
+// fillPlaces gives the places free at t to the queued epics that are ready then, in the queue's order.
+func fillPlaces(all []*scheduleEpic, places int, t float64, at forecastAt) {
+	busy := 0
+	for _, s := range all {
+		if s.busy(t) {
+			busy++
+		}
+	}
+	for _, s := range all {
+		if busy >= places {
+			return
+		}
+		if !s.queued || !s.ready(all, t) {
+			continue
+		}
+		s.queued = false
+		start := wire.Date(t)
+		f := at(s.e, start.Time())
+		if f == nil {
+			s.undated(wire.WorkTimelineScheduleReasonNoForecast)
+			continue
+		}
+		s.row.PlannedStart, s.row.Finish, s.release = &start, f, float64(f.Mid)
+		busy++
+	}
+}
+
+// nextEvent is the first time after t that a place frees or a queued epic's blocker finishes; +Inf when none does.
+func nextEvent(all []*scheduleEpic, t float64) float64 {
+	next := math.Inf(1)
+	for _, s := range all {
+		if s.busy(t) {
+			next = min(next, s.release)
+		}
+		if !s.queued {
+			continue
+		}
+		for _, d := range s.deps {
+			if f, ok := all[d].finished(); ok && f > t {
+				next = min(next, f)
+			}
+		}
+	}
+	return next
+}
+
 // ready says every open epic blocker of s has finished by t.
-func (s *scheduleEpic) ready(all []*scheduleEpic, t float64, finished func(*scheduleEpic) (float64, bool)) bool {
+func (s *scheduleEpic) ready(all []*scheduleEpic, t float64) bool {
 	for _, d := range s.deps {
-		if f, ok := finished(all[d]); !ok || f > t {
+		if f, ok := all[d].finished(); !ok || f > t {
 			return false
 		}
 	}

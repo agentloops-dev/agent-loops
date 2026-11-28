@@ -69,12 +69,9 @@ func (d *Daemon) workTimeline(ctx context.Context, r wire.WorkTimelineRequest) (
 	if r.To < r.From {
 		return wire.WorkTimeline{}, Invalid("%s: to is before from", method)
 	}
-	places := schedulePlaces
-	if r.Places != nil {
-		if *r.Places < 1 || *r.Places > schedulePlacesMost {
-			return wire.WorkTimeline{}, Invalid("%s: places is 1 to %d", method, schedulePlacesMost)
-		}
-		places = int(*r.Places)
+	places, err := timelinePlaces(method, r.Places)
+	if err != nil {
+		return wire.WorkTimeline{}, err
 	}
 	out := wire.WorkTimeline{Epics: []wire.WorkTimelineEpic{}, Releases: []wire.WorkTimelineRelease{}, TimeZone: zoneName()}
 	repos, folderOf, other := d.workTimelineRepos(r.Project)
@@ -107,8 +104,8 @@ func (d *Daemon) workTimeline(ctx context.Context, r wire.WorkTimelineRequest) (
 	d.timelineForgetGone()
 	var epics []timelineEpic
 	scopes := []string{}
-	// cut says a list was cut short: the schedule dates no epic (#7525).
-	cut := false
+	// cuts are the repos whose list of open epics was cut short: the schedule dates no epic then (#7525).
+	cuts := 0
 	for _, repo := range repos {
 		read, err := d.githubTimeline(ctx, gh, conn, repo.path, since, from, withHeld)
 		if err != nil {
@@ -119,7 +116,7 @@ func (d *Daemon) workTimeline(ctx context.Context, r wire.WorkTimelineRequest) (
 		if len(read.Rest) > 0 {
 			out.Partial = new(true)
 		}
-		cut = cut || read.OpenMore
+		cuts += boolRank(read.OpenMore)
 		for _, e := range read.Epics {
 			if e := d.timelineEpicOf(e, folderOf[repo]); withHeld || !e.held {
 				epics = append(epics, e)
@@ -138,16 +135,33 @@ func (d *Daemon) workTimeline(ctx context.Context, r wire.WorkTimelineRequest) (
 	}
 	// The forecast draws from the epics in their order, so the order does not depend on which of them were kept.
 	slices.SortFunc(epics, func(a, b timelineEpic) int { return cmp.Compare(a.wire.Item.Node.Ref, b.wire.Item.Node.Ref) })
+	d.timelineForecastAndSchedule(r, epics, now, places, cuts+len(repos)-len(scopes), &out)
+	slices.SortFunc(out.Releases, func(a, b wire.WorkTimelineRelease) int { return cmp.Compare(a.At, b.At) })
+	return out, nil
+}
+
+// timelineForecastAndSchedule sets out's epics, with their forecasts, and its schedule (#7525); a partial answer has
+// neither forecast nor schedule. cut counts the lists cut short and the repos not read.
+func (d *Daemon) timelineForecastAndSchedule(r wire.WorkTimelineRequest, epics []timelineEpic, now time.Time, places, cut int, out *wire.WorkTimeline) {
 	forecast := func(*timelineEpic) {}
 	if out.Partial == nil {
 		var at forecastAt
-		forecast, at = d.timelineForecast(r.Project, epics, now, &out)
-		schedule := timelineSchedule(epics, places, now, cut || len(scopes) < len(repos), at)
+		forecast, at = d.timelineForecast(r.Project, epics, now, out)
+		schedule := timelineSchedule(epics, places, now, cut > 0, at)
 		out.Schedule = &schedule
 	}
 	out.Epics = timelineAnswer(epics, r.From, r.To, forecast)
-	slices.SortFunc(out.Releases, func(a, b wire.WorkTimelineRelease) int { return cmp.Compare(a.At, b.At) })
-	return out, nil
+}
+
+// timelinePlaces is a request's places (#7525): schedulePlaces when it says none.
+func timelinePlaces(method string, places *int64) (int, error) {
+	switch {
+	case places == nil:
+		return schedulePlaces, nil
+	case *places < 1 || *places > schedulePlacesMost:
+		return 0, Invalid("%s: places is 1 to %d", method, schedulePlacesMost)
+	}
+	return int(*places), nil
 }
 
 // timelineAnswer is the epics drawn in from to to: those with children that overlap it, forecast, by their first start;
