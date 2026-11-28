@@ -42,8 +42,8 @@ Mac. Only a device you have paired can reach it, and you pair it once, by scanni
 code.
 
 In the Agent Loops window on your Mac, open **Settings ▸ Control plane**, click **Show** beside
-**Clients**, and click **Pair a Device…**. **Pair a Phone or iPad…** in the Agent Loops menu bar
-item opens the same code.
+**Clients**, click **Pair a Client…**, and choose **iPhone or iPad**. **Pair a Phone or iPad…** in
+the Agent Loops menu bar item opens the same code.
 
 You should see a code to scan, good for five minutes.
 

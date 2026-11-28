@@ -1,5 +1,6 @@
-// Settings ▸ Control plane ▸ Clients (#4253), as the window's: Pair a Device… (a QR code the Remote scans),
-// Pair a Mac… and Add a Browser… (a code to paste), each a one-use code from clients/startPairing. A Mac's code is a
+// Settings ▸ Control plane ▸ Clients (#4253), as the window's: Pair a Client… (#7270), with the kind to choose in
+// its dialog: an iPhone or iPad (a QR code the Remote scans), a Mac or a browser (a code to paste), each a one-use
+// code from clients/startPairing. A Mac's code is a
 // terminal's too, as loops auth login takes it (#6875).
 import { encode } from "uqr";
 import type { WebRemoteStatus } from "../protocol/generated";
@@ -12,8 +13,10 @@ export const pairPurposes: readonly PairPurpose[] = ["device", "mac", "browser"]
 export const pairWords = {
   heading: "Clients",
   hint: "Each code works once, for one client. That client can then do all this page can.",
-  button: (purpose: PairPurpose) => `${pairWords.title(purpose)}…`,
-  title: (purpose: PairPurpose) => (purpose === "device" ? "Pair a Device" : purpose === "mac" ? "Pair a Mac" : "Add a Browser"),
+  button: "Pair a Client…",
+  title: "Pair a Client",
+  kindLabel: "Client",
+  kind: (purpose: PairPurpose) => (purpose === "device" ? "iPhone or iPad" : purpose === "mac" ? "Mac" : "Browser"),
   terminal: "Or pair a terminal with it: run this in the terminal.",
   making: "Making a code…",
   scan: "Open Agent Loops on your iPhone or iPad and scan this code.",
@@ -71,7 +74,7 @@ export function terminalLogin(code: string): string {
  * web page cannot write to a computer's disk, so each line is to copy. On a Mac, Agent Loops' set-up links it. */
 export const commandLine = {
   heading: "Command line",
-  hint: "loops starts and continues sessions from a terminal. Put it on your PATH, then pair it with Pair a Mac…'s code. On a Mac with Agent Loops it needs no code: run any loops command, and approve it in Needs you on that Mac.",
+  hint: "loops starts and continues sessions from a terminal. Put it on your PATH, then pair it with a Mac's code from Pair a Client…. On a Mac with Agent Loops it needs no code: run any loops command, and approve it in Needs you on that Mac.",
   releases: "Each release has loops for darwin and linux, arm64 and amd64, on the releases page of agentloops-dev/agents-releases.",
   lines: [
     { label: "On a Mac with Agent Loops (set-up does this for you)", line: "mkdir -p ~/.local/bin && ln -sf \"/Applications/Agent Loops.app/Contents/Helpers/loops\" ~/.local/bin/loops" },

@@ -64,7 +64,7 @@ test("pairing proves the code as Swift does, and checks the control plane's proo
 });
 
 test("a code the control plane won't pair a browser with is refused in its own words (R2)", async () => {
-  const words = "That code is for a window or a phone. Get one from Add a Browser….";
+  const words = "That code is for a window or a phone. Get a browser’s code from Pair a Client… or Add a Browser….";
   const server = fakeServer((_line, n) => {
     if (n === 1) return { ok: { mac: w.base64url(w.unhex(v.code.mac.server)), grant: "device" } };
     if (n === 2) return { jsonrpc: "2.0", id: 1, error: { code: -32602, message: words } };

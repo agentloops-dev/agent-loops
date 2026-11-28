@@ -10,10 +10,10 @@ export const connectAnotherWords = {
   signIn: "Sign In to agentloops.dev",
   signInNote: "In Agent Loops on this Mac, with Apple, Google or GitHub. A new account gets a control plane of its own.",
   useCode: "Use a Code…",
-  useCodeNote: "From a control plane that you run: Settings ▸ Clients ▸ Pair a Mac there.",
+  useCodeNote: "From a control plane that you run: Settings ▸ Clients ▸ Pair a Client… ▸ Mac there.",
   codeNote: "Paste the code. It works once, for five minutes.",
   notACode: "That isn’t a control plane’s code. It starts with agents-control:.",
-  machineCode: "This is a code for a machine. Use a code from Pair a Mac on that control plane: Agent Loops on this Mac makes this Mac’s machine code itself.",
+  machineCode: "This is a code for a machine. Use a Mac code from Pair a Client… on that control plane: Agent Loops on this Mac makes this Mac’s machine code itself.",
   asking: "Asking Agent Loops on this Mac…",
   hosted: "agentloops.dev",
 } as const;

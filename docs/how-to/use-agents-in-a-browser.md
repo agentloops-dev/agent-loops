@@ -47,7 +47,7 @@ For a browser that isn't the default one, open **http://localhost:8792** in it. 
 says **Connect this browser to your agents**.
 
 1. In the window, open **Settings ▸ Control plane**, click **Show** beside **Clients**, then
-   click **Add a Browser…**.
+   click **Pair a Client…** and choose **Browser**.
 
    Click **Copy**. Whoever pastes the code can then do everything the window can, so paste
    it only into this page.
@@ -66,7 +66,8 @@ off by default.
 The page works as it does with the control plane here, with two differences:
 
 - **Open in Browser** is not offered. Pair the browser by hand, as above: get the code from
-  **Add a Browser…** in the window, or at the foot of the Remote's sidebar.
+  **Pair a Client…** ▸ **Browser** in the window, or **Add a Browser…** at the foot of the
+  Remote's sidebar.
 - The page needs the control plane. This Mac's host passes the page through to it, and the
   control plane checks the browser. When the control plane can't be reached, the page says it
   is offline, and connects again once it can.
@@ -77,8 +78,9 @@ the control plane moves, because its key and the address stay the same.
 ### A browser on another computer
 
 A control plane in the cloud serves the same page at its own address, such as
-`https://agents.example.com/`, for a browser anywhere. **Add a Browser…** in the window, or
-at the foot of the Remote's sidebar, gives the code and says the address. See
+`https://agents.example.com/`, for a browser anywhere. **Pair a Client…** ▸ **Browser** in the
+window, or **Add a Browser…** at the foot of the Remote's sidebar, gives the code and says the
+address. See
 [Run the control plane in the cloud](run-the-control-plane-in-the-cloud.md#use-agent-loops-in-a-browser).
 
 ### What you can do there
@@ -170,11 +172,11 @@ GitHub](sign-in-with-google-apple-or-github.md#sign-in-with-your-organisations-p
   An address with `#code=` in it, from the browser's history, is one of these: choose **Open in
   Browser** again instead.
 - **That isn't an Agent Loops code. It starts agents-control:2:c:** Something else was pasted, or a
-  code for a host. Copy the code again from **Add a Browser…**.
+  code for a host. Copy the code again from **Pair a Client…** ▸ **Browser**.
 - **This code is for another control plane.** The code came from a different set-up from the
   one serving this page.
-- **That code is for a window or a phone. Get one from Add a Browser….** A code from **Pair a
-  Device…** or **Pair a Mac…** works only for those. Get one made for a browser. It works the
+- **That code is for a window or a phone. Get a browser’s code from Pair a Client… or Add a
+  Browser….** A code for an iPhone, an iPad or a Mac works only for those. Get one made for a browser. It works the
   other way too: a browser's code pasted into a phone or a window says **That code is for a
   browser. Paste it in the Agent Loops page.**
 - **Can't reach the control plane at localhost:8792. Trying again.** The control plane on

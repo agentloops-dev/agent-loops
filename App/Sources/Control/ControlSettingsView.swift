@@ -321,55 +321,26 @@ struct FolderDetectionCard: View {
     }
 }
 
-// MARK: - G · Pair a Mac, and Add by Code
+// MARK: - G · Add by Code
 
-/// Frame G: the code as text, since a Mac has no camera; and the same sheet for a host's
-/// code. Every client may do everything (#111), so there is nothing to choose first.
+/// Frame G: a host's code as text, for a machine that runs agentsd by hand. A client's code is
+/// Pair a Client…'s (#7270).
 struct CodeSheet: View {
-    /// A browser is a client like a Mac: on this Mac, or anywhere at the page on the control
-    /// plane's own domain (071, frame E; #1459).
-    enum Purpose { case mac, browser, host }
-
     @Environment(\.dismiss) private var dismiss
     let control: ControlSettingsModel
-    let purpose: Purpose
     @State private var shown: DaemonAPI.ControlCodeShown?
     /// Who was there when the code was made, so whoever it lets in can be named.
     @State private var before: Set<String> = []
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text(title).appText(.reading).fontWeight(.semibold)
+            Text("Add a machine by code").appText(.reading).fontWeight(.semibold)
             if let joined {
                 Text("\(joined) joined with this code. It can’t be used again.")
                     .appText(.reading)
                     .fixedSize(horizontal: false, vertical: true)
             } else if let shown {
-                Text(shown.text)
-                    .appText(.code)
-                    .textSelection(.enabled)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(12)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Paper.raised, in: RoundedRectangle(cornerRadius: 8))
-                    .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Paper.rule, lineWidth: 1))
-                    // One element of its own: a label on the selectable Text overflows the stack (#1724).
-                    .accessibilityElement(children: .ignore)
-                    .accessibilityLabel("Code")
-                    .accessibilityValue(shown.text)
-                HStack(alignment: .firstTextBaseline) {
-                    TimelineView(.periodic(from: .now, by: 1)) { context in
-                        Text(instructions(until: shown.expires, now: context.date))
-                            .appText(.supporting).foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                    Spacer()
-                    Button("Copy") {
-                        NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString(shown.text, forType: .string)
-                    }
-                    .buttonStyle(.paper)
-                }
+                PastedCode(shown: shown) { instructions(until: shown.expires, now: $0) }
             } else {
                 ProgressView().controlSize(.small)
             }
@@ -381,60 +352,22 @@ struct CodeSheet: View {
         .padding(24)
         .frame(width: 560)
         .task {
-            before = members
-            shown = await control.startCode(forHost: purpose == .host, browser: purpose == .browser)
+            before = Set(control.hosts.map(\.id.rawValue))
+            shown = await control.startCode(forHost: true)
         }
         .onDisappear { Task { await control.stopCodes() } }
     }
 
-    private var title: String {
-        switch purpose {
-        case .mac: "Pair a Mac"
-        case .browser: "Add a Browser"
-        case .host: "Add a machine by code"
-        }
-    }
-
-    /// The hosts or clients there are now, by id.
-    private var members: Set<String> {
-        purpose == .host ? Set(control.hosts.map(\.id.rawValue)) : Set(control.clients.map(\.id.uuidString))
-    }
-
-    /// Whoever arrived since the code was made: the code let them in, and is spent.
+    /// The machine that arrived since the code was made: the code let it in, and is spent.
     private var joined: String? {
         guard shown != nil else { return nil }
-        if purpose == .host {
-            return control.hosts.first { !before.contains($0.id.rawValue) }?.name
-        }
-        return control.clients.first { !before.contains($0.id.uuidString) }?.name
+        return control.hosts.first { !before.contains($0.id.rawValue) }?.name
     }
 
     private func instructions(until expires: Date, now: Date) -> String {
         let left = max(0, Int(expires.timeIntervalSince(now)))
         let time = left == 0 ? "It has run out; close this and ask again." : "It works once, for \(left / 60):\(String(format: "%02d", left % 60))."
-        switch purpose {
-        case .mac:
-            return "On the other Mac, open Agent Loops, choose Connect to a control plane and paste this. That Mac can then do all this window can. \(time)"
-        case .browser:
-            return "\(browserWhere) That browser can then do all this window can. \(time)"
-        case .host:
-            return "On the other machine, start its agents with agentsd --control-code and this code. \(time)"
-        }
-    }
-
-    /// Where to paste a browser's code: the page on the control plane's own domain, for a
-    /// browser anywhere (#1459), and the page on this Mac while it is served, else why it
-    /// isn't, as the Overview's row says (071 R3).
-    private var browserWhere: String {
-        let anywhere = control.status?.publicWeb
-        guard let web = control.status?.web else {
-            if let anywhere { return "In any browser, open \(anywhere) and paste it in." }
-            return "Turn on Serve Agent Loops to browsers on this Mac in Settings ▸ Control plane first."
-        }
-        let here = web.served ? "On this Mac, open \(web.address) and paste it in."
-            : "\(web.summary) Press Try Again beside Serve Agent Loops to browsers on this Mac in Settings ▸ Control plane, then open \(web.address) on this Mac and paste it in."
-        guard let anywhere else { return here }
-        return "In any browser, open \(anywhere) and paste it in. \(here)"
+        return "On the other machine, start its agents with agentsd --control-code and this code. \(time)"
     }
 }
 

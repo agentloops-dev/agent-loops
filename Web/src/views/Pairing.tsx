@@ -135,7 +135,7 @@ export function Pairing({ session }: { session: Session }) {
         {onThisMac() ? (
           <p>
             Get a code from Agent Loops on this Mac:{" "}
-            <strong>Settings ▸ Control plane ▸ Clients ▸ Add a Browser…</strong>. Paste it here. Or choose{" "}
+            <strong>Settings ▸ Control plane ▸ Clients ▸ Pair a Client… ▸ Browser</strong>. Paste it here. Or choose{" "}
             <strong>Open in Browser</strong> in Agent Loops' menu bar item: it opens this page paired.
           </p>
         ) : (
@@ -143,7 +143,7 @@ export function Pairing({ session }: { session: Session }) {
           <p>
             {org && "Or pair with a code. "}
             Get a code from Agent Loops where it is already connected: on a Mac,{" "}
-            <strong>Settings ▸ Control plane ▸ Clients ▸ Add a Browser…</strong>; on an iPhone or iPad,{" "}
+            <strong>Settings ▸ Control plane ▸ Clients ▸ Pair a Client… ▸ Browser</strong>; on an iPhone or iPad,{" "}
             <strong>Add a Browser…</strong> at the foot of the sidebar. Paste it here.
           </p>
         )}

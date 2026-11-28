@@ -13,7 +13,7 @@ export type AchievementID =
 /** Every achievement, in the order a newcomer meets them, with `Achievement.title` and `.how`. */
 export const achievementList: { id: AchievementID; title: string; how: string }[] = [
   { id: "firstAgent", title: "First agent started", how: "Start an agent and let it run a turn." },
-  { id: "firstPairing", title: "First phone or browser paired", how: "Pair a phone or a browser with Pair a Device…." },
+  { id: "firstPairing", title: "First phone or browser paired", how: "Pair a phone or a browser with Pair a Client…." },
   { id: "firstRemoteAnswer", title: "First question answered away from the Mac",
     how: "Answer an agent's question from the Remote or the web page." },
   { id: "firstWorkflow", title: "First workflow made", how: "Make a workflow that runs an agent on a schedule or an event." },

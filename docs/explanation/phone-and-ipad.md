@@ -34,8 +34,8 @@ with nothing to do on them.
 A device is paired once, with a code your control plane shows. There are two places to
 get one:
 
-- In the Mac window, **Settings ▸ Control plane ▸ Clients ▸ Pair a Device…** shows a code
-  to scan with Agent Loops on the device.
+- In the Mac window, **Settings ▸ Control plane ▸ Clients ▸ Pair a Client…**, with **iPhone or
+  iPad** chosen, shows a code to scan with Agent Loops on the device.
 - In the menu bar on the Mac, **Pair a Phone or iPad…** opens the same pairing.
 
 A code works once, for five minutes. The device keeps a key of its own, and proves it holds
@@ -116,7 +116,7 @@ plane, can always make a new code.
 
 A browser is one more client. The Agent Loops app on a Mac serves Agent Loops as a web page at
 **http://localhost:8792**, and a browser on the same Mac pairs with a code, as a phone
-does, from **Add a Browser…**. A control plane in the cloud serves the same page at its
+does, from **Pair a Client…** with **Browser** chosen. A control plane in the cloud serves the same page at its
 own address, for a browser anywhere (#1459). It may do everything the window may; its page shows what
 the phone does, except that it has no terminal, no dictation and no notifications.
 

@@ -7,8 +7,9 @@ import { load } from "./load.mjs";
 const p = await load("src/model/pairClients.ts");
 const now = 1_000_000;
 
-test("the three buttons are the window's", () => {
-  assert.deepEqual(p.pairPurposes.map(p.pairWords.button), ["Pair a Device…", "Pair a Mac…", "Add a Browser…"]);
+test("one button, with the window's three kinds in its dialog (#7270)", () => {
+  assert.equal(p.pairWords.button, "Pair a Client…");
+  assert.deepEqual(p.pairPurposes.map(p.pairWords.kind), ["iPhone or iPad", "Mac", "Browser"]);
 });
 
 test("a device code counts down, then says it ran out", () => {

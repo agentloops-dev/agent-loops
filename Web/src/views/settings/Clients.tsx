@@ -1,6 +1,6 @@
-// Settings ▸ Control plane ▸ Clients (#4253), as the window's: Pair a Device… shows a QR code for the Remote to
-// scan, and Pair a Mac… and Add a Browser… a code to paste. Each code is made when its dialog opens and works once;
-// the dialog names the client it let in. A Mac's code also shows as loops auth login takes it, and Command line the
+// Settings ▸ Control plane ▸ Clients (#4253), as the window's: Pair a Client… (#7270) opens one dialog with the
+// kind of client to choose: an iPhone or iPad scans a QR code, a Mac and a browser paste a code. Each code is made
+// when the dialog opens or the kind changes, and works once; the dialog names the client it let in. A Mac's code also shows as loops auth login takes it, and Command line the
 // lines that put loops on the PATH, each to copy (#6875). Listed in ./sections.ts.
 import { useEffect, useState } from "preact/hooks";
 import { useSignal } from "@preact/signals";
@@ -12,18 +12,16 @@ import type { Store } from "../../model/store";
 import { Modal } from "../Modal";
 
 export function ClientsSection({ store, down }: { store: Store; down: boolean }) {
-  const [pairing, setPairing] = useState<PairPurpose | null>(null);
+  const [pairing, setPairing] = useState(false);
   return (
     <section aria-labelledby="settings-clients">
       <h3 class="section-head" id="settings-clients">{words.heading}</h3>
       <div class="pair-buttons">
-        {pairPurposes.map((purpose) => (
-          <button key={purpose} type="button" disabled={down} onClick={() => setPairing(purpose)}>{words.button(purpose)}</button>
-        ))}
+        <button type="button" disabled={down} onClick={() => setPairing(true)}>{words.button}</button>
       </div>
       <p class="hint">{words.hint}</p>
       <CommandLine />
-      {pairing && <PairDialog store={store} purpose={pairing} close={() => setPairing(null)} />}
+      {pairing && <PairDialog store={store} close={() => setPairing(false)} />}
     </section>
   );
 }
@@ -52,26 +50,40 @@ function CommandLine() {
   );
 }
 
-function PairDialog({ store, purpose, close }: { store: Store; purpose: PairPurpose; close: () => void }) {
+function PairDialog({ store, close }: { store: Store; close: () => void }) {
+  const [purpose, setPurpose] = useState<PairPurpose>("device");
   const shown = useSignal<ControlCodeShown | null>(null);
   const problem = useSignal<string | null>(null);
   const copied = useSignal(false);
+  const copiedLogin = useSignal(false);
   const before = useSignal<Set<string> | null>(null);
   const joined = useSignal<ClientRecord | null>(null);
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
-    // Who was there first, so whoever the code lets in can be named.
-    store.link.call("clients/list", {})
-      .then((clients) => { before.value = new Set(clients.map((c) => c.id)); })
-      .then(() => store.link.call("clients/startPairing", purpose === "browser" ? { kind: "browser" } : {}))
-      .then((code) => { shown.value = code; })
-      .catch((error) => { problem.value = describe(error); });
     const tick = setInterval(() => setNow(Date.now()), 1000);
     return () => {
       clearInterval(tick);
       void store.link.call("clients/stopPairing", {}).catch(() => {});
     };
   }, []);
+  // A change of kind makes a new code: the old one stops first, so it can't stop the new one.
+  useEffect(() => {
+    let live = true;
+    shown.value = null;
+    problem.value = null;
+    joined.value = null;
+    before.value = null;
+    copied.value = false;
+    copiedLogin.value = false;
+    store.link.call("clients/stopPairing", {}).catch(() => {})
+      // Who was there first, so whoever the code lets in can be named.
+      .then(() => store.link.call("clients/list", {}))
+      .then((clients) => { if (live) before.value = new Set(clients.map((c) => c.id)); })
+      .then(() => (live ? store.link.call("clients/startPairing", purpose === "browser" ? { kind: "browser" } : {}) : null))
+      .then((code) => { if (live && code) shown.value = code; })
+      .catch((error) => { if (live) problem.value = describe(error); });
+    return () => { live = false; };
+  }, [purpose]);
   const changes = store.clientChanges.value;
   useEffect(() => {
     const was = before.value;
@@ -82,7 +94,6 @@ function PairDialog({ store, purpose, close }: { store: Store; purpose: PairPurp
   }, [changes]);
   const code = shown.value;
   const expires = code ? fromWireDate(code.expires).getTime() : 0;
-  const copiedLogin = useSignal(false);
   const copy = () => {
     if (code) void navigator.clipboard?.writeText(code.text).then(() => { copied.value = true; }).catch(() => {});
   };
@@ -90,12 +101,18 @@ function PairDialog({ store, purpose, close }: { store: Store; purpose: PairPurp
   const copyLogin = () => {
     if (code) void navigator.clipboard?.writeText(terminalLogin(code.text)).then(() => { copiedLogin.value = true; }).catch(() => {});
   };
-  const title = words.title(purpose);
+  const title = words.title;
   const plane = store.plane.value;
   return (
     <Modal label={title} close={close}>
       <div class="sheet-body invite-code">
         <h2>{title}</h2>
+        <div class="button-group pair-kinds" role="radiogroup" aria-label={words.kindLabel}>
+          {pairPurposes.map((p) => (
+            <button key={p} type="button" role="radio" aria-checked={purpose === p} class={purpose === p ? "on" : ""}
+              onClick={() => setPurpose(p)}>{words.kind(p)}</button>
+          ))}
+        </div>
         {joined.value ? (
           purpose === "device" ? (
             <>

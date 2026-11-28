@@ -53,7 +53,7 @@ func TestABrowserThroughThePublicPage(t *testing.T) {
 		return pairThroughThePage(t, s, direct, address, browser, kind, origin)
 	}
 	// A window's code is no good on the page, and a browser's code is no good for a window.
-	if _, _, err := pair(false, records.KindBrowser, page); err == nil || !strings.Contains(err.Error(), "Get one from Add a Browser") {
+	if _, _, err := pair(false, records.KindBrowser, page); err == nil || !strings.Contains(err.Error(), "Get a browser’s code from Pair a Client") {
 		t.Fatal(err)
 	}
 	if _, _, err := pair(true, records.KindIPhone, ""); err == nil || !strings.Contains(err.Error(), "That code is for a browser.") {

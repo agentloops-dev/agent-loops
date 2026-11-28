@@ -55,7 +55,7 @@ export const settingsSections: readonly SettingsSection[] = [
   { name: "browser", scope: "machines", order: 55, Section: BrowserSection },
   // Channel identities linked to people (#1762).
   { name: "channels", scope: "controlPlane", order: 30, Section: ChannelsSection },
-  // Pair a Device…, Pair a Mac… and Add a Browser… (#4253), as the window's Clients: a code that lets one more in.
+  // Pair a Client… (#4253, #7270), as the window’s Clients: a code that lets one more in.
   { name: "clients", scope: "controlPlane", order: 12, Section: ClientsSection },
   // Connect to Another… on the page this Mac serves (#4257): the window on this Mac does it.
   { name: "connectAnother", scope: "controlPlane", order: 55, Section: ConnectAnotherSection, shows: (store) => store.canConnectAnother.value },

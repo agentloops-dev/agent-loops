@@ -72,7 +72,7 @@ If the address has no provider turned on, the screen goes to the code by itself,
 The browser pairs as you. The request stops after 10 minutes. You type the code, and do not
 only compare it, because anyone can type your email: only someone who sees the browser can
 approve it. The page says the same for an email that nobody has, so it tells nobody who has an
-account. This needs a provider turned on; with none, use **Add a Browser…**.
+account. This needs a provider turned on; with none, use a browser code from **Pair a Client…**.
 
 ## Sign in with your organisation's provider
 
