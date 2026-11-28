@@ -123,3 +123,14 @@ Added 2026-10-29 (`2026-10-29.md`, the first complete `GOOS=darwin -test` scan):
   they mirror the OpenRPC documents, and `WireSchemaTests` compares the two. Not dead
   while the wire has the method or code. A missing caller is a parity question
   (added 2026-11-26).
+- `DaemonAPI+Meetings.swift` `meetingsSegments` and `meetingsChanged`: the same wire
+  mirrors. `WireSchemaTests.capabilitiesAreWhatTheMethodsName()` names them; no app
+  caller is expected (added 2026-11-28).
+- `Go/cmd/loops/apppair.go` `methodNotFound` ("an Agent Loops from before #6875") and
+  `WorkTimeline.swift` `schedule` / `scopes` ("nil … from an older host"): peers of
+  different versions, live in v0.x (added 2026-11-28).
+- S3-compatible wording in `blobstore.go` and `s3.go`, and
+  `MeetingStream.swift` `bestAvailableAudioFormat(compatibleWith:)`: an outside product
+  and an Apple API, not old-build shims (added 2026-11-28).
+- `Go/internal/controlplane/mesh.go` "copies that hold hosts": the narrow grep matches
+  `old host` inside "hold hosts". It is not a compatibility reader (added 2026-11-28).
