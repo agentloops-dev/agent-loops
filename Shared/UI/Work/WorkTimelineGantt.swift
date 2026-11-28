@@ -194,13 +194,13 @@ private struct Chart {
     var offset: Double
     var visible: Double
 
-    static let solid = StateTint.vouched.color ?? .green
+    static let solid = StateTint.vouched.color ?? Paper.ink
     static let ahead = Paper.accent
     static let plannedFill = Paper.lineAccent.opacity(0.45)
     static let heldFill = Paper.forgeWaitingWash
     static let heldEdge = Paper.forgeWaitingRule
     static let heldTag = Paper.forgeWaiting
-    static let today = StateTint.warning.color ?? .orange
+    static let today = StateTint.warning.color ?? Paper.ink
 
     func x(_ date: Date) -> Double { WorkGantt.x(date, in: interval, width: width) }
     func mid(_ row: Int) -> Double { WorkTimelineGantt.headerHeight + WorkTimelineGantt.rowHeight * (Double(row) + 0.5) }
