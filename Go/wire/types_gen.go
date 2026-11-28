@@ -1928,6 +1928,9 @@ type BrowserWindowResult struct {
 
 	// The window as the client names it, such as the agents' Chrome window, in front (accounts.google.com). Only when shown.
 	Window *string `json:"window,omitzero"`
+
+	// The browser's process, for the client to bring to the front: macOS lets only the app in front give the front away. Only when shown.
+	Pid *int64 `json:"pid,omitzero"`
 }
 
 // A budget raised for one person for one UTC day (#998, FR-019), kept in the policy and swept the day after.

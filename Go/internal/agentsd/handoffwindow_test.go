@@ -197,6 +197,20 @@ func TestATakeOverInTheRealWindow(t *testing.T) {
 		t.Fatal(r, err)
 	}
 
+	must(t, errOnly(d.releaseResource(other.ID, screenLeaseName)))
+
+	// agents-drive cannot bring the browser to the front (the Mac app is in front, not it):
+	// the window stays, and the client brings the browser's pid to the front.
+	front := frontApp
+	frontApp = func(int) (int, error) { return 0, errors.New("not frontmost") }
+	r, err := d.takeOverWindow(mac, id, true)
+	frontApp = front
+	if err != nil || !r.Shown || r.Pid == nil || *r.Pid != chromePid {
+		t.Fatal(r, err)
+	}
+	d.endTakeOvers(mac)
+	waitFor(t, "the window back", func() bool { return !d.holdsScreen(id) })
+
 	if _, err := d.takeOverWindow(&Client{ID: 9002, Role: RoleAgent, d: d}, id, true); err == nil {
 		t.Fatal("an agent took over the window")
 	}

@@ -1,4 +1,5 @@
 import AgentsKitCore
+import AppKit
 import SwiftUI
 
 /// The agent browser or a simulator in a window of its own (#4138, #4141), from Open on a
@@ -114,10 +115,16 @@ private struct BrowserOwnWindow: View {
     /// The browser's own window with the session's tab, in front; the screencast when the
     /// host cannot.
     private func show() async {
-        if let window = await browser.showWindow(session: agent.id) {
-            place = .ownWindow(window)
-        } else {
+        guard let said = await browser.showWindow(session: agent.id) else {
             place = .here
+            return
+        }
+        place = .ownWindow(said.window ?? "")
+        // macOS lets only the app in front give the front away: this one, which the person
+        // just used, hands it to the browser.
+        if let pid = said.pid, let app = NSRunningApplication(processIdentifier: pid_t(pid)) {
+            NSApp.yieldActivation(to: app)
+            app.activate()
         }
     }
 

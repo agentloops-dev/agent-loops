@@ -759,6 +759,10 @@
         "window": {
           "type": "string",
           "description": "The window as the client names it, such as the agents' Chrome window, in front (accounts.google.com). Only when shown."
+        },
+        "pid": {
+          "type": "integer",
+          "description": "The browser's process, for the client to bring to the front: macOS lets only the app in front give the front away. Only when shown."
         }
       },
       "required": [

@@ -1827,6 +1827,11 @@ export interface BrowserWindowResult {
    * (accounts.google.com). Only when shown.
    */
   window?: string;
+  /**
+   * The browser's process, for the client to bring to the front: macOS lets only the app in front
+   * give the front away. Only when shown.
+   */
+  pid?: number;
 }
 
 /**
@@ -19585,7 +19590,7 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   BrowserState: { required: ["installed", "running", "downloadBytes", "sites"], optional: ["problem"] },
   BrowserWatchRequest: { required: ["width", "height"], optional: ["agent"] },
   BrowserWindowRequest: { required: ["agent", "show"], optional: [] },
-  BrowserWindowResult: { required: ["shown"], optional: ["window"] },
+  BrowserWindowResult: { required: ["shown"], optional: ["window", "pid"] },
   BudgetRaise: { required: ["user", "day", "by"], optional: ["daily", "dailyTokens", "request"] },
   BudgetRequest: { required: ["id", "user", "userName", "day", "at", "state"], optional: ["why", "daily", "dailyTokens", "decidedBy", "decidedAt"] },
   BudgetRequestList: { required: ["requests"], optional: [] },

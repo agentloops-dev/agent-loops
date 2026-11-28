@@ -91,9 +91,13 @@ public extension DaemonAPI {
     struct BrowserWindowResult: Codable, Sendable, Hashable {
         public var shown: Bool
         public var window: String?
-        public init(shown: Bool, window: String? = nil) {
+        /// The browser's process, for the client to bring to the front: macOS lets only the
+        /// app in front give the front away.
+        public var pid: Int?
+        public init(shown: Bool, window: String? = nil, pid: Int? = nil) {
             self.shown = shown
             self.window = window
+            self.pid = pid
         }
     }
 

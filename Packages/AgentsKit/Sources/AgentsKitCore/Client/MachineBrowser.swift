@@ -134,15 +134,16 @@ public final class MachineBrowser {
     }
 
     /// Take over in the browser's own window (#7259): on the Mac that runs the browser, the
-    /// window with `session`'s tab comes onto the screen and in front. It says the window's
-    /// name, or nil when the host cannot (the screen is another agent's, the browser has no
-    /// window here): the take over shows the screencast then.
-    public func showWindow(session: UUID) async -> String? {
+    /// window with `session`'s tab comes onto the screen. It says the host's answer: the
+    /// window's name and the browser's pid, for the Mac app to bring to the front; nil when
+    /// the host cannot (the screen is another agent's, the browser has no window here): the
+    /// take over shows the screencast then.
+    public func showWindow(session: UUID) async -> DaemonAPI.BrowserWindowResult? {
         do {
             let said = try await client.call(DaemonAPI.Method.browserWindow,
                                              DaemonAPI.BrowserWindowRequest(agent: session, show: true),
                                              returning: DaemonAPI.BrowserWindowResult.self)
-            return said.shown ? (said.window ?? "") : nil
+            return said.shown ? said : nil
         } catch {
             return nil
         }
