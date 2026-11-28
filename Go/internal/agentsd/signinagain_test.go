@@ -6,6 +6,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentloops-dev/agent-loops/Go/internal/controllink"
+	"github.com/agentloops-dev/agent-loops/Go/internal/machinelock"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -35,7 +37,7 @@ func TestAServersEndedSignInShowsSignInAgain(t *testing.T) {
 			said = append(said, e.Kind.RuntimeNote.Value)
 		}
 	}
-	want := signedOutTitle("Claude", d.ownName())
+	want := signedOutTitle("Claude", d.serverName())
 	if !strings.Contains(strings.Join(said, "\n"), want) || strings.Contains(strings.Join(said, "\n"), "Sign in to continue") ||
 		strings.Contains(strings.Join(said, "\n"), "The turn failed") {
 		t.Fatalf("said %q", said)
@@ -121,5 +123,62 @@ func TestClaudeAsksToSignInAgainBeforeItsTokenEnds(t *testing.T) {
 	card := theCard(t, d)
 	if card.Message == nil || !strings.Contains(*card.Message, "ends on "+old.Add(claudeTokenLife).Format("2 January 2006")) {
 		t.Fatalf("%+v", card)
+	}
+}
+
+// After a restart the server is still signed out, and the card left from before it (its
+// sign-in gone with the daemon) is closed when the new one opens.
+func TestSignInAgainOutlivesARestart(t *testing.T) {
+	fakeRuntimes(t)
+	fakeSignInTools(t)
+	root := t.TempDir()
+	d, c := start(t, root)
+	asAServer(t)
+	must(t, d.keepClaudeSignIn("CLAUDE_CODE_OAUTH_TOKEN", "sk-ant-oat01-revoked"))
+	id := startAgent(t, c, 1, t.TempDir(), "signed out")
+	c.until(t, "stopped", ended(id, wire.AgentStateStopped))
+	old := theCard(t, d)
+	if old.ElicitationID == nil || *old.ElicitationID != signInElicitation("claude") {
+		t.Fatalf("%+v", old)
+	}
+	d.Shutdown()
+
+	d, _ = start(t, root)
+	defer d.Shutdown()
+	asAServer(t) // a start on a Mac sets the Mac's tools home again
+	if !d.signedOutHere("claude") {
+		t.Fatal("the mark went with the restart")
+	}
+	d.raiseSignInCard(id, "claude")
+	waitFor(t, "the new card in the old one's place", func() bool {
+		got := d.pendingElicitations()
+		return len(got) == 1 && got[0].ID != old.ID
+	})
+	if got := d.pendingElicitations()[0]; got.Mode.Form == nil || got.Mode.Form.Value.Title == nil ||
+		*got.Mode.Form.Value.Title != signedOutTitle("Claude", d.serverName()) {
+		t.Fatalf("%+v", got)
+	}
+}
+
+// #7608: the card names the server as the clients show it, the name in the person's lock,
+// not the control plane's name that the join code carried.
+func TestTheCardNamesTheServerAsTheClientsDo(t *testing.T) {
+	d, key, _ := joinedMachine(t)
+	defer d.Shutdown()
+	must(t, (&controllink.Membership{Host: "h-1", Addresses: []string{}, Name: "run-scratch"}).Save(d.Store.Loc.Root))
+	host, _ := os.Hostname()
+	if got := d.serverName(); got != host {
+		t.Fatalf("with no lock: %q, not the host name %q", got, host)
+	}
+	mac := newLockKey(t)
+	root := lockEntry(t, mac, wire.LockEntryKindRoot, mac, nil)
+	h := machinelock.HashOf(root)
+	id, name := "h-1", "devbox-1"
+	add, err := machinelock.Sign(mac, wire.LockBody{Kind: wire.LockEntryKindAddMachine, Person: "sam", Previous: h[:],
+		At: wire.DateOf(time.Now()), Key: key, SealingKey: key, ID: &id, Name: &name})
+	must(t, err)
+	d.TakeLock(wire.Lock{Person: "sam", Entries: []wire.LockEntry{root, add}})
+	if got := d.serverName(); got != name {
+		t.Fatalf("%q, not the lock's %q", got, name)
 	}
 }
