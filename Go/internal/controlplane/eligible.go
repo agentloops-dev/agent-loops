@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/capacity"
+	"github.com/agentloops-dev/agent-loops/Go/internal/controllink"
 	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/records"
 	"github.com/agentloops-dev/agent-loops/Go/internal/controlsetup"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
@@ -192,14 +193,29 @@ func (s *Service) eligibleFacts(ctx context.Context, h records.MachineRecord, al
 			}
 		}
 	}
+	// The reach (a DNS lookup and the dials) and machine/usage run at the same time, under one
+	// bound, so a machine that drops packets costs eligiblePatience, not their sum (#7397).
+	ctx, cancel := context.WithTimeout(ctx, eligiblePatience)
+	defer cancel()
+	usage := make(chan *wire.MachineUsageState, 1)
+	go func() { usage <- s.machineUsage(h.ID) }()
 	f.address, f.unreachable = s.reach(ctx, h.ID)
-	if answer := s.router.Ask(h.ID, wire.CallMachineUsage.Name, wire.Empty{}, eligiblePatience); answer != nil && len(answer.Result) > 0 {
-		var usage wire.MachineUsageState
-		if json.Unmarshal(answer.Result, &usage) == nil {
-			f.usage = &usage
-		}
-	}
+	f.usage = <-usage
 	return f
+}
+
+// machineUsage is what the machine says of its usage, nil when it does not answer in
+// eligiblePatience.
+func (s *Service) machineUsage(host string) *wire.MachineUsageState {
+	answer := s.router.Ask(host, wire.CallMachineUsage.Name, wire.Empty{}, eligiblePatience)
+	if answer == nil || len(answer.Result) == 0 {
+		return nil
+	}
+	var usage wire.MachineUsageState
+	if json.Unmarshal(answer.Result, &usage) != nil {
+		return nil
+	}
+	return &usage
 }
 
 // reach is where this copy reached the machine's control role, as a person reads it, and
@@ -337,9 +353,19 @@ func domainName(d string) bool {
 
 // publicAddress says clients elsewhere can dial addr. 100.64/10 stays in: a machine is seen
 // to come from it only inside a tailnet, which is a tunnel.
-func publicAddress(addr netip.Addr) bool {
-	addr = addr.Unmap()
-	return addr.IsGlobalUnicast() && !addr.IsPrivate()
+func publicAddress(addr netip.Addr) bool { return controllink.PublicAddress(addr) }
+
+// helloAnswer is the answer to host's machine/hello: this control plane's capabilities, and
+// the address the host's uplink comes from when it is public (#7493), so that an install of
+// the control role on a machine behind NAT can say where it is reached.
+func (m *Methods) helloAnswer(host string) wire.MachineHelloAnswer {
+	answer := wire.MachineHelloAnswer{Capabilities: capabilities()}
+	if from, ok := m.router.UplinkAddress(host); ok {
+		if addr, err := netip.ParseAddr(from); err == nil && publicAddress(addr) {
+			answer.Address = new(addr.Unmap().String())
+		}
+	}
+	return answer
 }
 
 func dialTCP(ctx context.Context, address string) error {

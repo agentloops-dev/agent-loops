@@ -313,6 +313,26 @@
         "code": -32027,
         "message": "notYours"
       },
+      "parentCycle": {
+        "code": -32114,
+        "message": "parentCycle"
+      },
+      "parentFull": {
+        "code": -32116,
+        "message": "parentFull"
+      },
+      "parentNotFound": {
+        "code": -32112,
+        "message": "parentNotFound"
+      },
+      "parentNotLead": {
+        "code": -32113,
+        "message": "parentNotLead"
+      },
+      "parentTooDeep": {
+        "code": -32115,
+        "message": "parentTooDeep"
+      },
       "older": {
         "code": -32102,
         "message": "older"

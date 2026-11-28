@@ -150,6 +150,9 @@ func (d *Daemon) brief(a *wire.Agent) string {
 	if appToolServed("move_worktree") && runtimeCanMove(a.RuntimeID) {
 		parts = append(parts, worktreesBrief)
 	}
+	if _, ok := d.meetingOfAgent(a.ID); ok {
+		parts = append(parts, meetingNotesBrief)
+	}
 	if p := d.pushBrief(a.ID); p != "" {
 		parts = append(parts, p)
 	}
@@ -186,6 +189,14 @@ func (d *Daemon) namingBrief(a *wire.Agent) string {
 			title = starter.Title
 		}
 		you += ", started by " + agentName(title)
+	}
+	// Under a lead (#7538): told here at its start, by a notice after.
+	if lead, ok := leadOf(a); ok {
+		var title *string
+		if l := d.Store.Agent(lead); l != nil {
+			title = l.Title
+		}
+		you += ", and you work under " + agentName(title) + " (session " + string(lead) + ")"
 	}
 	person := readPerson(filepath.Join(d.SettingsDir, "person.json"))
 	name, refer := personName(person.Name), `as "they"`
@@ -365,6 +376,13 @@ func toolsBrief(browser, screen, bot, github bool) string {
 const worktreesBrief = "For a branch of your own, move into a worktree with move_worktree and " +
 	"end your turn; you are started again there. Never edit in a worktree you did not move " +
 	"into this way, nor make one with `git worktree add` when it can."
+
+// meetingNotesBrief is said only to a meeting's session, with meeting mode on, as
+// tools/list offers meeting_notes (#7583).
+const meetingNotesBrief = "This session keeps a meeting's notes. Use meeting_notes for all of it: read (the meeting, " +
+	"its speakers, the notes, the action items, and its words from afterSeq), write_notes (Markdown over the " +
+	"baseRevision read gave), add_actions (each with its quote word for word and the seqs it is in), update_action " +
+	"(state, issue, text, owner, due; never a field the person edited) and set_speaker (name Speaker <n>)."
 
 // residueBrief is Briefing.residue: a runtime's tool the tool policy could not take away,
 // said out loud (ToolPolicyCatalog). Copilot's search_code_subagent rejected every spelling

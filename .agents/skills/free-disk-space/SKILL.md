@@ -15,9 +15,11 @@ and what runs: a lock, a process that works in a folder, the age of the newest f
 session with no Agent Loops tools (no `list_sessions`, `list_resources` or
 `archive_session`) follows it from start to end.
 
-**Work to the target, not to the threshold (#1796, #4699).** The target is 20% of the disk
-free (about 99 GB on a 494 GB disk), twice the 10% line `machine.disk_low` fires at, so a
-run ends well past the line and not on it. After each of steps 2 to 6, run:
+**Work to the target, not to the threshold (#1796, #4699, #6953).** The target is the ok
+line, where `machine.disk_ok` fires: the low line plus 10 points of the disk, so 20% free
+(about 99 GB on a 494 GB disk) at the default 10% line `machine.disk_low` fires at. A run
+ends well past the line and not on it. When the folder moved the low line (Folder Settings ▸
+Disk Space), set `AGENTS_FREE_TARGET_PCT` to that percent plus 10. After each of steps 2 to 6, run:
 
 ```sh
 scripts/free-disk.sh status   # exits 0 at the target, 1 under it

@@ -10,6 +10,7 @@ public enum Capability {
     public static let agentsExport1 = "agents.export/1"
     public static let agentsFind1 = "agents.find/1"
     public static let agentsMoveWorktree1 = "agents.move-worktree/1"
+    public static let agentsParent1 = "agents.parent/1"
     public static let agentsSaid1 = "agents.said/1"
     public static let agentsStartNow1 = "agents.start-now/1"
     public static let agents1 = "agents/1"
@@ -319,6 +320,7 @@ public enum Capability {
         "agents/setLevels": "auto/1",
         "agents/setMuted": "mute/1",
         "agents/setOption": "agents/1",
+        "agents/setParent": "agents.parent/1",
         "agents/setPriority": "agents/1",
         "agents/setSandbox": "agents/1",
         "agents/setUnread": "agents/1",

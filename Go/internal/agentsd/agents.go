@@ -48,6 +48,7 @@ func (d *Daemon) registerAgents() {
 		d.actedOn(r.AgentID, c.actor())
 		return wire.Empty{}, d.startNow(r.AgentID)
 	})
+	d.registerParents()
 	On(d, wire.CallAgentsRename, func(ctx context.Context, c *Client, r wire.RenameRequest) (wire.Agent, error) {
 		return d.rename(r)
 	})
@@ -617,8 +618,13 @@ func (d *Daemon) deleteArchived(a *wire.Agent, because string) error {
 // collects them, to queue many at once (#2427).
 func (d *Daemon) deleteArchivedThen(a *wire.Agent, because string, erase func(*wire.Agent)) error {
 	d.forgetLive(a.ID)
+	children := d.Store.Children(a.ID)
 	if err := d.Store.Delete(a.ID); err != nil {
 		return &Error{Code: wire.FailureCouldNotSave, Message: "The agent could not be deleted: " + err.Error()}
+	}
+	// A deleted lead's children go back under their starters (#7538).
+	if len(children) > 0 {
+		d.clearParentsOf(a.ID, children)
 	}
 	// The runtime's own copy goes next, and a backup never brings the agent back (#1001).
 	erase(a)

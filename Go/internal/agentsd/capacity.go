@@ -24,7 +24,8 @@ import (
 // core, its memory pressure and its swap. CPU percent is a bad input: 100% busy with a short
 // run queue is a healthy machine, and on 2026-10-04 load 113 to 146 on 10 cores made builds
 // 10× slower (#236). The level rises at once, and falls only after two looks under the line
-// (as the disk's has a margin, #195), so it does not flap. machine.busy is raised when it
+// (as the disk's has a margin, #195), and to ok only under capacity.OkLoad (#6953), so it does
+// not flap. machine.busy is raised when it
 // rises from ok, and machine.ok when it comes back to ok.
 
 // The lines, from the spike (#4583): 14 days of this Mac's builds ran at the same throughput
@@ -119,6 +120,16 @@ func hostTarget(s capacitySample) (wire.CapacityLevel, string) {
 	return wire.CapacityLevelOk, ""
 }
 
+// okOnlyUnderOkLoad is target for a machine that was near or full: a look with no signal
+// over its line but its load at or over capacity.OkLoad is still near (#6953), so the machine
+// is ok again only after two looks under 1.5 per core, not 2.0.
+func okOnlyUnderOkLoad(was, target wire.CapacityLevel, s capacitySample) wire.CapacityLevel {
+	if was != wire.CapacityLevelOk && target == wire.CapacityLevelOk && s.load1 >= capacity.OkLoad-s.reserve {
+		return wire.CapacityLevelNear
+	}
+	return target
+}
+
 // levelSignal is the signal that holds level after a look: none at ok; this look's when it
 // gave the level itself; else the one before, while the level waits to fall (#6596).
 func levelSignal(level, target wire.CapacityLevel, signal, was string) string {
@@ -203,6 +214,7 @@ func (d *Daemon) checkCapacity(ctx context.Context) {
 	if was == "" {
 		was = wire.CapacityLevelOk
 	}
+	target = okOnlyUnderOkLoad(was, target, s)
 	level, lastBelow, below := capacity.Next(was, target, d.capLastBelow, d.capBelow)
 	d.capLevel, d.capLastBelow, d.capBelow = level, lastBelow, below
 	wasSignal := d.capSignal

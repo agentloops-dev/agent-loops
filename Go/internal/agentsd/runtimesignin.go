@@ -416,12 +416,11 @@ func (d *Daemon) closeRelayForOwnSignIn(runtimeID string) {
 
 // signedInHere is the runtime's status once it has signed in, told to every client.
 func (d *Daemon) signedInHere(rt *runtimeDef) wire.RuntimeStatus {
-	d.headlessMu.Lock()
-	delete(d.signInCards.signedOut, rt.ID) // signed in again (#7472)
-	d.headlessMu.Unlock()
+	d.markSignedOut(rt.ID, false) // signed in again (#7472)
 	d.updateAccount(rt.ID, func(a *wire.RuntimeAccount) { a.State, a.CheckedAt = wire.RuntimeAccountStateReady, now() })
 	s := d.statusOf(rt)
 	Broadcast(d, wire.NotifyRuntimeChanged, s)
+	d.releaseSignInHolds(rt.ID) // the turns that waited for it go now (#7609)
 	return s
 }
 

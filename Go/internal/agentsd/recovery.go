@@ -77,6 +77,8 @@ func (d *Daemon) recover() {
 	d.resumeMu.Lock()
 	d.interrupted, d.resuming, d.cutOff = map[wire.UUID]wire.AgentState{}, map[wire.UUID]bool{}, map[wire.UUID]wire.AgentState{}
 	d.resumeMu.Unlock()
+	// Parent notices a cut-off turn took (#7538): cleared, or told again with the next turn.
+	d.recoverNotices()
 	left := d.recoverLeftWorking()
 	// Those a clean stop cut off in a turn, which it wrote stopped with the daemon (#1605).
 	alive := d.readAlive()

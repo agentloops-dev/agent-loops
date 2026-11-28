@@ -8,7 +8,7 @@ description: Install your own packages on each new machine with root.sh, which r
 
 A new machine has none of your own tools. Two scripts of yours set it up: `root.sh`, which
 installs packages as root, and `setup.sh`, which sets up your tools and sign-ins as your user.
-They are an early feature: turn on **Machine scripts** in Settings ▸ This app ▸ Early Features
+They are not ready yet: turn on **Machine scripts** in Settings ▸ This app ▸ Features
 (epic #7151).
 
 ## Where the scripts are

@@ -113,6 +113,7 @@ func appToolCalls() []appTool {
 		{"set_environment_gate", (*Daemon).setEnvironmentGate},
 		{"make_app_repository", (*Daemon).makeAppRepository},
 		{"make_public_repository", (*Daemon).makePublicRepository},
+		{meetingNotesName, (*Daemon).meetingNotes},
 	}
 }
 
@@ -419,8 +420,9 @@ func offeredTools(movesItself, bot, desktopControl, checks bool) []json.RawMessa
 		// A bot's machine has no ask tools: nobody answers there (#1761, FR-032). A host
 		// with no agents-drive beside it, or with desktop control Off, has no drive_screen
 		// (#3004, host.desktop-control/1, FR-004). Only a session in the person's home
-		// folder, as the Daily checks' is, has check_folders (#3355).
-		if !done[name] || name == "move_worktree" && !movesItself || askTools[name] && bot ||
+		// folder, as the Daily checks' is, has check_folders (#3355). meeting_notes is added
+		// by appToolsList, for a meeting's session only (#7583).
+		if !done[name] || name == meetingNotesName || name == "move_worktree" && !movesItself || askTools[name] && bot ||
 			name == "drive_screen" && !desktopControl || name == "check_folders" && !checks {
 			continue
 		}
@@ -486,6 +488,11 @@ func (d *Daemon) appToolsHandle(ctx context.Context, g *appGrant, method string,
 // machine's browser tools.
 func (d *Daemon) appToolsList(g *appGrant) map[string]any {
 	tools := offeredTools(g.movesItself, d.isBot(), d.offersDriveScreen(), d.inPersonalHome(g.agent))
+	if _, ok := d.meetingOfAgent(g.agent); ok {
+		if t, ok := meetingNotesTool(); ok {
+			tools = append(tools, t)
+		}
+	}
 	// The machine's browser, driven through Playwright's own tools (#3534).
 	if d.offersBrowser() {
 		list, _ := browserTools()

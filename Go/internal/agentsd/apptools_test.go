@@ -123,7 +123,8 @@ func TestTheAppsToolsAreServedToEachRuntime(t *testing.T) {
 	if d.desktopControlOn() || d.offersDriveScreen() {
 		t.Fatal("desktop control is on while it is Off")
 	}
-	want := len(appToolCalls()) - 2
+	// meeting_notes is listed only in a meeting's session (#7583).
+	want := len(appToolCalls()) - 3
 	// After them, Playwright's browser tools, where this host can install the browser (#3534).
 	if d.offersBrowser() {
 		list, _ := browserTools()

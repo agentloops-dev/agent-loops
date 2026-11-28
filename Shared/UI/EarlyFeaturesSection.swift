@@ -39,7 +39,7 @@ struct MaturityBadge: View {
     }
 }
 
-/// Settings ▸ This app ▸ Early Features (#6052, #6604, epic #6552): first a row for each feature
+/// Settings ▸ This app ▸ Features (#6052, #6604, epic #6552): first a row for each feature
 /// flag in work (`FeatureFlag`, #6254), with its title, its line and a switch, off by default and
 /// with no badge; then a row for each feature that is not GA and that this client shows, with its
 /// name, its badge, its help line and a switch, on by default. A feature turned off shows nowhere
@@ -47,10 +47,10 @@ struct MaturityBadge: View {
 /// (`flag:<name>`, #6254), so it is the same on every client of theirs. Drawn by the Mac window and
 /// the Remote; the web page has the same section (Core).
 struct EarlyFeaturesSection: View {
-    static let title = "Early Features"
+    static let title = "Features"
     /// The words under the section, as the web page's (`earlyFeaturesFooter`).
     static let footer = "Features that are not ready yet. A feature in work is off until you turn it on. "
-        + "An early feature is on until you turn it off; then it shows nowhere on your clients. "
+        + "A pilot, alpha or beta feature is on until you turn it off; then it shows nowhere on your clients. "
         + "The same on every client of yours."
     /// What the section says with no flag and every feature GA, as the web page's.
     static let none = "Every feature is ready."

@@ -268,6 +268,12 @@ type Agent struct {
 
 	StartedByAgent *UUID `json:"startedByAgent,omitzero"`
 
+	// The lead this session works under (#7538, spec 7535): absent, the tree follows startedByAgent; with no id, the session is at the top. startedByAgent stays the history of who started it.
+	Parent *SessionParent `json:"parent,omitzero"`
+
+	// The daemon's own: the parent changes this session is told on its next turn (#7538). Clients ignore it.
+	ParentNotices *ParentNotices `json:"parentNotices,omitzero"`
+
 	ChainDepth *int64 `json:"chainDepth,omitzero"`
 
 	EventWait *EventWait `json:"eventWait,omitzero"`
@@ -9702,6 +9708,9 @@ type MachineHello struct {
 type MachineHelloAnswer struct {
 	// The control plane's capabilities (#1748), as control/status says them to a client.
 	Capabilities []string `json:"capabilities,omitzero"`
+
+	// The public IP address this machine's uplink comes from, as the control plane sees it (#7493): where a control plane that the machine's install puts behind NAT is reached, when the machine finds only a private address of its own. Absent when the uplink comes from a private or loopback address, and from an older control plane.
+	Address *string `json:"address,omitzero"`
 }
 
 // One workspace, as its provider last listed it. `state` is running, starting, stopping, stopped or unknown; or failed, for a make that failed, with the provider's `reason` (#3972). `joining` while New Machine waits for it to join the control plane, and `notJoined` once the control plane gave up waiting (#4610). `setup` while it is being made (#6073).
@@ -11804,6 +11813,41 @@ type PagesChangedNotification struct {
 	Folder URL `json:"folder"`
 
 	Folders []string `json:"folders"`
+}
+
+type ParentNotice struct {
+	ID UUID `json:"id"`
+
+	About UUID `json:"about"`
+
+	Change ParentNoticeChange `json:"change"`
+
+	At Date `json:"at"`
+
+	// For a child's parent or noParent: the lead it worked under before the first change it has not been told yet, so a move there and back tells nothing.
+	Was *UUID `json:"was,omitzero"`
+
+	// Taken by a turn that a restart cut off: said again, with a note that it is.
+	Again *bool `json:"again,omitzero"`
+}
+
+// parent: the recipient now works under the lead about; noParent: it has no lead now; joined: about now works under the recipient; left: about no longer does.
+type ParentNoticeChange string
+
+const ParentNoticeChangeParent ParentNoticeChange = "parent"
+const ParentNoticeChangeNoParent ParentNoticeChange = "noParent"
+const ParentNoticeChangeJoined ParentNoticeChange = "joined"
+const ParentNoticeChangeLeft ParentNoticeChange = "left"
+
+// An outbox (#7538): pending goes with the next turn, in the same record write that takes its words; sent is what that turn took, until the runtime answers it.
+type ParentNotices struct {
+	Pending []ParentNotice `json:"pending,omitzero"`
+
+	More *int64 `json:"more,omitzero"`
+
+	SentWith *UUID `json:"sentWith,omitzero"`
+
+	Sent []ParentNotice `json:"sent,omitzero"`
 }
 
 // One name in the person's own pass-through list (#998, FR-011a), as runtime-environment.json has it.
@@ -15728,6 +15772,27 @@ type SessionNotice struct {
 	Detail *string `json:"detail,omitzero"`
 }
 
+// Where a session is put in the tree (#7538): under the lead id, or at the top when id is absent.
+type SessionParent struct {
+	ID *UUID `json:"id,omitzero"`
+
+	SetAt Date `json:"setAt"`
+
+	SetBy SessionParentSetBy `json:"setBy"`
+}
+
+type SessionParentSetBy string
+
+const SessionParentSetByPerson SessionParentSetBy = "person"
+const SessionParentSetByAgent SessionParentSetBy = "agent"
+
+// under: under parentID; top: at the top, the starter ignored; starter: back under its starter (parent cleared).
+type SessionPlacement string
+
+const SessionPlacementUnder SessionPlacement = "under"
+const SessionPlacementTop SessionPlacement = "top"
+const SessionPlacementStarter SessionPlacement = "starter"
+
 // A session's priority (#5846): the same three levels as an issue's (ForgeItem.priority), in the order high, medium, none, low.
 type SessionPriority string
 
@@ -15913,6 +15978,18 @@ type SetPRCostCommentRequest struct {
 	Folder URL `json:"folder"`
 
 	PrCostComment PRCostComment `json:"prCostComment"`
+}
+
+// agents/setParent (#7538).
+type SetParentRequest struct {
+	AgentID UUID `json:"agentID"`
+
+	Placement SessionPlacement `json:"placement"`
+
+	ParentID *UUID `json:"parentID,omitzero"`
+
+	// The child's revision the client saw; a later one refuses with changedElsewhere.
+	ExpectedRevision *int64 `json:"expectedRevision,omitzero"`
 }
 
 type SetPinnedRequest struct {
@@ -16856,6 +16933,9 @@ type StartRequest struct {
 
 	// The line the control plane made when Auto picked this machine (#5375), "Auto chose Mac mini: you last started here.": the session's chat says it first. A client sends what sessions/previewStart gave in text.
 	AutoChose *string `json:"autoChose,omitzero"`
+
+	// Puts the new session under this lead at once (#7538), with the checks of agents/setParent: a live session on this host labelled lead, within the depth and child limits.
+	ParentID *UUID `json:"parentID,omitzero"`
 }
 
 // The agent on another machine that started a session with start_session (#2887). The control plane writes machine and who; the asking host writes agent.

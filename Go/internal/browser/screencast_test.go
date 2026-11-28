@@ -2,6 +2,7 @@ package browser
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"testing"
 	"time"
@@ -66,9 +67,16 @@ func TestAClickHoldsItsButtonUntilItIsReleased(t *testing.T) {
 	if hover.Type != input.DispatchMouseEventTypeMouseMoved || hover.Button != input.MouseButtonNone {
 		t.Fatalf("%+v", hover)
 	}
-	wheel := mouseParams(Input{Kind: "wheel", X: 5, Y: 6, DeltaY: 120})
-	if wheel.Type != input.DispatchMouseEventTypeMouseWheel || wheel.DeltaY != 120 {
-		t.Fatalf("%+v", wheel)
+}
+
+func TestAVerticalWheelSaysBothDeltas(t *testing.T) {
+	// Chromium refuses a mouseWheel without deltaX (#7597).
+	b, err := json.Marshal(wheelParams(Input{Kind: "wheel", X: 5, Y: 6, DeltaY: 120}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s := string(b); s != `{"type":"mouseWheel","x":5,"y":6,"deltaX":0,"deltaY":120}` {
+		t.Fatal(s)
 	}
 }
 
@@ -133,6 +141,7 @@ func TestACastOfARealChromium(t *testing.T) {
 	}
 	editTheField(t, cast, ctx)
 	clickBesideTheField(t, cast)
+	scrollThePage(t, cast, ctx)
 	followTheNewTab(t, cast, pages)
 	if err := cast.Navigate("back", ""); err != nil {
 		t.Fatal(err)
@@ -251,6 +260,29 @@ func clickBesideTheField(t *testing.T, cast *Cast) {
 		if kind == "mouseReleased" && (editing == nil || *editing) {
 			t.Fatalf("editing %v after a click outside the field", editing)
 		}
+	}
+}
+
+// scrollThePage checks that a plain vertical wheel (deltaX 0, as a mouse wheel sends)
+// scrolls a long page (#7597).
+func scrollThePage(t *testing.T, cast *Cast, ctx context.Context) {
+	t.Helper()
+	if err := cast.Navigate("go", `data:text/html,<div id=f style="height:5000px">tall</div>`); err != nil {
+		t.Fatal(err)
+	}
+	waitForTheField(t, ctx)
+	if _, err := cast.Input(Input{Kind: "wheel", X: 100, Y: 100, DeltaY: 400}); err != nil {
+		t.Fatal("the wheel was refused:", err)
+	}
+	for i := 0; ; i++ {
+		y, _ := chromedp.Run(ctx, chromedp.Evaluate[float64](`window.scrollY`))
+		if y > 0 {
+			return
+		}
+		if i == 100 {
+			t.Fatal("the page did not scroll")
+		}
+		time.Sleep(50 * time.Millisecond)
 	}
 }
 
