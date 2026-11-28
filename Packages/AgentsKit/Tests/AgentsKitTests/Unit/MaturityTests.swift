@@ -3,7 +3,7 @@ import Foundation
 import Testing
 
 /// Features show their maturity (#6052): a capability that `Packages/Wire/maturity.json` does
-/// not list is GA; one that it lists has a badge, and a toggle in Early Features, on by default
+/// not list is GA; one that it lists has a badge, and a toggle in Features, on by default
 /// and kept in the store of the feature flags (#6254).
 struct MaturityTests {
     private let list = [

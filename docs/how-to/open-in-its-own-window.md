@@ -107,7 +107,7 @@ from the sidebar of every folder. Only the Mac's folder window shows them in pla
 
 An issue, a pull request or a release can open in a window of its own. On the Mac and the
 web page, a doc or a conversation in Messages can too. This is a feature in
-work: turn on **Work in windows** in **Settings ▸ This app ▸ Early Features**.
+work: turn on **Work in windows** in **Settings ▸ This app ▸ Features**.
 
 **Mac**
 

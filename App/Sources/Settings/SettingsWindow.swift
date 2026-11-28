@@ -292,7 +292,7 @@ extension SettingsScope {
         // How this app draws: Sidebar is kept on the Mac's host so every client draws the
         // same (#1033, #2079), but its subject is the app (#2157).
         // Notifications' limits are rules of Agents ▸ Policy now (#2957, FR-023).
-        // Early Features (#6052): the features that are not GA, which the person can turn off.
+        // Features (#6052): the features that are not GA, which the person can turn off.
         // Feature Flags (#6254): the features in work that the person turns on, on every client.
         case .thisApp: [.appearance, .sidebar, .voice, .earlyFeatures]
         // What agents may do, what they spend and what they take (#2957, FR-018).

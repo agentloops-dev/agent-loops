@@ -4,6 +4,7 @@ import (
 	"context"
 	"log"
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"time"
@@ -20,6 +21,10 @@ import (
 // sealed or sent through the control plane, and the Mac's host is not part of it. Once it is
 // made, the Mac's lent sign-in is closed and this one wins.
 
+// signInCardReplaced is what the chat says of a sign-in card whose code ran out or went with
+// a restart, once a new card takes its place.
+const signInCardReplaced = "Replaced by a new sign-in card."
+
 // signInCodeField is the one field of Claude's sign-in card.
 const signInCodeField = "code"
 
@@ -29,9 +34,6 @@ type signInCardState struct {
 	raising map[string]bool
 	// dismissed are the runtimes whose card the person dismissed: not raised again until restart.
 	dismissed map[string]bool
-	// signedOut are the runtimes whose own sign-in on this server ended (#7472): expired or
-	// revoked. Their card is Sign in again until a sign-in is made here.
-	signedOut map[string]bool
 	// held are the agents whose turn waits for a sign-in on this server (#7609): a new
 	// agent's first turn, kept in its queue until the card (or a key, or a lend) signs in.
 	held map[wire.UUID]string
@@ -89,8 +91,9 @@ func (d *Daemon) raiseSignInCard(agent wire.UUID, runtimeID string) {
 		return
 	}
 	d.headlessMu.Lock()
-	gone, out := d.signInCards.dismissed[runtimeID], d.signInCards.signedOut[runtimeID]
+	gone := d.signInCards.dismissed[runtimeID]
 	d.headlessMu.Unlock()
+	out := d.signedOutHere(runtimeID)
 	ends, endsSoon := d.claudeSignInEnds()
 	if runtimeID == "claude" && !out && !endsSoon && (d.storedClaudeSignIn() != "" || ownClaudeSignIn() ||
 		d.relayFor("claude") == nil && d.needsSignIn("claude") == nil) {
@@ -99,14 +102,15 @@ func (d *Daemon) raiseSignInCard(agent wire.UUID, runtimeID string) {
 	if gone {
 		return
 	}
-	var stale []wire.UUID
+	type staleCard struct{ agent, req wire.UUID }
+	var stale []staleCard
 	d.headlessMu.Lock()
 	for req, card := range d.signInCards.cards {
 		if d.headless[card.signInID] != nil {
 			d.headlessMu.Unlock()
 			return
 		}
-		stale = append(stale, req) // its sign-in ran out or was stopped
+		stale = append(stale, staleCard{card.agentID, req}) // its sign-in ran out or was stopped
 	}
 	if d.signInCards.raising[runtimeID] {
 		d.headlessMu.Unlock()
@@ -123,51 +127,29 @@ func (d *Daemon) raiseSignInCard(agent wire.UUID, runtimeID string) {
 			delete(d.signInCards.raising, runtimeID)
 			d.headlessMu.Unlock()
 		}()
-		for _, req := range stale {
-			d.forgetSignInCard(req)
-			d.endRequest(req, wire.RequestStateDropped, nil, wire.RequestEndedWhyAskerEnded, nil)
-			d.formDown(agent, req)
+		// A card left open by a restart: its sign-in is gone with the daemon.
+		for _, form := range d.lostForms("") {
+			if form.ElicitationID != nil && *form.ElicitationID == signInElicitation(runtimeID) && d.signInCardOf(form.ID) == "" {
+				stale = append(stale, staleCard{form.AgentID, form.ID})
+			}
+		}
+		for _, c := range stale {
+			d.forgetSignInCard(c.req)
+			if d.endRequest(c.req, wire.RequestStateDropped, nil, wire.RequestEndedWhyAskerEnded, nil) {
+				// Said in the chat too, which draws a card asked and never answered (#4990).
+				d.record(c.agent, wire.TranscriptEntryKind{ElicitationAnswered: &wire.TranscriptEntryKindElicitationAnswered{ID: c.req,
+					Summary: signInCardReplaced}})
+			}
+			d.formDown(c.agent, c.req)
 		}
 		step, err := d.startHeadlessSignIn(d.ctx, runtimeID)
 		if err != nil {
 			log.Printf("sign-in card: %s: %v", runtimeID, err)
 			return
 		}
-		code := ""
-		if step.UserCode != nil {
-			code = *step.UserCode
-		}
-		msg := "Sign Codex in on this server, so it works when the Mac is away. Open " + string(step.URL) +
-			" in any browser and enter the code " + code + ", then choose Accept."
-		if out {
-			msg = signedOutTitle("Codex", d.ownName()) + ": its sign-in on this server ended. To sign in again, open " +
-				string(step.URL) + " in any browser and enter the code " + code + ", then choose Accept."
-		}
-		mode := wire.ElicitationRequestMode{URL: &wire.ElicitationRequestModeURL{Value: string(step.URL)}}
-		if runtimeID == "claude" {
-			// Claude's page gives a code to paste back: a form with the link in its words (#7506).
-			msg = "Sign in on this server so it works when the Mac is away. Open " + string(step.URL) +
-				" in any browser, sign in, and paste the code it gives."
-			title := "Sign Claude in on this server"
-			switch {
-			case out:
-				// Sign in again (#7472): the same sign-in as the first, made on this server, so
-				// any client's browser does it and no Mac is needed.
-				title = signedOutTitle("Claude", d.ownName())
-				msg = "Its sign-in on this server ended. To sign in again, open " + string(step.URL) +
-					" in any browser, sign in, and paste the code it gives."
-			case endsSoon:
-				// Its token lasts a year and does not renew (spec 7469 Q1): asked 30 days ahead.
-				title = "Sign Claude in again on " + d.ownName()
-				msg = "Its sign-in on this server ends on " + ends.Format("2 January 2006") + ". To sign in again now, open " +
-					string(step.URL) + " in any browser, sign in, and paste the code it gives."
-			}
-			field := "Code from the sign-in page"
-			mode = wire.ElicitationRequestMode{Form: &wire.ElicitationRequestModeForm{Value: wire.ElicitationSchema{Title: &title,
-				Properties: []wire.ElicitationSchemaProperty{{Name: signInCodeField, Title: &field, IsRequired: true,
-					Kind: wire.ElicitationSchemaPropertyKind{String: &wire.ElicitationSchemaPropertyKindString{}}}}}}}
-		}
-		req := wire.ElicitationRequest{ID: store.NewUUID(), AgentID: agent, Message: &msg,
+		msg, mode := d.signInCardWords(runtimeID, step, out, endsSoon, ends)
+		eid := signInElicitation(runtimeID)
+		req := wire.ElicitationRequest{ID: store.NewUUID(), ElicitationID: &eid, AgentID: agent, Message: &msg,
 			Mode: mode, Scope: wire.ElicitationRequestScopeSession, AskedAt: now()}
 		r := d.formRequest(req)
 		if r == nil {
@@ -187,6 +169,64 @@ func (d *Daemon) raiseSignInCard(agent wire.UUID, runtimeID string) {
 		Broadcast(d, wire.NotifyAgentElicitation, wire.ElicitationNotification{AgentID: agent, RequestID: req.ID, Request: &req})
 		d.raiseAgentEvent("agent.asked_form", agent, "is asking for "+runtimeByID(runtimeID).Name+" to be signed in on this server.", nil)
 	})
+}
+
+// signInCardWords is the card's words and its shape: a link for Codex's device code, a form
+// with a field for the code for Claude's (#7506); Sign in again when the sign-in here ended
+// (#7472), or ends within the warning.
+func (d *Daemon) signInCardWords(runtimeID string, step wire.RuntimeSignInStep, out, endsSoon bool, ends time.Time) (string, wire.ElicitationRequestMode) {
+	code := ""
+	if step.UserCode != nil {
+		code = *step.UserCode
+	}
+	msg := "Sign Codex in on this server, so it works when the Mac is away. Open " + string(step.URL) +
+		" in any browser and enter the code " + code + ", then choose Done."
+	if out {
+		msg = signedOutTitle("Codex", d.serverName()) + ": its sign-in on this server ended. To sign in again, open " +
+			string(step.URL) + " in any browser and enter the code " + code + ", then choose Done."
+	}
+	mode := wire.ElicitationRequestMode{URL: &wire.ElicitationRequestModeURL{Value: string(step.URL)}}
+	if runtimeID == "claude" {
+		// Claude's page gives a code to paste back: a form with the link in its words (#7506).
+		msg = "Sign in on this server so it works when the Mac is away. Open " + string(step.URL) +
+			" in any browser, sign in, and paste the code it gives."
+		title := "Sign Claude in on this server"
+		switch {
+		case out:
+			// Sign in again (#7472): the same sign-in as the first, made on this server, so
+			// any client's browser does it and no Mac is needed.
+			title = signedOutTitle("Claude", d.serverName())
+			msg = "Its sign-in on this server ended. To sign in again, open " + string(step.URL) +
+				" in any browser, sign in, and paste the code it gives."
+		case endsSoon:
+			// Its token lasts a year and does not renew (spec 7469 Q1): asked 30 days ahead.
+			title = "Sign Claude in again on " + d.serverName()
+			msg = "Its sign-in on this server ends on " + ends.Format("2 January 2006") + ". To sign in again now, open " +
+				string(step.URL) + " in any browser, sign in, and paste the code it gives."
+		}
+		field := "Code from the sign-in page"
+		mode = wire.ElicitationRequestMode{Form: &wire.ElicitationRequestModeForm{Value: wire.ElicitationSchema{Title: &title,
+			Properties: []wire.ElicitationSchemaProperty{{Name: signInCodeField, Title: &field, IsRequired: true,
+				Kind: wire.ElicitationSchemaPropertyKind{String: &wire.ElicitationSchemaPropertyKindString{}}}}}}}
+	}
+	return msg, mode
+}
+
+// serverName is this machine's name as the clients show it: its entry in the person's lock,
+// which they approved, else its host name, as it told the control plane when it joined.
+// Not ownName, which is the control plane's.
+func (d *Daemon) serverName() string {
+	if state, _ := d.heldLock(); state != nil {
+		if me := d.ownHostID(); me != "" {
+			for _, m := range state.Members(wire.LockEntryKindAddMachine) {
+				if m.ID == me && m.Name != "" {
+					return m.Name
+				}
+			}
+		}
+	}
+	name, _ := os.Hostname()
+	return name
 }
 
 // holdsForSignIn says whether the agent's turn waits for a sign-in on this server (#7609).
@@ -210,7 +250,7 @@ func (d *Daemon) holdsForSignIn(id wire.UUID) bool {
 	d.headlessMu.Unlock()
 	if !was {
 		name := runtimeName(a.RuntimeID)
-		d.record(id, notice("info", name+" is not signed in on "+d.ownName(),
+		d.record(id, notice("info", name+" is not signed in on "+d.serverName(),
 			"What you sent is waiting. Sign "+name+" in on the card, and it will go."))
 	}
 	d.raiseSignInCard(id, a.RuntimeID)
@@ -250,6 +290,11 @@ func (d *Daemon) usesOwnSignIn(a *wire.Agent) bool {
 	if macToolsHome != "" || a.AccountID != nil || d.relayFor(a.RuntimeID) != nil {
 		return false
 	}
+	// Still signed out: Codex deletes its auth.json once its sign-in fails, so the next turn
+	// that fails is that same end, not a sign-in that was never made.
+	if d.signedOutHere(a.RuntimeID) {
+		return true
+	}
 	switch a.RuntimeID {
 	case "claude":
 		return d.storedClaudeSignIn() != "" || ownClaudeSignIn()
@@ -266,14 +311,11 @@ func (d *Daemon) ownSignInEnded(a *wire.Agent) bool {
 	if !d.usesOwnSignIn(a) {
 		return false
 	}
+	d.markSignedOut(a.RuntimeID, true)
 	d.headlessMu.Lock()
-	if d.signInCards.signedOut == nil {
-		d.signInCards.signedOut = map[string]bool{}
-	}
-	d.signInCards.signedOut[a.RuntimeID] = true
 	delete(d.signInCards.dismissed, a.RuntimeID) // a new end asks again
 	d.headlessMu.Unlock()
-	d.record(a.ID, notice("error", signedOutTitle(runtimeName(a.RuntimeID), d.ownName()),
+	d.record(a.ID, notice("error", signedOutTitle(runtimeName(a.RuntimeID), d.serverName()),
 		"Its own sign-in on this server ended: it expired or was revoked. Sign in again on the card, then send the message again."))
 	if rt := runtimeByID(a.RuntimeID); rt != nil {
 		Broadcast(d, wire.NotifyRuntimeChanged, d.statusOf(rt))
@@ -282,12 +324,44 @@ func (d *Daemon) ownSignInEnded(a *wire.Agent) bool {
 	return true
 }
 
+// signedOutFile marks runtimeID's own sign-in on this server as ended (#7472), so the card
+// says Sign in again after a restart too. Empty; one per runtime.
+func (d *Daemon) signedOutFile(runtimeID string) string {
+	return filepath.Join(d.Store.Loc.Root, "runtimes", runtimeID+"-signed-out")
+}
+
 // signedOutHere says whether runtimeID's own sign-in on this server ended (#7472).
 func (d *Daemon) signedOutHere(runtimeID string) bool {
-	d.headlessMu.Lock()
-	defer d.headlessMu.Unlock()
-	return d.signInCards.signedOut[runtimeID]
+	if d.Store == nil {
+		return false
+	}
+	_, err := os.Stat(d.signedOutFile(runtimeID))
+	return err == nil
 }
+
+// markSignedOut keeps or clears the mark.
+func (d *Daemon) markSignedOut(runtimeID string, out bool) {
+	if d.Store == nil {
+		return
+	}
+	file := d.signedOutFile(runtimeID)
+	if !out {
+		_ = os.Remove(file)
+		return
+	}
+	if err := os.MkdirAll(filepath.Dir(file), 0o700); err != nil {
+		log.Printf("sign-in: %s signed out: %v", runtimeID, err)
+		return
+	}
+	// store-bounds: kind=key-value; count=2; age=until-deleted; applied=on write: one empty file each for Claude and Codex, removed on sign-in (#7472)
+	if err := os.WriteFile(file, nil, 0o600); err != nil {
+		log.Printf("sign-in: %s signed out: %v", runtimeID, err)
+	}
+}
+
+// signInElicitation is the ElicitationID of the daemon's sign-in card for runtimeID: a card
+// left open by a restart is known by it and closed when a new one is raised.
+func signInElicitation(runtimeID string) string { return "agents-sign-in:" + runtimeID }
 
 // claudeTokenLife is how long a `claude setup-token` token lasts (spec 7469 Q1), and
 // claudeTokenWarning how long before its end the card asks for a new one.

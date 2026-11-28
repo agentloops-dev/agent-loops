@@ -355,7 +355,7 @@ final class RemoteModel {
     let userScope = UserScopeState()
     /// What `control/status` last said: its version and capabilities, for Settings (#1748).
     var controlStatus: DaemonAPI.ControlStatus?
-    /// What each part says of its levels, for Early Features (#6579): the control plane's and each
+    /// What each part says of its levels, for Features (#6579): the control plane's and each
     /// host's. None before the control plane's status arrives, and the Remote reads its own list.
     var partsMaturity: [[String: String]?] {
         guard let controlStatus else { return [] }

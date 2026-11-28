@@ -243,7 +243,7 @@
   max-width: 420px; padding: 6px 8px; border-bottom: 1px solid var(--paper-rule); }
 .with-sidebar .settings-body select { font: inherit; color: inherit; background: var(--paper-raised); border: 1px solid var(--paper-rule); border-radius: var(--radius-control); }
 .with-sidebar .settings-body .hint { max-width: 420px; font-size: 0.75rem; line-height: 1.45; }
-/* A setting's name with a line under it (#6254, Early Features' flag rows, #6604). */
+/* A setting's name with a line under it (#6254, Features' flag rows, #6604). */
 .settings-body .setting-words { display: flex; flex-direction: column; gap: 2px; }
 .settings-body .setting-words .hint { margin: 0; padding: 0; }
 /* A machine's runtimes and resources (#3629): rows in the page's column. */
