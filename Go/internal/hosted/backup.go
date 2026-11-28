@@ -284,6 +284,10 @@ func (a Admin) Delete(ctx context.Context, id string) error {
 	if a.now().Sub(acc.Suspended.At) < stopWithin {
 		return fmt.Errorf("%s was suspended %s ago: its control plane may still be running; try again in a minute", id, a.now().Sub(acc.Suspended.At).Round(time.Second))
 	}
+	// Its address says gone, as for Delete Account (#6785).
+	if err := writeGone(ctx, a.Store, id, goneDeleted, a.now()); err != nil {
+		return fmt.Errorf("its tombstone: %w", err)
+	}
 	return a.accounts().remove(ctx, acc)
 }
 
@@ -419,5 +423,6 @@ func (a Admin) relinkDeleted(ctx context.Context, id string, backed Account, dat
 	if _, err := a.Store.Put(ctx, accountKey(id), data, store.Absent); err != nil && !store.IsConflict(err) {
 		return err
 	}
-	return nil
+	// Back: its address no longer says gone (#6785).
+	return a.Store.Delete(ctx, goneKey(id))
 }

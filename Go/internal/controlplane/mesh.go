@@ -224,6 +224,8 @@ type mesh struct {
 	proxies  map[string]*proxyUplink
 	// Since when each control-only machine record has had no live copy naming it (#7399).
 	unnamed map[string]time.Time
+	// This copy's asks of the copies that hold hosts (#7315).
+	asks peerAsks
 }
 
 func newMesh(s *Service, peerURL string, beat time.Duration) *mesh {
@@ -479,6 +481,17 @@ func (m *mesh) received(line string, link *peerLink) {
 			m.reach(h.ID, link)
 		} else {
 			m.dropProxy(h.ID, link.peer)
+		}
+	case o["ask"] != nil:
+		// It can take seconds (control/eligible dials the machine): not on the link's reader.
+		var a peerAsk
+		if json.Unmarshal(o["ask"], &a) == nil && a.ID != "" {
+			go m.answerPeer(a, link)
+		}
+	case o["answer"] != nil:
+		var a peerAnswer
+		if json.Unmarshal(o["answer"], &a) == nil {
+			m.answered(a)
 		}
 	case o["event"] != nil:
 		var e controlEvent

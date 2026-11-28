@@ -148,7 +148,8 @@ func refuseInstall(home string, control, noAgents bool) string {
 // code the host joins with. The bool is false when it failed, having said why.
 func installControl(ctx context.Context, c controlsetup.Options, noAgents bool) (string, bool) {
 	deps := controlsetup.Deps{Systemd: controlsetup.SystemdUser, Run: controlsetup.RunCommand, Out: os.Stdout,
-		Seen: func() netip.Addr { return controllink.SeenAddress(hostsetup.LayoutOf(c.Home).Root) }}
+		Seen:  func() netip.Addr { return controllink.SeenAddress(hostsetup.LayoutOf(c.Home).Root) },
+		Cloud: controlsetup.CloudAddress}
 	if err := controlsetup.Install(ctx, c, deps); err != nil {
 		fmt.Fprintln(os.Stderr, "The control plane is not set up:", err)
 		return "", false

@@ -127,9 +127,14 @@ func (a Admin) Suspend(ctx context.Context, id, reason string) error {
 	return err
 }
 
-// Unsuspend lets an account's control plane start again at its next request.
+// Unsuspend lets an account's control plane start again at its next request. It lifts an
+// idle pause too, and counts as the account's use today (#6785).
 func (a Admin) Unsuspend(ctx context.Context, id string) error {
-	acc, err := a.accounts().update(ctx, id, func(acc *Account) { acc.Suspended = nil })
+	today := dayOf(a.now())
+	acc, err := a.accounts().update(ctx, id, func(acc *Account) {
+		acc.Suspended = nil
+		useOn(acc, today, false)
+	})
 	if err == nil && acc == nil {
 		err = fmt.Errorf("there is no account %q", id)
 	}

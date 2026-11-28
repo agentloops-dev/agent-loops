@@ -16,7 +16,7 @@ import (
 // record has a largest size and each list a count, and a write over one is refused. An
 // invite goes when it expires, and an allowed login and a place on the waitlist 90 days
 // after they were made. A block has no age: one that aged out would let the person back
-// in. Nothing here deletes an account.
+// in. Idle accounts are swept in the same hour (idleaccounts.go).
 
 const (
 	// recordMost is the largest record of these lists.
@@ -93,6 +93,9 @@ func (s *Service) sweepRecords() {
 		defer cancel()
 		if err := sweepRecords(ctx, s.cfg.Store, now); err != nil {
 			s.log("records sweep: " + err.Error())
+		}
+		if err := s.sweepIdleAccounts(ctx, now); err != nil {
+			s.log("idle accounts sweep: " + err.Error())
 		}
 	}()
 }

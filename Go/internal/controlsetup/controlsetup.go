@@ -75,6 +75,10 @@ type Deps struct {
 	// Seen is the public address that a control plane saw this machine's uplink come from
 	// (controllink.SeenAddress, #7493), or an invalid one; nil for none.
 	Seen func() netip.Addr
+	// Cloud is the public address that the cloud's metadata service gives this VM
+	// (CloudAddress, #7638), or an invalid one; nil for none. It is asked only when the
+	// machine has no public address of its own and no seen one.
+	Cloud func(context.Context) netip.Addr
 	// Poll and Wait bound the wait for the first start to make the store.
 	Poll, Wait time.Duration
 	Out        io.Writer
@@ -235,7 +239,7 @@ func Install(ctx context.Context, o Options, d Deps) error {
 	if err := place(o.Executable, l); err != nil {
 		return err
 	}
-	sayAddress(&o, l, d)
+	sayAddress(ctx, &o, l, d)
 	var err error
 	if o.Page, err = placePage(o.Executable, l); err != nil {
 		return err
@@ -270,8 +274,9 @@ func Install(ctx context.Context, o Options, d Deps) error {
 // one: another machine cannot resolve a droplet's. With no --address, it keeps the one an
 // install before gave, else takes the machine's own (MachineAddress). When that is private
 // or there is none, as on a cloud VM behind NAT, it takes the public address that a control
-// plane saw this machine's uplink come from (#7493), when there is one.
-func sayAddress(o *Options, l Layout, d Deps) {
+// plane saw this machine's uplink come from (#7493), else the one the cloud's metadata
+// service gives (#7638), when there is one.
+func sayAddress(ctx context.Context, o *Options, l Layout, d Deps) {
 	if o.Domain == "" && o.Address == "" {
 		if old, err := os.ReadFile(l.Unit); err == nil {
 			if a := addressOf(string(old)); a != nil && a.Domain == nil {
@@ -286,6 +291,11 @@ func sayAddress(o *Options, l Layout, d Deps) {
 		if seen := d.seen(); !ok && seen.IsValid() {
 			fmt.Fprintf(d.Out, "This machine has no public address of its own, so the control plane takes %s, the public address its uplink came from.\n", seen)
 			ip, ok = seen, true
+		} else if !ok && d.Cloud != nil {
+			if cloud := d.Cloud(ctx); cloud.IsValid() {
+				fmt.Fprintf(d.Out, "This machine has no public address of its own, so the control plane takes %s, the public address its cloud's metadata service gives.\n", cloud)
+				ip, ok = cloud, true
+			}
 		}
 		if !ip.IsValid() {
 			fmt.Fprintln(d.Out, "This machine has no IP address another machine can reach, so the control plane takes its hostname, which only this network can resolve. Install again with --address and the name or address other machines reach it at.")

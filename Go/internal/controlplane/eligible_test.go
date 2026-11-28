@@ -311,3 +311,35 @@ func TestHelloKeepsTheControlAddress(t *testing.T) {
 		t.Fatalf("a hello with none keeps %+v", a)
 	}
 }
+
+// A machine connected to another copy is checked by that copy, so each copy gives the same
+// answer (#7315).
+func TestEligibleAtAnotherCopy(t *testing.T) {
+	t.Parallel()
+	a, b := twoCopies(t)
+	a.asked = func(_, method string, _ json.RawMessage) (any, bool) {
+		if method == wire.CallMachineUsage.Name {
+			return goodUsage(), true
+		}
+		return nil, false
+	}
+	host := a.host("MACHINE-2").member.Host
+	b.waitFor(func() bool { return b.s.router.Reaches(host) && !b.s.router.Holds(host) }, "B reaching the host through A")
+	ask := func(p *plane) (out wire.ControlEligible) {
+		t.Helper()
+		_, window := p.client("Window")
+		must(t, json.Unmarshal(call(t, window, "", "control/eligible", map[string]any{"machine": host}), &out))
+		return out
+	}
+	atA, atB := ask(a), ask(b)
+	// A reached the uplink, from loopback, and the machine said its usage.
+	if len(atB.Reasons) != 1 || !strings.Contains(atB.Reasons[0].Text, "no public address") ||
+		atB.MemoryBytes == nil || *atB.MemoryBytes != goodUsage().Machine.MemoryTotal {
+		t.Fatalf("at B: %+v", atB)
+	}
+	ja, _ := json.Marshal(atA)
+	jb, _ := json.Marshal(atB)
+	if string(ja) != string(jb) {
+		t.Fatalf("A said %s, B said %s", ja, jb)
+	}
+}

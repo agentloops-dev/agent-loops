@@ -151,7 +151,7 @@ func (s *Service) copyConfig(id string, st *limitedStore, key []byte, agents *ag
 	return controlplane.Config{Store: st, PrivateKey: key, URL: s.accountURL(id), Bind: "127.0.0.1", Port: 0,
 		Name: "Your control plane", MachineID: "hosted-" + id, PublicWeb: s.cfg.Web, PublicViews: views,
 		TrustedProxies: trusted, Hosted: true, SecretKeeper: s.cfg.Keeper, AgentsRunningGate: agents.gate, SignIn: s.cfg.CopySignIn,
-		WebPush: s.cfg.WebPush, Log: func(line string) { s.log(id + ": " + line) }}
+		WebPush: s.cfg.WebPush, Used: s.usedSoon(id), Log: func(line string) { s.log(id + ": " + line) }}
 }
 
 // clientOf is the address a request comes from: the last X-Forwarded-For entry when the
@@ -208,11 +208,11 @@ func (s *Service) makeRoomLocked() bool {
 	return true
 }
 
-// suspended is what a suspended account's address answers (#2152 FR-009).
-func (s *Service) suspended(w http.ResponseWriter) {
+// suspended is what a suspended or paused account's address answers (#2152 FR-009, #6785).
+func (s *Service) suspended(w http.ResponseWriter, acc *Account) {
 	s.metrics.refused("suspended")
-	w.Header().Set("Agents-Refusal", "suspended")
-	plain(w, http.StatusForbidden, "This hosted account is suspended. See https://"+s.cfg.Domain+"/account.\n")
+	w.Header().Set("Agents-Refusal", controllink.Suspended)
+	plain(w, http.StatusForbidden, s.pausedLine(acc)+"\n")
 }
 
 // toAccount passes a request to an account's control plane.
@@ -229,11 +229,16 @@ func (s *Service) toAccount(w http.ResponseWriter, r *http.Request, id string) {
 		return
 	}
 	if acc == nil {
+		// Deleted: gone while its tombstone is kept (#6785), then nothing.
+		if g, err := s.gone(r.Context(), id); err == nil && g != nil {
+			s.answerGone(w, g)
+			return
+		}
 		plain(w, http.StatusNotFound, "There is no control plane here.\n")
 		return
 	}
 	if acc.Suspended != nil {
-		s.suspended(w)
+		s.suspended(w, acc)
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
@@ -427,6 +432,10 @@ func (s *Service) sweepAccounts(ctx context.Context) {
 		if c.limits == nil {
 			continue
 		}
+		// A socket open across a day is a use that day (#6785): a machine connected for weeks.
+		if acc.LastUsed < dayOf(now) && c.service != nil && attached(c.service.Router()) {
+			s.markUsed(ctx, id)
+		}
 		c.limits.setPlan(PlanOf(acc))
 		if c.agents != nil {
 			c.agents.setPlan(PlanOf(acc))
@@ -453,6 +462,11 @@ func (s *Service) sweepAccounts(ctx context.Context) {
 			}
 		}
 	}
+}
+
+// attached says a client or a machine holds an authenticated socket to the copy.
+func attached(r *controlplane.Router) bool {
+	return r != nil && (len(r.ConnectedClients()) > 0 || len(r.HostsHeldHere()) > 0)
 }
 
 // sweepIdleEvery sweeps idle copies until the service stops.

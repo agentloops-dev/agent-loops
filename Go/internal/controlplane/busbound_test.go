@@ -13,7 +13,6 @@ import (
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/controllink"
 	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/store"
-	"github.com/agentloops-dev/agent-loops/Go/internal/flaky"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -109,7 +108,6 @@ func seedBusAs(tb testing.TB, root, bus string, events, size int, from time.Time
 // they answer in the same time and memory whatever the bus holds: 2,000 envelopes here,
 // 82,000 on the live control plane.
 func TestBusLeaseAndPublishListNothing(t *testing.T) {
-	flaky.UnderLoad(t, "#7631")
 	t.Parallel()
 	ops := newBusOps(store.NewFolder(t.TempDir()))
 	p := startPlane(t, ops, controllink.NewPrivateKey())
