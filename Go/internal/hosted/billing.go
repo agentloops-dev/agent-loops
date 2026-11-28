@@ -156,10 +156,15 @@ func (s *Service) actOn(ctx context.Context, e billing.Event) error {
 			account = found
 		}
 		paid := e.Type == billing.SubscriptionUpdated && billing.Paid(o.Status)
+		today := dayOf(s.cfg.Now())
 		change = func(acc *Account) {
 			// An old subscription's end does not end a newer one.
 			if !paid && acc.StripeSubscription != "" && acc.StripeSubscription != o.ID {
 				return
+			}
+			if !paid && PlanOf(acc).ID != PlanFree {
+				// The idle clock starts on the day a paid plan ends (#6785).
+				useOn(acc, today, false)
 			}
 			acc.Plan = PlanFree
 			if paid {

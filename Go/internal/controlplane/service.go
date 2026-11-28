@@ -113,6 +113,10 @@ type Config struct {
 	// start; it answers nil to allow, or the words of a refusal that names the limit and
 	// the plan. agents-hosted sets it per account; nil holds no copy to a limit.
 	AgentsRunningGate func(running int) error
+	// Used is told each time a client or a machine finishes the key exchange (#6785): the
+	// hosted service counts it as a use of the account, for its idle clock. Nil on a
+	// control plane that is not hosted.
+	Used func()
 	// Where other copies reach this one (several copies over one store, US3). "" for a
 	// single copy (Agents Host's), which links with nobody and takes no leases (#206).
 	PeerURL string
@@ -1496,6 +1500,9 @@ func (s *Service) acceptVia(conn *Conn, webOrigin string, proved func(failed boo
 		return
 	}
 	setReadLimitFor(conn, id.Kind)
+	if s.cfg.Used != nil && (id.Kind == 'c' || id.Kind == 'h') {
+		s.cfg.Used()
+	}
 	switch id.Kind {
 	case 'c':
 		s.attachClient(conn, client, auth, via)

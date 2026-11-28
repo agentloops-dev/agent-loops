@@ -260,14 +260,16 @@ each record's bytes as they are, by design (#7251, `docs/explanation/data-stores
 
 | Key | Holds | Bound | Swept |
 |---|---|---|---|
-| `hosted/v1/accounts/<id>.json` | Sign-in provider and subject, login, plan, suspension, certificate time, **Stripe customer and subscription IDs** | 100 accounts (`hosted/signup.go:40`) | Delete Account |
-| `hosted/v1/{github,apple,google}/<subject>.json` | Sign-in → account | 1 per account | Delete Account |
+| `hosted/v1/accounts/<id>.json` | Sign-in provider and subject, login, plan, suspension or idle pause, certificate time, last use (a day), **Stripe customer and subscription IDs** | 100 accounts (`hosted/signup.go:40`); a free one paused 90 days idle, deleted 90 days later; a paid one while paid (#6785) | hourly (`hosted/idleaccounts.go`); Delete Account |
+| `hosted/v1/{github,apple,google}/<subject>.json` | Sign-in → account | 1 per account | with the account |
+| `hosted/v1/gone/<id>.json` | A deleted account's day and why, for 410 gone | 1,000 of 128 B; 90 days (#6785) | hourly |
 | `hosted/v1/invites/<code>.json` | Expiry and **who used it** | 1,000 of 4 KiB, else refused; 14-day life, 90 at most (#6782) | hourly, at expiry; Delete Account of who used it |
 | `hosted/v1/waiting/`, `waitlist/` | Waitlist | 10,000 of 4 KiB, else refused; 90 days (#6786) | hourly; on sign-up or a block |
 | `hosted/v1/allow/` | Operator's allow list | 10,000 of 4 KiB, else refused; 90 days from the last allow (#6783) | hourly; operator |
 | `hosted/v1/blocked/`, `blocked/email/` | Operator's block lists | 10,000 each of 4 KiB, else refused; no age (#6784) | operator |
 | `hosted/v1/stripe/<evt>.json` | Stripe events seen | 30 days, 10,000 of 1 KiB (#7251) | daily |
 | `hosted/v1/usage/<id>.json` | Account byte count | 1 per account | with the account |
+| `hosted/v1/emails/<mark>.json` | Email mark → account | 1 per account | with the account |
 | `accounts/<id>/v1/…` | That account's whole control-plane store (section 4) | Plan: storage 1 / 20 GB, machines 2 / 20, clients 5 / 50, events 7 / 90 days (`hosted/plans.go:37-40`) | Delete Account |
 | `<dir>/<date>/<account>/…` (operator's disk) | Per-account backups | **none unless `--keep N`** (`cmd/agents-hosted/admin.go:162-191`) | — |
 
@@ -471,7 +473,8 @@ newer than a row above for the same store.
 | hosted `v1/invites/` | document | Invite links | 1,000 of 4 KiB, else refused; until it expires, 90 days at most | `Go/internal/hosted/recordbounds.go` (`sweepInvites`) | #6782 |
 | hosted `v1/allow/` | key-value | The operator's allow list | 10,000 of 4 KiB, else refused; 90 days from the last allow | `Go/internal/hosted/recordbounds.go` (`sweepAllowed`) | #6783 |
 | hosted `v1/blocked/`, `v1/blocked/email/` | key-value | The operator's block lists | 10,000 each of 4 KiB, else refused; no age, until unblocked (Alex, 2026-11-24: a blocked person must not come back) | `Go/internal/hosted/recordbounds.go` (`putBlock`, `putEmailBlock`) | #6784 |
-| hosted `v1/accounts/`, sign-in links, `v1/emails/`, `v1/usage/` | document | Accounts | 100 accounts of 8 KiB, links and usage 128 bytes; until Delete Account: an exception to the 90-day rule until epic #7092 (Alex, 2026-11-24) | `Go/internal/hosted/signup.go` (`MaxAccounts`), `accounts.go` (`accountRecordMost`, `remove`) | #6785, #7094 |
+| hosted `v1/accounts/`, sign-in links, `v1/emails/`, `v1/usage/` | document | Accounts | 100 accounts of 8 KiB, links and usage 128 bytes; a free account is paused after 90 days with no use and deleted 90 days later, hourly; a paid one stays while it is paid, the exception of #7094 | `Go/internal/hosted/signup.go` (`MaxAccounts`), `accounts.go` (`accountRecordMost`, `remove`), `idleaccounts.go` | #6785, #7094 |
+| hosted `v1/gone/` | key-value | Deleted accounts' tombstones | 1,000 of 128 bytes, 90 days, hourly | `Go/internal/hosted/idleaccounts.go` | #6785 |
 | hosted `v1/waitlist/`, `v1/waiting/` | document | The waitlist | 10,000 of 4 KiB, else refused; 90 days, or sign-up or a block | `Go/internal/hosted/recordbounds.go` (`sweepWaitlist`) | #6786 |
 | Operator backups | blob | Each account's store | The newest 7, or 1 to 90; 90 days; the newest copy of an account that exists stays; over 10 MB is made, with a warning | `Go/internal/hosted/backup.go` (`PruneBackups`) | #6787 |
 | `control.log` (`~/Library/Logs/Agents/control.log` or `/data/control.log`) | log | Operational log lines | 4 MB and one older file, 7 days; the oldest go first | `Go/internal/rolllog/rolllog.go` | #6901 |

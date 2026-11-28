@@ -191,16 +191,23 @@ func adminAccounts(ctx context.Context, a hosted.Admin, out io.Writer) error {
 		return err
 	}
 	tw := tabwriter.NewWriter(out, 0, 4, 2, ' ', 0)
-	fmt.Fprintln(tw, "ACCOUNT\tSIGN-IN\tLOGIN\tPLAN\tSTATE\tCREATED")
+	fmt.Fprintln(tw, "ACCOUNT\tSIGN-IN\tLOGIN\tPLAN\tSTATE\tCREATED\tLAST USED")
 	for _, acc := range list {
 		plan, state := acc.Plan, "active"
 		if plan == "" {
 			plan = "free"
 		}
-		if acc.Suspended != nil {
+		switch {
+		case acc.Suspended != nil && acc.Suspended.Idle && acc.Suspended.Deletes != nil:
+			state = "paused, idle: deleted on " + acc.Suspended.Deletes.Format(time.DateOnly)
+		case acc.Suspended != nil:
 			state = "suspended: " + acc.Suspended.Reason
 		}
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n", acc.ID, acc.SignIn, acc.SignIn.Login, plan, state, acc.Created.Format(time.RFC3339))
+		used := acc.LastUsed
+		if used == "" {
+			used = "-"
+		}
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n", acc.ID, acc.SignIn, acc.SignIn.Login, plan, state, acc.Created.Format(time.RFC3339), used)
 	}
 	return tw.Flush()
 }

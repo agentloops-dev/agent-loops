@@ -102,6 +102,11 @@ type Config struct {
 	StripeAPI string
 	Stripe    billing.Stripe
 
+	// What the hourly sweep does with a free account that nobody used for 90 days (#6785):
+	// IdleOff, IdlePause, or IdleDelete, which pauses it and deletes it 90 days later. ""
+	// is IdleDelete.
+	IdleAccounts string
+
 	// Who else may read Metrics (#2226), besides loopback: the host's address on the
 	// service's network, say. Never the proxy's: it would pass the internet's requests.
 	MetricsFrom []netip.Prefix
@@ -135,6 +140,9 @@ type Service struct {
 	stripeSwept time.Time
 	// When the service's own lists were last swept (recordbounds.go).
 	recordsSwept time.Time
+	// The day each account's last use was written by this copy of the service, so it is
+	// written once a day (idleaccounts.go).
+	usedOn map[string]string
 	metrics     metrics
 	// The metrics' account and waitlist counts, as the sweep last counted them.
 	counts *accountCounts
@@ -167,6 +175,12 @@ func New(ctx context.Context, cfg Config) (*Service, error) {
 	}
 	if cfg.SignUp != SignUpInvite && cfg.SignUp != SignUpOpen && cfg.SignUp != SignUpClosed {
 		return nil, fmt.Errorf("sign-up is invite, open or closed, not %q", cfg.SignUp)
+	}
+	if cfg.IdleAccounts == "" {
+		cfg.IdleAccounts = IdleDelete
+	}
+	if cfg.IdleAccounts != IdleOff && cfg.IdleAccounts != IdlePause && cfg.IdleAccounts != IdleDelete {
+		return nil, fmt.Errorf("idle accounts is off, pause or delete, not %q", cfg.IdleAccounts)
 	}
 	orDefault(&cfg.MaxAccounts, defaultMaxAccounts)
 	orDefault(&cfg.SignUpsPerAddress, defaultSignUpsPerAddress)
@@ -289,7 +303,15 @@ func (s *Service) tlsAllowed(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if id, ok := strings.CutSuffix(name, "."+s.cfg.AccountsDomain); ok && validID(id) {
-		if acc, err := s.accounts.get(r.Context(), id); err == nil && acc != nil {
+		acc, err := s.accounts.get(r.Context(), id)
+		if err == nil && acc == nil {
+			// A deleted account's name keeps its certificate while its address says gone.
+			if g, err := s.gone(r.Context(), id); err == nil && g != nil {
+				plain(w, http.StatusOK, "yes\n")
+				return
+			}
+		}
+		if err == nil && acc != nil {
 			if acc.Certificate != nil || s.newCertificate(r.Context(), acc.ID) {
 				plain(w, http.StatusOK, "yes\n")
 				return

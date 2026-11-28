@@ -318,9 +318,9 @@ Run these on the service's machine. A running service sees each change within a 
 
 | Command | What it does |
 | --- | --- |
-| `agents-hosted admin accounts` | Lists every account, its sign-in (`apple:…`, `google:…` or `github:<id>`), GitHub login, plan and state |
+| `agents-hosted admin accounts` | Lists every account, its sign-in (`apple:…`, `google:…` or `github:<id>`), GitHub login, plan, state (with the delete date of an idle pause) and the day it was last used |
 | `agents-hosted admin suspend <account> <why>` | Stops its control plane, which then refuses every request. Its records are kept. The person reads why on their account page, and can delete the account |
-| `agents-hosted admin unsuspend <account>` | Lets it start again |
+| `agents-hosted admin unsuspend <account>` | Lets it start again. It lifts an idle pause too, and counts as a use today |
 | `agents-hosted admin block <sign-in> [why]` | Refuses that sign-in and its account's email, and suspends its account. Give `provider:subject` as `accounts` and `waitlist` list it, a GitHub id, or a GitHub login; or give an email, to refuse it from every provider |
 | `agents-hosted admin unblock <sign-in>` | Lets it sign up again: `provider:subject`, a GitHub id, or an email |
 | `agents-hosted admin plan <account> free\|pro` | Puts an account on a plan by hand |
@@ -332,6 +332,16 @@ Run these on the service's machine. A running service sees each change within a 
 page. To delete one yourself, `admin suspend <account> deleting`, wait a minute, then
 `admin delete <account>`. It deletes the account and everything its control plane keeps.
 `admin backup` it first if you may need it again.
+
+**Idle accounts (#6785):** each hour the service pauses a free account that nobody used for
+90 days, and deletes it 90 days after the pause, at most 10 an hour. A use is the owner's
+sign-in, a client's or a machine's socket to its control plane, or the end of a paid plan;
+a paid account is never paused. A pause is a suspension with the reason "Nobody used this
+account for 90 days.": the owner's sign-in lifts it, and so does `admin unsuspend`. Your own
+`admin suspend` is never lifted by a sign-in, and the sweep never deletes it. A deleted
+account's address answers 410 `gone` for 90 days (`hosted/v1/gone/<id>.json`), and
+`admin restore` takes that away. `AGENTS_HOSTED_IDLE_ACCOUNTS=pause` pauses and never
+deletes; `off` does neither.
 
 **Raise the cap:** set `AGENTS_HOSTED_MAX_ACCOUNTS` and run `hosted-up.sh` again. Nobody on
 the waitlist is admitted by it: they sign in again, or you `admin allow <login>` each.
@@ -355,11 +365,11 @@ pass. They answer only from loopback and `AGENTS_HOSTED_METRICS_FROM`. In
 
 | Metric | What it counts |
 | --- | --- |
-| `agents_hosted_accounts{plan,state}` | Accounts, by plan and state |
+| `agents_hosted_accounts{plan,state}` | Accounts, by plan and state: `active`, `paused-idle` or `suspended` |
 | `agents_hosted_waitlist` | People on the waitlist |
 | `agents_hosted_copies_running` | Control planes running now |
 | `agents_hosted_signups_total{kind}` | New accounts (`account`) and waitlist entries (`waitlist`) |
-| `agents_hosted_refusals_total{kind}` | Refusals: `blocked`, `closed`, `no_email`, `turnstile`, `rate`, `waitlist_full`, `store`, `full`, `suspended`, `certificates`, `upgrade_full`, `disk`, and each plan limit (`machines`, `clients`, `storage`, `connections`) |
+| `agents_hosted_refusals_total{kind}` | Refusals: `blocked`, `closed`, `no_email`, `turnstile`, `rate`, `waitlist_full`, `store`, `full`, `suspended`, `gone`, `certificates`, `upgrade_full`, `disk`, and each plan limit (`machines`, `clients`, `storage`, `connections`) |
 | `agents_hosted_certificates_allowed_total` | New names allowed a certificate |
 | `agents_hosted_disk_bytes{kind}` | The store's disk: `total` and `free` (a file store only) |
 | `agents_hosted_disk_high_water_bytes` | Used bytes past which accounts' writes are refused: 90% of the disk |
@@ -404,6 +414,7 @@ one line per event, and never a code, a key, a token or an email address.
 | `AGENTS_HOSTED_TURNSTILE_SITE_KEY` | Cloudflare Turnstile's site key, for the sign-up page; Turnstile is on with this and its secret |
 | `AGENTS_HOSTED_TURNSTILE_SECRET` | Turnstile's secret key |
 | `AGENTS_HOSTED_MAX_ACCOUNTS` | The most accounts; 100 |
+| `AGENTS_HOSTED_IDLE_ACCOUNTS` | What the hourly sweep does with a free account nobody used for 90 days (#6785): `delete` (the default) pauses it and deletes it 90 days later, `pause` only pauses it, `off` does neither |
 | `AGENTS_HOSTED_MIN_GITHUB_AGE` | The youngest GitHub account that may sign up without being allowed, in days; 30 |
 | `AGENTS_HOSTED_SIGNUPS_PER_ADDRESS` | New accounts and waitlist entries an hour from one address; 3 |
 | `AGENTS_HOSTED_SIGNUPS_PER_HOUR` | New accounts and waitlist entries an hour in all; 30 |
