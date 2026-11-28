@@ -450,6 +450,12 @@ func (f *fakeRuntime) Prompt(ctx context.Context, p sdk.PromptRequest) (sdk.Prom
 	if strings.Contains(text, "typed limit") || strings.Contains(text, "pay extra") {
 		return f.promptTypedLimit(ctx, p.SessionId, text, say)
 	}
+	// Claude's sign-in ended (#7472): a revoked or expired token comes typed with the login action.
+	if strings.Contains(text, "signed out") {
+		return sdk.PromptResponse{StopReason: sdk.StopReasonEndTurn, Meta: map[string]any{"jetbrains": map[string]any{"air": map[string]any{
+			"sessionFailure": map[string]any{"id": "f2", "category": "access", "title": "Sign in to continue using Claude.",
+				"details": "401 Invalid bearer token", "actions": []any{"login"}}}}}}, nil
+	}
 	if strings.Contains(text, "spend it all") {
 		return sdk.PromptResponse{}, &sdk.RequestError{Code: -32603, Message: "Internal error", Data: map[string]any{"message": "Your credit balance is too low to access the API."}}
 	}

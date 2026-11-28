@@ -416,6 +416,9 @@ func (d *Daemon) closeRelayForOwnSignIn(runtimeID string) {
 
 // signedInHere is the runtime's status once it has signed in, told to every client.
 func (d *Daemon) signedInHere(rt *runtimeDef) wire.RuntimeStatus {
+	d.headlessMu.Lock()
+	delete(d.signInCards.signedOut, rt.ID) // signed in again (#7472)
+	d.headlessMu.Unlock()
 	d.updateAccount(rt.ID, func(a *wire.RuntimeAccount) { a.State, a.CheckedAt = wire.RuntimeAccountStateReady, now() })
 	s := d.statusOf(rt)
 	Broadcast(d, wire.NotifyRuntimeChanged, s)
@@ -647,6 +650,9 @@ func (d *Daemon) noteSignIn(s *wire.RuntimeStatus) {
 		in.SignedIn = ownClaudeSignIn() || d.storedClaudeSignIn() != ""
 	case "codex":
 		in.SignedIn = d.ownCodexSignIn()
+	}
+	if d.signedOutHere(s.Runtime.ID) {
+		in.SignedIn = false // its sign-in here ended (#7472)
 	}
 	if d.relayFor(s.Runtime.ID) != nil && (s.Runtime.ID != "claude" || d.storedClaudeSignIn() == "") && (s.Runtime.ID != "codex" || !in.SignedIn) {
 		relayed := true
