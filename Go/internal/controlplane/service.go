@@ -751,6 +751,11 @@ func (s *Service) Stop() {
 	if s.mesh != nil {
 		s.mesh.stop()
 	}
+	// After the sockets and the peers' streams are closed: a host's read loop writes as it
+	// ends (#7631), and the store may be gone once Stop returns.
+	if s.router != nil {
+		s.router.waitReading()
+	}
 	// The entries still queued are kept, for a while (#2433).
 	ctx, cancel := context.WithTimeout(context.Background(), auditDrain)
 	s.auditWriter.Close(ctx)
