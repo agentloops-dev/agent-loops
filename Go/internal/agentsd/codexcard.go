@@ -353,7 +353,7 @@ func (d *Daemon) markSignedOut(runtimeID string, out bool) {
 		log.Printf("sign-in: %s signed out: %v", runtimeID, err)
 		return
 	}
-	// store-bounds: kind=state; size=0; count=1 per runtime; age=until signed in; applied=on write (#7472)
+	// store-bounds: kind=key-value; count=2; age=until-deleted; applied=on write: one empty file each for Claude and Codex, removed on sign-in (#7472)
 	if err := os.WriteFile(file, nil, 0o600); err != nil {
 		log.Printf("sign-in: %s signed out: %v", runtimeID, err)
 	}
