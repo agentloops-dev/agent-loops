@@ -1,4 +1,4 @@
-// Settings ▸ This app ▸ Early Features (#6052, #6604, epic #6552): first a row for each feature flag in work (#6254),
+// Settings ▸ This app ▸ Features (#6052, #6604, epic #6552): first a row for each feature flag in work (#6254),
 // with its title, its line and a switch, off by default and with no badge; then a row for each feature that is not
 // GA and that the web page shows, with its name, its badge, its help line and a switch, on by default. A feature
 // turned off shows nowhere on the person's clients. Listed in ./sections.ts. The window and the Remote have the same
@@ -11,7 +11,7 @@ import { MaturityBadge } from "../MaturityBadge";
 
 /** The words under the section, as the window's (EarlyFeaturesSection.footer). */
 export const earlyFeaturesFooter = "Features that are not ready yet. A feature in work is off until you turn it on. "
-  + "An early feature is on until you turn it off; then it shows nowhere on your clients. "
+  + "A pilot, alpha or beta feature is on until you turn it off; then it shows nowhere on your clients. "
   + "The same on every client of yours.";
 
 /** What the section says with no flag and every feature GA, as the window's. */
@@ -23,7 +23,7 @@ export function EarlyFeaturesSection({ store }: { store: Store }) {
   const rows = earlyRows(undefined, partsMaturity(store.plane.value, store.hosts.value));
   return (
     <section aria-labelledby="settings-early-features">
-      <h3 class="section-head" id="settings-early-features">Early Features</h3>
+      <h3 class="section-head" id="settings-early-features">Features</h3>
       {featureFlags.length === 0 && rows.length === 0 && <p class="hint">{noEarlyFeatures}</p>}
       {featureFlags.map((flag) => (
         <label class="setting" key={flag.name}>

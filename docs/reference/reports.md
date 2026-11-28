@@ -49,7 +49,7 @@ as before.
 ## Reports ▸ Store sizes, on the web page
 
 **Store sizes** (#6907, `#/reports/stores`, under **Storage**) is behind the **Store sizes** switch in
-Settings ▸ This app ▸ Early Features. It lists each declared store of the control plane
+Settings ▸ This app ▸ Features. It lists each declared store of the control plane
 (`reports/storeSizes`, for an admin) and of each of your machines (`stores/list`): its size, its records,
 its average record, each of its limits with how much of it is used, when it was measured and its status.
 A limit for each person, machine or session shows the largest one.
