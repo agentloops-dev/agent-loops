@@ -254,6 +254,44 @@ func TestTheAgentDoesNotChangeWhatAPersonEdited(t *testing.T) {
 	}
 }
 
+// An item the person approved is filed by the agent, with its issue (#7583); the agent makes
+// no other change to the state the person set.
+func TestTheAgentFilesAnItemThePersonApproved(t *testing.T) {
+	t.Parallel()
+	s, loc := meetingStore(t)
+	m := newMeeting(t, s, loc, meetingNow)
+	if _, err := s.Append(m.ID, []wire.MeetingSegment{seg(1, "mic", "Priya will fix the build", 0)}, meetingNow); err != nil {
+		t.Fatal(err)
+	}
+	it, err := s.SetActionItem(m.ID, item("Fix the build", "Priya will fix the build", 1), nil, wire.MeetingAuthorAgent, meetingNow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	approve := it
+	approve.State = wire.MeetingActionItemStateApproved
+	approved, err := s.SetActionItem(m.ID, approve, &it.UpdatedAt, wire.MeetingAuthorPerson, meetingNow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	agent := approved
+	agent.State = wire.MeetingActionItemStateDismissed
+	_, err = s.SetActionItem(m.ID, agent, nil, wire.MeetingAuthorAgent, meetingNow)
+	refusedAs(t, err, MeetingPersonEdited)
+	agent.State = wire.MeetingActionItemStateFiled
+	_, err = s.SetActionItem(m.ID, agent, nil, wire.MeetingAuthorAgent, meetingNow)
+	refusedAs(t, err, MeetingPersonEdited) // filed with no issue
+	agent.Issue = &wire.MeetingActionItemIssue{Forge: "github", Repo: "acme/app", Number: 12, URL: "https://github.com/acme/app/issues/12"}
+	if got, err := s.SetActionItem(m.ID, agent, nil, wire.MeetingAuthorAgent, meetingNow); err != nil || got.State != wire.MeetingActionItemStateFiled {
+		t.Fatalf("%+v %v", got, err)
+	}
+	if got, ok, err := s.MeetingOf(m.AgentID); err != nil || !ok || got.ID != m.ID {
+		t.Errorf("MeetingOf: %+v %v %v", got, ok, err)
+	}
+	if _, ok, err := s.MeetingOf(NewUUID()); err != nil || ok {
+		t.Errorf("MeetingOf another session: %v %v", ok, err)
+	}
+}
+
 // Notes are written over the revision they were made from, and keep their last 20 revisions.
 func TestNotesAreWrittenOverTheirRevision(t *testing.T) {
 	t.Parallel()
