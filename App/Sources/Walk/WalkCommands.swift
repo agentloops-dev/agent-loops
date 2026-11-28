@@ -48,6 +48,9 @@ enum WalkCommands {
         // Voice mode with no microphone and no sound (#2322).
         case "voice":
             return VoiceWalk.perform(request)
+        // Meeting mode heard from sound files (#7584).
+        case "meeting":
+            return WalkMeeting.perform(request)
         // A host's notification, as if the host had sent it (#4140).
         case "notify":
             return WalkNotify.perform(request)

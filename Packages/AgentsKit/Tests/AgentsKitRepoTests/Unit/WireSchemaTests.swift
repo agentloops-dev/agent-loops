@@ -366,6 +366,17 @@ struct WireSchemaTests {
             // The Auto machine (#5375).
             "AutoMachineRequest": Self.through(DaemonAPI.AutoMachineRequest.self),
             "AutoMachinePick": Self.through(DaemonAPI.AutoMachinePick.self),
+            // Meeting mode's listening Mac (#7584).
+            "Meeting": Self.through(DaemonAPI.Meeting.self),
+            "MeetingSpeaker": Self.through(DaemonAPI.MeetingSpeaker.self),
+            "MeetingSegment": Self.through(DaemonAPI.MeetingSegment.self),
+            "MeetingStartRequest": Self.through(DaemonAPI.MeetingStartRequest.self),
+            "MeetingStarted": Self.through(DaemonAPI.MeetingStarted.self),
+            "MeetingSetStateRequest": Self.through(DaemonAPI.MeetingSetStateRequest.self),
+            "MeetingAppendRequest": Self.through(DaemonAPI.MeetingAppendRequest.self),
+            "MeetingAppended": Self.through(DaemonAPI.MeetingAppended.self),
+            "MeetingSegmentsRequest": Self.through(DaemonAPI.MeetingSegmentsRequest.self),
+            "MeetingSegmentsPage": Self.through(DaemonAPI.MeetingSegmentsPage.self),
         ]
         let all = samples.objectValue ?? [:]
         #expect(Set(all.keys) == Set(types.keys), "a sample with no Swift type, or a type with no sample")
