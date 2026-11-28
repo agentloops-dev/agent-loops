@@ -17,7 +17,8 @@ import (
 // Meeting mode (#7581, epic #7327): the methods of the meetings group, behind the flag
 // meeting-mode. The records and their rules are store.MeetingStore's; these handlers check
 // the flag, make the session of meetings/start, and say each change (meetings/changed). The
-// gap prompt and the agent's meeting_notes tool are later children of the epic.
+// gaps that send the words to the meeting's agent are in meetinggaps.go (#7582); the agent's
+// meeting_notes tool is a later child of the epic.
 
 // meetingFlag is the person's flag that turns meeting mode on, in the display settings.
 const meetingFlag = "flag:meeting-mode"
@@ -25,6 +26,10 @@ const meetingFlag = "flag:meeting-mode"
 type meetingBook struct {
 	meetingsOnce sync.Once
 	meetingStore store.MeetingStore
+	// meetingGapMu orders the appends, the state changes and the gaps of the meetings.
+	meetingGapMu sync.Mutex
+	// meetingQueue is each meeting's prompt of words still in its agent's queue (#7582).
+	meetingQueue map[wire.UUID]meetingQueued
 }
 
 // meetings is this root's store of meetings.
@@ -33,6 +38,7 @@ func (d *Daemon) meetings() store.MeetingStore {
 		if d.meetingStore == nil {
 			d.meetingStore = store.OpenMeetings(d.Store.Loc)
 		}
+		d.meetingQueue = map[wire.UUID]meetingQueued{}
 	})
 	return d.meetingStore
 }
@@ -86,14 +92,14 @@ func (d *Daemon) registerMeetings() {
 		return d.startMeeting(r, c.actor())
 	})
 	onMeeting(d, wire.CallMeetingsSetState, func(ctx context.Context, c *Client, r wire.MeetingSetStateRequest) (wire.Meeting, error) {
-		m, err := d.meetings().SetState(r.MeetingID, r.State, nowFunc())
+		m, err := d.meetingSetState(r.MeetingID, r.State)
 		if err == nil {
 			d.meetingChanged(m, nil, nil)
 		}
 		return m, err
 	})
 	onMeeting(d, wire.CallMeetingsAppend, func(ctx context.Context, c *Client, r wire.MeetingAppendRequest) (wire.MeetingAppended, error) {
-		m, err := d.meetings().Append(r.MeetingID, r.Segments, nowFunc())
+		m, err := d.meetingAppend(r.MeetingID, r.Segments)
 		if err != nil {
 			return wire.MeetingAppended{}, err
 		}
@@ -208,10 +214,12 @@ func (d *Daemon) startMeeting(r wire.MeetingStartRequest, actor *wire.AuditActor
 // meetingStarter is the first prompt of a meeting's session: its job, and the tool it does it with.
 func meetingStarter(id wire.UUID, title string) string {
 	return fmt.Sprintf("You keep the notes of a meeting, %q (meeting %s). The app listens to it and sends you its words "+
-		"as prompts, each line \"Speaker <n> (<name>): <words>\". Keep the notes and the action items with the "+
-		"meeting_notes tool: write short notes in Markdown, add each action item with the words it comes from as its "+
-		"quote, and name a speaker when the meeting says who they are. Ask with one question card before you file "+
-		"any issue. Until the first words come, say nothing more than that you are ready.", title, id)
+		"as prompts at each pause, a line a segment: \"[<seq>] Speaker <n> (<name>): <words>\". Keep the notes and the "+
+		"action items with the meeting_notes tool: write short notes in Markdown, add each action item with the words "+
+		"it comes from as its quote and the seqs of their lines, and name a speaker when the meeting says who they are. "+
+		"Ask with one question card before you file any issue. File each issue with the forge tools you have, then "+
+		"record the issue on its action item. A last prompt says when the meeting ended. Until the first words come, "+
+		"say nothing more than that you are ready.", title, id)
 }
 
 // sweepMeetings ages out the segments of old meetings (90 days).
