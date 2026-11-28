@@ -9986,6 +9986,278 @@ export type MaturityLevel =
   | "beta";
 
 /**
+ * A meeting (#7581, epic #7327): one per session, kept in the session's folder on the machine that
+ * runs it. Behind the flag meeting-mode.
+ */
+export interface Meeting {
+  id: UUID;
+  /** The meeting's session. */
+  agentID: UUID;
+  /** The folder the session works in. */
+  folder: URLString;
+  /** At most 200 characters. */
+  title: string;
+  state: MeetingState;
+  startedAt: WireDate;
+  /** When it ended; absent while it listens or is paused. */
+  endedAt?: WireDate;
+  /** What it listens to: mic, and call:<bundle id> for a call app. At most 4. */
+  sources: string[];
+  /**
+   * Each voice heard, by its stream and its slot there (#7580: one diarizer per stream). At most
+   * 64.
+   */
+  speakers: MeetingSpeaker[];
+  /** The seq of the last segment kept; 0 before the first. */
+  lastSeq: number;
+  /** The last seq sent to the session's agent as a prompt; 0 before the first. */
+  sentThroughSeq: number;
+  /** Its segments aged out (90 days): the notes and the action items stay. */
+  segmentsRemoved?: boolean;
+  updatedAt: WireDate;
+}
+
+/**
+ * An action item of a meeting (#7581). At most 100 a meeting, 2 KB each. Its quote is word for word
+ * in its segments, or the daemon refuses it.
+ */
+export interface MeetingActionItem {
+  id: UUID;
+  meetingID: UUID;
+  /** What is to be done; at most 500 characters. */
+  text: string;
+  /** Who does it, as spoken; at most 100 characters. */
+  owner?: string;
+  /** When, as spoken ("by Friday"); at most 100 characters. */
+  due?: string;
+  /** The due date as YYYY-MM-DD, when known. */
+  dueOn?: string;
+  /**
+   * The words of the meeting it comes from, word for word in the segments of segmentSeqs; at most
+   * 500 characters.
+   */
+  quote: string;
+  /** The segments the quote is in, at most 20. */
+  segmentSeqs: number[];
+  state: MeetingActionItemState;
+  issue?: MeetingActionItemIssue;
+  /** The fields a person changed: the agent may not change them. */
+  editedByPerson?: MeetingActionItemField[];
+  updatedAt: WireDate;
+}
+
+/** A field of an action item that a person can change. */
+export type MeetingActionItemField =
+  | "text"
+  | "owner"
+  | "due"
+  | "dueOn"
+  | "state"
+  | "issue";
+
+/** The issue an action item was filed as. */
+export interface MeetingActionItemIssue {
+  /** The forge, as github. */
+  forge: string;
+  /** owner/name */
+  repo: string;
+  number: number;
+  url: URLString;
+}
+
+export type MeetingActionItemState =
+  | "proposed"
+  | "approved"
+  | "dismissed"
+  | "filed";
+
+/**
+ * meetings/append: the listening client's final segments. A segment with a seq after the last is
+ * new and must follow it with no gap; one with an earlier seq is a changed speaker of that segment
+ * (its text is not changed).
+ */
+export interface MeetingAppendRequest {
+  meetingID: UUID;
+  /** At most 200. */
+  segments: MeetingSegment[];
+}
+
+/** What meetings/append kept. */
+export interface MeetingAppended {
+  /** The last seq kept. */
+  lastSeq: number;
+  /** The last seq sent to the agent. */
+  sentThroughSeq: number;
+}
+
+/** Who wrote a change. */
+export type MeetingAuthor =
+  | "agent"
+  | "person";
+
+/** meetings/changed: what changed in a meeting, sent to every client. */
+export interface MeetingChangedNotification {
+  meetingID: UUID;
+  meeting?: Meeting;
+  notes?: MeetingNotes;
+  /** The items that changed. */
+  actionItems?: MeetingActionItem[];
+  /** The last seq kept: a client reads the segments after its own. */
+  lastSeq: number;
+}
+
+/** meetings/list: a page of this machine's meetings, newest first. */
+export interface MeetingListRequest {
+  /** The cursor of the page before. */
+  cursor?: string;
+  /** At most 50; 50 when absent. */
+  limit?: number;
+}
+
+/** A meeting's notes (#7581): Markdown, at most 64 KB. The last 20 revisions are kept. */
+export interface MeetingNotes {
+  meetingID: UUID;
+  markdown: string;
+  /** 1 for the first write; each write adds 1. */
+  revision: number;
+  updatedAt: WireDate;
+  updatedBy: MeetingAuthor;
+}
+
+/** A page of meetings, newest first. */
+export interface MeetingPage {
+  meetings: Meeting[];
+  /** Pass it as the next request's cursor; absent on the last page. */
+  cursor?: string;
+}
+
+/** meetings/read: a meeting with its notes and its action items. */
+export interface MeetingRead {
+  meeting: Meeting;
+  /** Absent before the first write. */
+  notes?: MeetingNotes;
+  actionItems: MeetingActionItem[];
+}
+
+/** A meeting, by its id. */
+export interface MeetingRequest {
+  meetingID: UUID;
+}
+
+/**
+ * A final piece of a meeting's words, from one stream (#7581). At most 6,000 a meeting (a 4-hour
+ * cap), 1,500 characters of text each. Audio is never kept.
+ */
+export interface MeetingSegment {
+  /** 1 for the first segment of the meeting; each next one adds 1. */
+  seq: number;
+  /** The stream it was heard on: mic, or call:<bundle id>. */
+  source: string;
+  /** Seconds from the meeting's start. */
+  audioStart: number;
+  /** Seconds from the meeting's start. */
+  audioEnd: number;
+  text: string;
+  /**
+   * The diarizer's slot in this segment's own stream: the speaker is (source, speakerIndex), so a
+   * slot of mic and one of call never collide (#7580).
+   */
+  speakerIndex?: number;
+  /** The diarizer will not change the speaker any more. */
+  speakerSettled: boolean;
+}
+
+/** A page of segments, oldest first. */
+export interface MeetingSegmentsPage {
+  segments: MeetingSegment[];
+  /** There are segments after the last of this page. */
+  more: boolean;
+}
+
+/** meetings/segments: the segments after a seq. */
+export interface MeetingSegmentsRequest {
+  meetingID: UUID;
+  /** 0 for the first. */
+  afterSeq: number;
+  /** At most 200; 200 when absent. */
+  limit?: number;
+}
+
+/**
+ * meetings/setActionItem: a person's new or changed action item. Each field it changes is then the
+ * person's (editedByPerson).
+ */
+export interface MeetingSetActionItemRequest {
+  meetingID: UUID;
+  item: MeetingActionItem;
+  /**
+   * The updatedAt of the item the change was made to; absent for a new item. Refused
+   * (changedElsewhere) when the item changed since.
+   */
+  baseUpdatedAt?: WireDate;
+}
+
+/**
+ * meetings/setNotes: a person's notes. Refused (changedElsewhere) when the notes moved past
+ * baseRevision.
+ */
+export interface MeetingSetNotesRequest {
+  meetingID: UUID;
+  markdown: string;
+  /** The revision the change was made to; 0 before the first write. */
+  baseRevision: number;
+}
+
+/** meetings/setSpeaker: a name for a voice, for the whole meeting. */
+export interface MeetingSetSpeakerRequest {
+  meetingID: UUID;
+  /** The voice's stream. */
+  source: string;
+  /** Its slot in that stream. */
+  index: number;
+  /** At most 100 characters; empty takes the name off. */
+  name: string;
+}
+
+/** meetings/setState: listen, pause or end. An ended meeting does not start again. */
+export interface MeetingSetStateRequest {
+  meetingID: UUID;
+  state: MeetingState;
+}
+
+/**
+ * A voice of a meeting: its stream and its slot there, and its name once the agent or a person
+ * gives one. Shown as Speaker <n> with no name.
+ */
+export interface MeetingSpeaker {
+  source: string;
+  index: number;
+  name?: string;
+}
+
+/** meetings/start: a new meeting, with a new session in the folder for its agent. */
+export interface MeetingStartRequest {
+  folder: URLString;
+  /** At most 200 characters; "Meeting" and the time when absent. */
+  title?: string;
+  /** mic, and call:<bundle id> for a call app. 1 to 4. */
+  sources: string[];
+  /** The session's runtime; auto when absent. */
+  runtimeID?: string;
+}
+
+/** The meeting meetings/start made, and its session. */
+export interface MeetingStarted {
+  meeting: Meeting;
+  agentID: UUID;
+}
+
+export type MeetingState =
+  | "listening"
+  | "paused"
+  | "ended";
+
+/**
  * The kernel's memory pressure (#4578): macOS kern.memorystatus_vm_pressure_level, or Linux PSI
  * memory (warn when some avg10 is 10% or more, critical when full avg10 is 10% or more).
  */
@@ -19810,6 +20082,27 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   MarketplacesListAnswer: { required: ["marketplaces"], optional: ["problem"] },
   MarketplacesListRequest: { required: [], optional: ["kind", "destination"] },
   MaturityCompletion: { required: ["featureId", "completionId", "buildId", "success", "completed", "eligible", "backgroundRefresh"], optional: ["sessionId"] },
+  Meeting: { required: ["id", "agentID", "folder", "title", "state", "startedAt", "sources", "speakers", "lastSeq", "sentThroughSeq", "updatedAt"], optional: ["endedAt", "segmentsRemoved"] },
+  MeetingActionItem: { required: ["id", "meetingID", "text", "quote", "segmentSeqs", "state", "updatedAt"], optional: ["owner", "due", "dueOn", "issue", "editedByPerson"] },
+  MeetingActionItemIssue: { required: ["forge", "repo", "number", "url"], optional: [] },
+  MeetingAppendRequest: { required: ["meetingID", "segments"], optional: [] },
+  MeetingAppended: { required: ["lastSeq", "sentThroughSeq"], optional: [] },
+  MeetingChangedNotification: { required: ["meetingID", "lastSeq"], optional: ["meeting", "notes", "actionItems"] },
+  MeetingListRequest: { required: [], optional: ["cursor", "limit"] },
+  MeetingNotes: { required: ["meetingID", "markdown", "revision", "updatedAt", "updatedBy"], optional: [] },
+  MeetingPage: { required: ["meetings"], optional: ["cursor"] },
+  MeetingRead: { required: ["meeting", "actionItems"], optional: ["notes"] },
+  MeetingRequest: { required: ["meetingID"], optional: [] },
+  MeetingSegment: { required: ["seq", "source", "audioStart", "audioEnd", "text", "speakerSettled"], optional: ["speakerIndex"] },
+  MeetingSegmentsPage: { required: ["segments", "more"], optional: [] },
+  MeetingSegmentsRequest: { required: ["meetingID", "afterSeq"], optional: ["limit"] },
+  MeetingSetActionItemRequest: { required: ["meetingID", "item"], optional: ["baseUpdatedAt"] },
+  MeetingSetNotesRequest: { required: ["meetingID", "markdown", "baseRevision"], optional: [] },
+  MeetingSetSpeakerRequest: { required: ["meetingID", "source", "index", "name"], optional: [] },
+  MeetingSetStateRequest: { required: ["meetingID", "state"], optional: [] },
+  MeetingSpeaker: { required: ["source", "index"], optional: ["name"] },
+  MeetingStartRequest: { required: ["folder", "sources"], optional: ["title", "runtimeID"] },
+  MeetingStarted: { required: ["meeting", "agentID"], optional: [] },
   MessageSender: { required: ["agentID", "title"], optional: [] },
   MessagesConversation: { required: ["server", "folder", "conversation"], optional: ["replyAs"] },
   MessagesConversations: { required: ["conversations"], optional: ["cursor", "errors"] },
