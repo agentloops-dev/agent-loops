@@ -19,6 +19,7 @@ export const featureFlags: readonly FeatureFlagInfo[] = [
   { name: "session-summary", title: "Session summary", about: "On the Mac: a session opens on its summary (what is going on, the goal and plan, the last turn and what waits for you), with the full chat one click away.", issue: 7318 },
   { name: "store-sizes", title: "Store sizes", about: "Reports ▸ Store sizes on the web page: how large each data store is, and how much of its limits it uses.", issue: 6907 },
   { name: "suggested", title: "Suggested", about: "New Session ▸ Suggested: the epics with no lead.", issue: 6572 },
+  { name: "timeline-forecast", title: "Timeline forecast", about: "On the Mac: Work ▸ Timeline draws the schedule as a Gantt: a row for each open epic, solid for the work so far, dashed to its predicted finish, or why it has no date.", issue: 7067 },
   { name: "work", title: "Work", about: "Work in the sidebar: issues, pull requests, releases, deploys and the timeline.", issue: 6572 },
   { name: "work-windows", title: "Work in windows", about: "Open in New Window on Work's pages (Mac and iPad): an issue, a pull request or a release, and on the Mac a doc or a conversation of Messages, in a window of its own.", issue: 5480 },
 ];

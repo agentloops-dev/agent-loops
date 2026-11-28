@@ -305,6 +305,13 @@ struct WorkTimelinePane: View {
     #else
     private let listed = false
     #endif
+    #if os(macOS)
+    /// The forecast as a Gantt (#7526), behind the person's flag; the Mac only until the port (#7527).
+    @AppStorage(FeatureFlag.timelineForecast.key, store: WindowDefaults.store) private var forecastOn = false
+    private var gantt: Bool { forecastOn }
+    #else
+    private let gantt = false
+    #endif
 
     @State private var position = ScrollPosition(edge: .leading)
     @State private var offset: Double = 0
@@ -380,7 +387,7 @@ struct WorkTimelinePane: View {
                 WorkFilterMenu(name: "Board", selection: $state.board, options: boardOptions,
                                words: { WorkList.boardName($0, in: state.boards) }, any: "", anyWords: "All boards")
             }
-            if let title {
+            if let title, !gantt {
                 Text(title)
                     .appText(.supporting)
                     .foregroundStyle(.secondary)
@@ -390,21 +397,24 @@ struct WorkTimelinePane: View {
                         ?? "The forecast after now")
             }
             Spacer(minLength: 0)
-            Picker("Range", selection: $state.range) {
-                ForEach(WorkTimeline.Range.allCases) { Text($0.title).tag($0) }
+            // The Gantt's days come from the schedule (#7526): no range.
+            if !gantt {
+                Picker("Range", selection: $state.range) {
+                    ForEach(WorkTimeline.Range.allCases) { Text($0.title).tag($0) }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .fixedSize()
+                .onChange(of: state.range) { goToNow() }
             }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .fixedSize()
-            .onChange(of: state.range) { goToNow() }
             // The epics on hold too (#7335), dimmed, below the rest.
             Toggle(WorkPlan.onHoldWords, isOn: $state.held)
                 .toggleStyle(.button)
                 .buttonStyle(.bordered)
                 .help(WorkTimeline.heldToggleHelp)
-            Button("Now") { goToNow() }
+            Button(gantt ? WorkGantt.today : "Now") { goToNow() }
                 .buttonStyle(.bordered)
-                .help("Back to now")
+                .help(gantt ? "Back to today" : "Back to now")
         }
     }
 
@@ -488,6 +498,11 @@ struct WorkTimelinePane: View {
                     WorkEmptyState(symbol: "exclamationmark.triangle", title: WorkTimeline.couldNotRead,
                                    line: lines.joined(separator: "\n"), action: (WorkLook.tryAgain, { state.asked += 1 }))
                         .frame(maxHeight: .infinity)
+                } else if gantt {
+                    WorkTimelineGanttSlot(timeline: state.timeline, held: state.held, reading: state.pending,
+                                          nowAsked: state.nowAsked) { ref in
+                        model.follow(WorkPlace(kind: .issue, ref: ref), window: openWorkWindow)
+                    }
                 } else {
                     // Once a minute; while a read runs, often, so the grey blocks shimmer when they draw.
                     let busy = !drawn || state.pending
@@ -501,7 +516,8 @@ struct WorkTimelinePane: View {
                 }
                 WorkPageBar(state: WorkLook.pageFooterState(drawn: drawn, reading: state.pending, fromDevice: state.fromDevice,
                                                             lines: lines, answered: state.answered, machines: state.asking),
-                            count: drawn ? WorkLook.pageCount(epics(timeline), "epic") : nil,
+                            count: drawn ? WorkLook.pageCount(gantt ? WorkGantt.rows(timeline, now: .now, held: state.held).count
+                                                                    : epics(timeline), "epic") : nil,
                             read: drawn ? state.plotRead : nil) { state.asked += 1 }
             }
         }
@@ -1189,5 +1205,22 @@ private struct WorkTimelineHalfRing: View {
         }
         .frame(width: 11, height: 11)
         .accessibilityHidden(true)
+    }
+}
+
+/// The Gantt where the Mac draws it (#7526); nothing on the Remote, which never asks for it (`gantt` is false there).
+private struct WorkTimelineGanttSlot: View {
+    let timeline: DaemonAPI.WorkTimeline?
+    let held: Bool
+    let reading: Bool
+    let nowAsked: Int
+    let open: (String) -> Void
+
+    var body: some View {
+        #if os(macOS)
+        WorkTimelineGantt(timeline: timeline, held: held, reading: reading, nowAsked: nowAsked, open: open)
+        #else
+        EmptyView()
+        #endif
     }
 }

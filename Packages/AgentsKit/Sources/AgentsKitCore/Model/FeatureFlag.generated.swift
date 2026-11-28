@@ -20,6 +20,8 @@ public enum FeatureFlag: String, CaseIterable, Sendable {
     case storeSizes = "store-sizes"
     /// Suggested (#6572).
     case suggested = "suggested"
+    /// Timeline forecast (#7067).
+    case timelineForecast = "timeline-forecast"
     /// Work (#6572).
     case work = "work"
     /// Work in windows (#5480).
@@ -36,6 +38,7 @@ public enum FeatureFlag: String, CaseIterable, Sendable {
         case .sessionSummary: "Session summary"
         case .storeSizes: "Store sizes"
         case .suggested: "Suggested"
+        case .timelineForecast: "Timeline forecast"
         case .work: "Work"
         case .workWindows: "Work in windows"
         }
@@ -52,6 +55,7 @@ public enum FeatureFlag: String, CaseIterable, Sendable {
         case .sessionSummary: "On the Mac: a session opens on its summary (what is going on, the goal and plan, the last turn and what waits for you), with the full chat one click away."
         case .storeSizes: "Reports ▸ Store sizes on the web page: how large each data store is, and how much of its limits it uses."
         case .suggested: "New Session ▸ Suggested: the epics with no lead."
+        case .timelineForecast: "On the Mac: Work ▸ Timeline draws the schedule as a Gantt: a row for each open epic, solid for the work so far, dashed to its predicted finish, or why it has no date."
         case .work: "Work in the sidebar: issues, pull requests, releases, deploys and the timeline."
         case .workWindows: "Open in New Window on Work's pages (Mac and iPad): an issue, a pull request or a release, and on the Mac a doc or a conversation of Messages, in a window of its own."
         }
@@ -68,6 +72,7 @@ public enum FeatureFlag: String, CaseIterable, Sendable {
         case .sessionSummary: 7318
         case .storeSizes: 6907
         case .suggested: 6572
+        case .timelineForecast: 7067
         case .work: 6572
         case .workWindows: 5480
         }
