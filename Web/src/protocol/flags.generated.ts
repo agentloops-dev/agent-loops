@@ -14,6 +14,7 @@ export const featureFlags: readonly FeatureFlagInfo[] = [
   { name: "commit-trailers", title: "Commit trailers", about: "The Commit trailers group in Agents ▸ Policy: the trailers on each agent's commits.", issue: 6373 },
   { name: "dashboard", title: "Dashboard", about: "The Dashboard on the Mac: each work item with its sessions. The window opens to it.", issue: 6572 },
   { name: "docs", title: "Docs", about: "Docs in the sidebar, and the Docs section on a work item's page. On the Mac and the web page.", issue: 6572 },
+  { name: "labelled-workflows", title: "Labelled workflows", about: "On the Mac: a workflow with agent: labelled sends a message to each session with its labels, until: ends it, and the workflow's page shows it active with End now.", issue: 6951 },
   { name: "machine-scripts", title: "Machine scripts", about: "On the Mac: your root.sh and setup.sh set up each new machine. A failed Root set-up shows its last lines and what to do.", issue: 7151 },
   { name: "meeting-mode", title: "Meeting mode", about: "On the Mac: the app listens to a meeting, and an agent keeps the notes and files the action items.", issue: 7327 },
   { name: "session-summary", title: "Session summary", about: "On the Mac: a session opens on its summary (what is going on, the goal and plan, the last turn and what waits for you), with the full chat one click away.", issue: 7318 },
