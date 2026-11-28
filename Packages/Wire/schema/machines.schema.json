@@ -2540,6 +2540,10 @@
           "items": {
             "type": "string"
           }
+        },
+        "address": {
+          "type": "string",
+          "description": "The public IP address this machine's uplink comes from, as the control plane sees it (#7493): where a control plane that the machine's install puts behind NAT is reached, when the machine finds only a private address of its own. Absent when the uplink comes from a private or loopback address, and from an older control plane."
         }
       },
       "additionalProperties": false
