@@ -97,6 +97,7 @@ RULES: list[tuple[str, str]] = [
     (r"git\s+(push|fetch|pull|rebase|commit|merge|clone)", "git: {0}"),
     (r"git\s+\w+", "git: other"),
     (r"^sleep\b|;\s*sleep\b|&&\s*sleep\b", "sleep"),
+    (r"^(cat\s*>>?\s*|tee\b|sed\s+-i\b)", "shell: write/edit"),
     (r"^(cat|sed|head|tail|grep|rg|ls|find|wc|awk)\b", "shell: read/search"),
     (r"^python3?\b", "shell: python"),
 ]
@@ -109,7 +110,7 @@ WAITS = {"wait_for_event", "ask_question", "hand_to_person"}
 
 
 def is_wait(c: dict) -> bool:
-    return category(c["title"], c["kind"]).startswith("wait: ")
+    return category(c["title"], c["kind"], c.get("input")).startswith("wait: ")
 
 
 def in_call_answer(c: dict) -> str | None:
@@ -142,12 +143,14 @@ def repeat_key(title: str) -> str:
     return text[:160]
 
 
-def category(title: str, kind: str | None) -> str:
+def category(title: str, kind: str | None, inp: dict | None = None) -> str:
     if title.startswith("mcp__"):
         name = title.split("__", 2)[-1]
         return ("wait: " if name in WAITS else "tool: ") + name
     if title == "Asking for your input":
         return "wait: question to the person"
+    if kind == "think" and isinstance(inp, dict) and inp.get("subagent_type"):
+        return "tool: task"
     if kind in ("read", "edit", "fetch", "think") or title in ("Read File", "Edit", "Write"):
         return f"file: {kind or title.lower()}"
     if title in ("ToolSearch", "Load skill", "Fetch"):
@@ -449,8 +452,11 @@ def main() -> int:
         for c in s["calls"]:
             if is_wait(c):
                 continue
-            dur = (c["end"] - c["start"]).total_seconds()
-            cat = category(c["title"], c["kind"])
+            spans_dur = clip([(c["start"], c["end"])], active)
+            dur = sum((e - b).total_seconds() for b, e in spans_dur)
+            if dur <= 0:
+                continue
+            cat = category(c["title"], c["kind"], c.get("input"))
             by_cat[cat].append(dur)
             if c["status"] == "failed":
                 failed[cat] += 1
