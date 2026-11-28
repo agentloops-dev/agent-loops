@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"os"
@@ -76,8 +77,11 @@ func dial(ctx context.Context, base, pin, origin string) (*Lines, error) {
 	if origin != "" {
 		options.HTTPHeader = http.Header{"Origin": []string{origin}}
 	}
-	ws, _, err := websocket.Dial(dctx, u.String(), options)
+	ws, resp, err := websocket.Dial(dctx, u.String(), options)
 	if err != nil {
+		if refused := addressRefusal(resp); refused != nil {
+			return nil, refused
+		}
 		if ctx.Err() == nil && errors.Is(dctx.Err(), context.DeadlineExceeded) {
 			// Such as a tunnel's dead remote forward, which takes the connection and never
 			// answers (#1770).
@@ -87,6 +91,46 @@ func dial(ctx context.Context, base, pin, origin string) (*Lines, error) {
 	}
 	ws.SetReadLimit(MaxMessage)
 	return &Lines{ws: ws}, nil
+}
+
+// AddressRefusal is an address that refused the dial before the key exchange, with its
+// Agents-Refusal header (#6785): the hosted service's suspended (403, an account paused or
+// suspended) or gone (410, an account deleted), or limit. Line is its text, for the log
+// and the machine's row.
+type AddressRefusal struct {
+	Status int
+	Reason string
+	Line   string
+}
+
+func (e *AddressRefusal) Error() string {
+	if e.Line != "" {
+		return e.Line
+	}
+	return fmt.Sprintf("refused (%d): %s", e.Status, e.Reason)
+}
+
+// Gone is the hosted service's refusal for an account it deleted (#6785): 410, kept 90 days.
+const Gone = "gone"
+
+// refusalLineMost is the most of a refusal's text that is read and kept.
+const refusalLineMost = 512
+
+// addressRefusal is the refusal a failed upgrade's answer says, or nil when it says none.
+func addressRefusal(resp *http.Response) *AddressRefusal {
+	if resp == nil {
+		return nil
+	}
+	reason := strings.TrimSpace(resp.Header.Get("Agents-Refusal"))
+	if reason == "" {
+		return nil
+	}
+	line := ""
+	if resp.Body != nil {
+		b, _ := io.ReadAll(io.LimitReader(resp.Body, refusalLineMost))
+		line = strings.Join(strings.Fields(strings.ToValidUTF8(string(b), "")), " ")
+	}
+	return &AddressRefusal{Status: resp.StatusCode, Reason: reason, Line: line}
 }
 
 // NoAnswerError is a control plane that took the connection but did not answer within Wait.

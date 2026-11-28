@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -47,7 +48,12 @@ type Account struct {
 	Created   time.Time `json:"created"`
 	// The plan whose limits hold (spec 1003 FR-020): "" is free.
 	Plan string `json:"plan,omitempty"`
-	// Set by the operator: the control plane is stopped and refuses every request.
+	// The last day (UTC, "2006-01-02") the account was used (#6785): a sign-in, a client or a
+	// machine's socket, or the day a paid plan ended. "" on a record from before it: the
+	// idle sweep writes the day it first sees the record.
+	LastUsed string `json:"lastUsed,omitempty"`
+	// Set by the operator, or by the idle sweep (Idle): the control plane is stopped and
+	// refuses every request.
 	Suspended *Suspension `json:"suspended,omitempty"`
 	// When its name's certificate was first allowed (FR-008), so it counts once.
 	Certificate *time.Time `json:"certificate,omitempty"`
@@ -56,10 +62,16 @@ type Account struct {
 	StripeSubscription string `json:"stripe_subscription,omitempty"`
 }
 
-// Suspension is why and when the operator suspended an account.
+// Suspension is why and when the operator suspended an account, or the idle sweep paused it.
+// An idle pause is a suspension so that a copy of the service from before #6785 refuses the
+// account too.
 type Suspension struct {
 	Reason string    `json:"reason"`
 	At     time.Time `json:"at"`
+	// The service paused it for idle (#6785), not the operator: the owner's sign-in lifts it.
+	Idle bool `json:"idle,omitempty"`
+	// When an idle pause becomes a delete.
+	Deletes *time.Time `json:"deletes,omitempty"`
 }
 
 // SignIn is who signed in (#3386): a provider (apple, google or github) and its subject,
@@ -137,12 +149,13 @@ type accounts struct {
 	now   func() time.Time
 }
 
-// Accounts and their links have no age: they stay until Delete Account, a recorded exception
-// to the 90-day rule until epic #7092 (#7094; Alex, 2026-11-24).
+// A free account is paused after 90 days with no use, and deleted with its links 90 days after
+// that (#6785, idleaccounts.go). A paid account stays while it is paid: the one exception to
+// the 90-day rule left (#7094), and its clock starts on the day its plan ends.
 const (
-	// store-bounds: kind=document; count=100; size=8KiB a record; age=until-deleted; applied=on sign-up (refused), on write (refused) and on Delete Account
+	// store-bounds: kind=document; count=100; size=8KiB a record; age=until-deleted; applied=on sign-up (refused), on write (refused), on Delete Account, and the hourly sweep pauses a free one 90 days idle and deletes it 90 days later
 	accountsFolder = hostedPrefix + "v1/accounts/"
-	// store-bounds: kind=key-value; count=100; size=128B a record; age=until-deleted; applied=on sign-up, one an account at most, and on Delete Account
+	// store-bounds: kind=key-value; count=100; size=128B a record; age=until-deleted; applied=on sign-up, one an account at most, and on Delete Account or its account's idle delete
 	emailsFolder = hostedPrefix + "v1/emails/"
 	// accountRecordMost is the largest account record. The reason for a suspension is its only
 	// part with no limit of its own.
@@ -225,7 +238,12 @@ func (a *accounts) makeMarked(ctx context.Context, user SignIn, mark string) (*A
 		return nil, false, fmt.Errorf("%s is not a sign-in", user)
 	}
 	user.Email = ""
-	acc := Account{ID: newID(), SignIn: user, EmailMark: mark, Created: a.now().UTC()}
+	id, err := a.freeID(ctx)
+	if err != nil {
+		return nil, false, err
+	}
+	now := a.now().UTC()
+	acc := Account{ID: id, SignIn: user, EmailMark: mark, Created: now, LastUsed: dayOf(now)}
 	link, _ := json.Marshal(map[string]string{"account": acc.ID})
 	if _, err := a.store.Put(ctx, signInKey(user), link, store.Absent); err != nil {
 		if store.IsConflict(err) {
@@ -250,6 +268,22 @@ func (a *accounts) makeMarked(ctx context.Context, user SignIn, mark string) (*A
 		return nil, false, err
 	}
 	return &acc, true, nil
+}
+
+// freeID is a new account's id: never one a deleted account's tombstone still holds, whose
+// address answers gone (#6785).
+func (a *accounts) freeID(ctx context.Context) (string, error) {
+	for range 5 {
+		id := newID()
+		o, err := a.store.Get(ctx, goneKey(id))
+		if err != nil {
+			return "", err
+		}
+		if o == nil {
+			return id, nil
+		}
+	}
+	return "", errors.New("no free id for the account")
 }
 
 // update changes an account's record by f, again on a conflict, and gives it back as
