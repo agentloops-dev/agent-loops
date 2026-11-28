@@ -216,8 +216,8 @@ func TestSignUpGivesAControlPlaneOfYourOwn(t *testing.T) {
 	if left, _ := st.List(context.Background(), "accounts/"+id+"/"); len(left) != 0 {
 		t.Fatalf("%d objects left", len(left))
 	}
-	if res, _ := b.get("https://" + id + "." + domain + "/readyz"); res.StatusCode != http.StatusNotFound {
-		t.Fatal("a deleted account's control plane answered")
+	if res, _ := b.get("https://" + id + "." + domain + "/readyz"); res.StatusCode != http.StatusGone || res.Header.Get("Agents-Refusal") != "gone" {
+		t.Fatal("a deleted account's address does not say gone (#6785)")
 	}
 	// The same GitHub user can sign up again, with a new control plane.
 	res := b.signIn("good")

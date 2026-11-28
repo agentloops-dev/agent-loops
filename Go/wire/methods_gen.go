@@ -614,6 +614,9 @@ const FailureWrongProtocolVersion = -32008
 // What the control plane answers (control.openrpc.json).
 var CallApprovalsList = Method[Empty, PersonApprovals]{"approvals/list"}
 var CallApprovalsPut = Method[PersonApprovalsPut, PersonApprovals]{"approvals/put"}
+var CallArtifactsGet = Method[ArtifactGet, ArtifactGot]{"artifacts/get"}
+var CallArtifactsPut = Method[ArtifactPut, ArtifactPutResult]{"artifacts/put"}
+var CallArtifactsVersions = Method[ArtifactVersionsAsk, ArtifactVersionPage]{"artifacts/versions"}
 var CallAttentionNeed = Method[AttentionNeed, Empty]{"attention/need"}
 var CallAttentionTurn = Method[AttentionTurn, Empty]{"attention/turn"}
 var CallAuditExport = Method[AuditQuery, AuditExport]{"audit/export"}

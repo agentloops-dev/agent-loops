@@ -169,6 +169,8 @@ type Daemon struct {
 	timeBook
 	reportBook
 	lineageBook
+	// The broadcasts of labelled workflows (#6954).
+	broadcastBook
 	// The build timings (#5177).
 	ciTimingsBook
 	// The queue of each repository's CI, for the ci lease (#5678).
@@ -296,6 +298,7 @@ func newWith(ctx context.Context, root string, opts startOptions) (*Daemon, erro
 	d.erased = d.openErased()
 	d.deployStore = d.openDeploys()
 	d.autopilotFile = d.openAutopilot()
+	d.broadcastFile = d.openBroadcasts()
 	d.releaseDone = d.openReleaseTags()
 	d.secretOps.pending = d.openSecretOpsPending()
 	d.accountOps = d.openAccountOps()

@@ -1,7 +1,8 @@
 // Package blobstore is the artifacts' blob store (#5715, epic #5713): content-addressed bytes
 // at "sha256:<hex>" behind one interface. Folder is the backend for a folder (plain files, no
 // SQLite); Bucket is the one for an S3-compatible bucket (#5954), whose keys are the same paths
-// under the bucket's prefix (Digest.Path); Memory is the one for tests.
+// under the bucket's prefix (Digest.Path); Keyed is the one in a control plane's own store,
+// where its artifacts are kept (#5953); Memory is the one for tests.
 package blobstore
 
 import (

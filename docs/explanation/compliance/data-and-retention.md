@@ -109,6 +109,7 @@ Mac.
 | `catalog-skills.json`, `catalog-mcp.json` | key-value | Installed catalogue items | No age while the item is installed, on purpose, so that it stays known as one from a catalogue; 30 days after an item that is no longer there went. 2,000 in each file, 8 KiB each: one past that is not recorded, and its item shows as added by hand (#6732, #6733) | On write; on remove; and hourly |
 | `catalog-pending.json` | document | An install in progress | One; goes when the install ends or at the next start | At start |
 | `account-ops.json` | key-value | The last operation of each account, and the last read of each secret | 1,000 entries of 1 KiB each, for 90 days; the oldest goes first | Hourly, and on write: age, and the count when it is twice over |
+| `broadcasts.json` | key-value | The broadcasts of `agent: labelled` workflows, and the sessions told (#6954) | 50 broadcasts of 32 KiB each, for 8 days; an ended one goes first to make room, else a new one is refused. 200 sessions told for each | Hourly: a broadcast ends 24 hours after it starts and goes a day after it ends; a session that is gone leaves its reads |
 | `secret-ops.json` | key-value | The last operation of each secret held (never its value) | Goes with its secret. 500 secrets of 16 KiB each: the oldest goes first, and one over its size is not kept (#7350) | On write |
 | `runtimes/claude-sign-in` | secret | Claude's token or key from a sign-in made on this machine | One, of 16 KiB: a longer one is refused, and the one before stays. No age, on purpose: it is in force until you sign out (#7350) | On sign-in |
 | `secret-ops-pending.json` | log | Secret audit entries not yet sent | 1,000 operations of 16 KiB each, for 90 days; the oldest goes first, with a log line, and the audit never has it (#6721) | Hourly, and on write: age, and the count when it is twice over |
@@ -336,27 +337,49 @@ service keeps these records.
 
 | Records | Kind | What they keep | How long, how large |
 | --- | --- | --- | --- |
-| Account | document | Sign-in provider (GitHub, Apple or Google) and its user ID, login, plan, suspension, certificate time, **Stripe customer and subscription IDs**, the date it signed up | Until **Delete Account** (the exception below). 100 accounts, then a new one is refused; 8 KiB a record. |
-| Sign-in links | document | Which account a GitHub, Apple or Google user is | Until **Delete Account** (the exception below). One an account, 128 bytes each. |
-| Account usage | key-value | The bytes the account's store holds | Until **Delete Account** (the exception below). One an account, 128 bytes each. |
+| Account | document | Sign-in provider (GitHub, Apple or Google) and its user ID, login, plan, suspension or idle pause, certificate time, **Stripe customer and subscription IDs**, the date it signed up, the day it was last used | A free account is **paused** after 90 days with no use, and **deleted** 90 days after that, unless its owner signs in (below, #6785). A paid account stays while it is paid (the exception below). Until **Delete Account** at most. 100 accounts, then a new one is refused; 8 KiB a record. Hourly |
+| Sign-in links | document | Which account a GitHub, Apple or Google user is | With its account (above). One an account, 128 bytes each. |
+| Account usage | key-value | The bytes the account's store holds | With its account (above). One an account, 128 bytes each. |
+| Deleted accounts | key-value | A deleted account's id, the day it was deleted, and why (idle, or Delete Account). Nothing of who it was | 90 days, so the account's address answers **410 gone** and its machines stop dialling it; then it answers 404. 1,000 of 128 bytes; the oldest over that go (#6785). Hourly |
 | The account's control plane store | all of the kinds | All of the section above | Plan limits: 1 or 20 GB, 2 or 20 machines, 5 or 50 clients, audit 7 or 90 days. Until **Delete Account**. |
 | Invites | document | Expiry, and **who used it** | 14 days to use it, 90 at most. It goes when that time ends, used or not, and with **Delete Account** of the account that used it. 1,000 of 4 KiB; a new one over that is refused (#6782). Hourly |
 | Waitlist | document | Who asked to join | 90 days; removed sooner on sign-up or a block. 10,000 of 4 KiB; a new one over that is refused (#6786). Hourly |
 | Stripe events | key-value | Stripe event IDs already seen | 30 days, 10,000 of 1 KiB; the oldest over that go. An event's type is cut at 128 bytes (#7251). Daily |
 | Operator backups | blob | Each account's store, on the operator's disk | The newest 7 by default; `--keep N` sets it, 1 to 90 (#3648). An account's copy goes at 90 days. The newest copy of an account that exists always stays, past the count and the age, on purpose: it is the way back. A copy over 10 MB is made, with a warning (Alex, 2026-11-24). Applied after each backup: the service does not know the folder (#6787) |
-| Email links | key-value | Which account a sign-in email is | Until **Delete Account** (the exception below). At most one an account, 128 bytes each. |
+| Email links | key-value | Which account a sign-in email is | With its account (above). At most one an account, 128 bytes each. |
 | Allow list | key-value | GitHub logins that may sign up, and when the operator allowed each | 90 days from the last allow; an account that was made stays. 10,000 of 4 KiB; a new one over that is refused (#6783). Hourly |
 | Block lists | key-value | Sign-ins and emails' keyed hashes that may not sign up, with the login and the reason | Until the operator unblocks it. A block has no age, because one that aged out would let the person back in (Alex, 2026-11-24). 10,000 sign-ins and 10,000 emails of 4 KiB; a new one over that is refused (#6784) |
 
-**An exception to the 90-day rule (Alex, 2026-11-24):** an account, its sign-in links, its
-email link and its usage have no age. They stay until **Delete Account**, for at most 100
-accounts, until epic #7092 deletes
-idle accounts safely.
+**Idle accounts (#6785, epic #7092; Alex, 2026-11-27).** An account is used when its owner
+signs in at agentloops.dev, when a client or a machine proves its key to the account's
+control plane (also each day that such a socket stays open), and on the day a paid plan
+ends. A request with no key (a crawler, `/readyz`) is not a use. The service keeps the day of
+the last use, and writes it once a day at most. An account from before this change starts
+its clock on the day the change shipped.
+
+- **Paused after 90 days with no use.** The hourly sweep stops the account's control plane,
+  and its address refuses every request with the line "This hosted account is paused" and
+  the date it will be deleted. Nothing is deleted. The owner's sign-in at agentloops.dev,
+  or the operator's `unsuspend`, restores it at once, with all its records.
+- **Deleted 90 days after the pause.** As **Delete Account** does (below), at most 10 an
+  hour. The account's address then answers **410 gone** for 90 days. Its machines keep
+  their folders, agents and transcripts: they are the system of record. A machine tries
+  the address every 10 minutes while the account is paused, and once a day when it is gone.
+- **The service sends no warning.** It keeps no email address (only its keyed hash), so the
+  warning is the pause, read wherever the person comes back.
+- **The operator's switch:** `AGENTS_HOSTED_IDLE_ACCOUNTS` is `delete` (the default),
+  `pause` (pause, never delete) or `off`.
+
+**An exception to the 90-day rule (#7094, narrowed by #6785):** a **paid** account, with its
+sign-in links, its email link and its usage, has no age while it is paid, for at most 100
+accounts. Its idle clock starts on the day its plan ends. The operator's suspension is not
+an idle pause: the sweep never deletes a suspended account.
 
 The service keeps nothing for a signed-in browser: a session is a signed cookie for 30 days.
 
-**Delete Account** stops the account's control plane, deletes its store, its usage, the
-invites its sign-in used, the account and its sign-in link. It does not delete the
+**Delete Account** stops the account's control plane, writes its tombstone (above), and
+deletes its store, its usage, the invites its sign-in used, its email link, the account and
+its sign-in link. It does not delete the
 account's machines. It leaves the operator's backups of it, and Stripe's own records.
 
 ## Agent Loops on the Mac

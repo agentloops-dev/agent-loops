@@ -347,6 +347,9 @@ func parseWorkflow(text, id, folder string) wire.Workflow {
 		w.Triggers = ts
 	}
 	workflowApplyMode(&w, m)
+	if why := workflowApplyLabelled(&w, m); why != "" {
+		return workflowBroken(w, front, why)
+	}
 	if why := workflowApplyTiming(&w, m); why != "" {
 		return workflowBroken(w, front, why)
 	}
@@ -457,6 +460,8 @@ func workflowApplyMode(w *wire.Workflow, m map[string]yamlnode.Node) {
 		switch named {
 		case "new", "standing", "triggering":
 			w.Mode = wire.WorkflowMode(named)
+		case labelledMode:
+			// Mode new on the wire, with to: beside it (workflowApplyLabelled, #6954).
 		default:
 			w.Problem = &wire.WorkflowProblem{UnsupportedMode: &wire.WorkflowProblemUnsupportedMode{Value: named}}
 		}
@@ -579,7 +584,7 @@ func workflowApplyPlacement(w *wire.Workflow, m map[string]yamlnode.Node) string
 func workflowCollectUnknownFields(w *wire.Workflow, m map[string]yamlnode.Node) {
 	known := map[string]bool{"on": true, "agent": true, "name": true, "permission-mode": true, "runtime": true, "model": true,
 		"labels": true, "effort": true, "options": true, "enabled": true, "archived": true, "cooldown": true, "hours": true, "runs-on": true, "when-done": true,
-		"continue-when-back": true, "permission-requests": true, "sandbox": true}
+		"continue-when-back": true, "permission-requests": true, "sandbox": true, "to": true, "deliver": true}
 	for k, v := range m {
 		if !known[k] {
 			b, _ := json.Marshal(v.JSON())

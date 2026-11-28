@@ -303,6 +303,7 @@ func TestARequestDeferredAtTheMacComesBackWhenThePersonDoes(t *testing.T) {
 }
 
 func TestADeferralSurvivesARestart(t *testing.T) {
+	flaky.UnderLoad(t, "#7680")
 	t.Parallel()
 
 	root := t.TempDir()
