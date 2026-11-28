@@ -138,6 +138,7 @@ func (d *Daemon) openRelay(o wire.RelayOffer) error {
 			return err
 		}
 	}
+	d.releaseSignInHolds(o.Runtime) // a lend is a sign-in too: what waited for one goes (#7609)
 	d.goJob("relay gate", func() {
 		for {
 			c, err := ln.Accept()

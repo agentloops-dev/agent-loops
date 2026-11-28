@@ -72,6 +72,9 @@ type Deps struct {
 	Run func(name string, args ...string) (string, error)
 	// Address is this machine's own IP address and whether it is public (MachineAddress).
 	Address func() (netip.Addr, bool)
+	// Seen is the public address that a control plane saw this machine's uplink come from
+	// (controllink.SeenAddress, #7493), or an invalid one; nil for none.
+	Seen func() netip.Addr
 	// Poll and Wait bound the wait for the first start to make the store.
 	Poll, Wait time.Duration
 	Out        io.Writer
@@ -265,7 +268,9 @@ func Install(ctx context.Context, o Options, d Deps) error {
 // sayAddress gives a control plane with no domain an address that another machine can reach
 // (#7467), and says in the install's output what its address is. A machine's hostname is not
 // one: another machine cannot resolve a droplet's. With no --address, it keeps the one an
-// install before gave, else takes the machine's own (MachineAddress).
+// install before gave, else takes the machine's own (MachineAddress). When that is private
+// or there is none, as on a cloud VM behind NAT, it takes the public address that a control
+// plane saw this machine's uplink come from (#7493), when there is one.
 func sayAddress(o *Options, l Layout, d Deps) {
 	if o.Domain == "" && o.Address == "" {
 		if old, err := os.ReadFile(l.Unit); err == nil {
@@ -278,6 +283,10 @@ func sayAddress(o *Options, l Layout, d Deps) {
 	public := true
 	if o.Domain == "" && !kept {
 		ip, ok := d.Address()
+		if seen := d.seen(); !ok && seen.IsValid() {
+			fmt.Fprintf(d.Out, "This machine has no public address of its own, so the control plane takes %s, the public address its uplink came from.\n", seen)
+			ip, ok = seen, true
+		}
 		if !ip.IsValid() {
 			fmt.Fprintln(d.Out, "This machine has no IP address another machine can reach, so the control plane takes its hostname, which only this network can resolve. Install again with --address and the name or address other machines reach it at.")
 			return
@@ -473,6 +482,14 @@ func releaseArch() string {
 		return "aarch64"
 	}
 	return "x86_64"
+}
+
+// seen is Seen's address, or an invalid one.
+func (d *Deps) seen() netip.Addr {
+	if d.Seen == nil {
+		return netip.Addr{}
+	}
+	return d.Seen()
 }
 
 func (d *Deps) defaults() {

@@ -66,6 +66,9 @@ type Uplink struct {
 	// on a link (#5410), after OnChange said it is up, so what waits on one can go then; nil
 	// hears none of it.
 	OnCapabilities func(capabilities []string)
+	// OnAddress is told the public address that the control plane saw this link come from,
+	// when its answer to machine/hello says one (#7493); nil hears none of it.
+	OnAddress func(address string)
 	// Lend is where this host's relay for a runtime listens on loopback, for a tunnel the
 	// control plane opens to it (the lending Mac's end, T091); 0 when it lends none.
 	Lend func(runtime string) int
@@ -472,6 +475,9 @@ func (u *Uplink) hello(ctx context.Context, hello MachineHello) {
 			u.control.Store(&list)
 			if u.OnCapabilities != nil {
 				u.OnCapabilities(list)
+			}
+			if answer.Address != nil && u.OnAddress != nil {
+				u.OnAddress(*answer.Address)
 			}
 		case <-time.After(askWait):
 		case <-ctx.Done():

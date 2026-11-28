@@ -428,7 +428,9 @@ func (c *Cast) Input(in Input) (InputResult, error) {
 	call, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	switch in.Kind {
-	case "mouse", "wheel":
+	case "wheel":
+		_, err = chromedp.Call(call, dispatchWheel, wheelParams(in))
+	case "mouse":
 		_, err = chromedp.Call(call, input.DispatchMouseEvent, mouseParams(in))
 		if err == nil && in.Kind == "mouse" && in.Type == string(input.DispatchMouseEventTypeMouseReleased) {
 			if e, err := chromedp.Run(call, chromedp.Evaluate[bool](focusEditable)); err == nil {
@@ -549,13 +551,28 @@ const focusEditable = `(() => {
 	return !["button", "checkbox", "color", "file", "hidden", "image", "radio", "range", "reset", "submit"].includes((e.type || "").toLowerCase());
 })()`
 
+// wheelEvent is Input.dispatchMouseEvent for a wheel, with both deltas always on the wire
+// (#7597): cdproto leaves out a delta of 0, and Chromium refuses a mouseWheel without
+// deltaX, so a plain vertical scroll (deltaX 0) did nothing.
+type wheelEvent struct {
+	Type      input.DispatchMouseEventType `json:"type"`
+	X         float64                      `json:"x"`
+	Y         float64                      `json:"y"`
+	DeltaX    float64                      `json:"deltaX"`
+	DeltaY    float64                      `json:"deltaY"`
+	Modifiers int64                        `json:"modifiers,omitempty"`
+}
+
+// dispatchWheel is Input.dispatchMouseEvent with a wheelEvent's params.
+var dispatchWheel = cdp.Command[wheelEvent, cdp.Empty]{Method: input.CommandDispatchMouseEvent}
+
+func wheelParams(in Input) wheelEvent {
+	return wheelEvent{Type: input.DispatchMouseEventTypeMouseWheel, X: in.X, Y: in.Y,
+		DeltaX: in.DeltaX, DeltaY: in.DeltaY, Modifiers: in.Modifiers}
+}
+
 func mouseParams(in Input) input.DispatchMouseEventParams {
 	p := input.DispatchMouseEventParams{X: in.X, Y: in.Y, Modifiers: in.Modifiers}
-	if in.Kind == "wheel" {
-		p.Type = input.DispatchMouseEventTypeMouseWheel
-		p.DeltaX, p.DeltaY = in.DeltaX, in.DeltaY
-		return p
-	}
 	p.Type = input.DispatchMouseEventType(in.Type)
 	if p.Type == "" {
 		p.Type = input.DispatchMouseEventTypeMouseMoved

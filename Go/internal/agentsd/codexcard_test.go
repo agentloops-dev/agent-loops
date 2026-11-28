@@ -24,6 +24,9 @@ func TestAServersCodexSignsInFromACard(t *testing.T) {
 	defer d.Shutdown()
 	asAServer(t)
 	id := startAgent(t, c, 1, t.TempDir(), "")
+	// Its first turn ends before the control plane comes: a Claude turn queued with no
+	// sign-in would wait and show a Claude card of its own (#7609).
+	waitFor(t, "the first turn", func() bool { return len(d.Store.Agent(id).QueuedPrompts) == 0 })
 	d.SetTunneler(&fakeTunnels{})
 	lend(t, d, "codex", "stand-in")
 
@@ -153,12 +156,12 @@ func TestAServersClaudeCardChecksBeforeTheLendCloses(t *testing.T) {
 	defer d.Shutdown()
 	asAServer(t)
 	id := startAgent(t, c, 1, t.TempDir(), "")
-	d.SetTunneler(&fakeTunnels{})
 
 	d.raiseSignInCard(id, "claude")
 	if len(d.pendingElicitations()) != 0 {
-		t.Fatal("a card for a Claude with no lend")
+		t.Fatal("a card for a Claude with no control plane and no lend")
 	}
+	d.SetTunneler(&fakeTunnels{})
 	lend(t, d, "claude", "agents-relay-claude")
 	d.raiseSignInCard(id, "claude")
 	card := theCard(t, d)

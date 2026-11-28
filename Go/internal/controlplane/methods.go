@@ -1498,8 +1498,9 @@ func (m *Methods) HostSaid(host, method string, params json.RawMessage) (any, er
 		if err != nil {
 			return nil, err
 		}
-		// What this control plane can do, so the host asks only what it answers (#4100).
-		return wire.MachineHelloAnswer{Capabilities: capabilities()}, m.hello(ctx, host, hello)
+		// What this control plane can do, so the host asks only what it answers (#4100), and
+		// the public address its uplink comes from (#7493).
+		return m.helloAnswer(host), m.hello(ctx, host, hello)
 	case "attention/need":
 		m.s.heard(host, params)
 		return map[string]any{}, nil

@@ -183,6 +183,14 @@
         "startedByAgent": {
           "$ref": "core.schema.json#/definitions/UUID"
         },
+        "parent": {
+          "$ref": "#/definitions/SessionParent",
+          "description": "The lead this session works under (#7538, spec 7535): absent, the tree follows startedByAgent; with no id, the session is at the top. startedByAgent stays the history of who started it."
+        },
+        "parentNotices": {
+          "$ref": "#/definitions/ParentNotices",
+          "description": "The daemon's own: the parent changes this session is told on its next turn (#7538). Clients ignore it."
+        },
         "chainDepth": {
           "type": "integer"
         },
@@ -333,22 +341,52 @@
     "AgentConfigEditorRequest": {
       "type": "object",
       "properties": {
-        "folder": { "$ref": "core.schema.json#/definitions/URLString" },
-        "kind": { "type": "string", "enum": ["skills", "personas", "workflows"] }
+        "folder": {
+          "$ref": "core.schema.json#/definitions/URLString"
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "skills",
+            "personas",
+            "workflows"
+          ]
+        }
       },
-      "required": ["kind"],
+      "required": [
+        "kind"
+      ],
       "additionalProperties": false
     },
     "AgentConfigEditorSaveRequest": {
       "type": "object",
       "properties": {
-        "folder": { "$ref": "core.schema.json#/definitions/URLString" },
-        "kind": { "type": "string", "enum": ["skills", "personas", "workflows"] },
-        "path": { "type": "string" },
-        "content": { "type": "string" },
-        "delete": { "type": "boolean" }
+        "folder": {
+          "$ref": "core.schema.json#/definitions/URLString"
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "skills",
+            "personas",
+            "workflows"
+          ]
+        },
+        "path": {
+          "type": "string"
+        },
+        "content": {
+          "type": "string"
+        },
+        "delete": {
+          "type": "boolean"
+        }
       },
-      "required": ["kind", "path", "content"],
+      "required": [
+        "kind",
+        "path",
+        "content"
+      ],
       "additionalProperties": false
     },
     "AgentPurpose": {
@@ -1034,6 +1072,73 @@
       ],
       "additionalProperties": false
     },
+    "ParentNotice": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "core.schema.json#/definitions/UUID"
+        },
+        "about": {
+          "$ref": "core.schema.json#/definitions/UUID"
+        },
+        "change": {
+          "$ref": "#/definitions/ParentNoticeChange"
+        },
+        "at": {
+          "$ref": "core.schema.json#/definitions/WireDate"
+        },
+        "was": {
+          "$ref": "core.schema.json#/definitions/UUID",
+          "description": "For a child's parent or noParent: the lead it worked under before the first change it has not been told yet, so a move there and back tells nothing."
+        },
+        "again": {
+          "type": "boolean",
+          "description": "Taken by a turn that a restart cut off: said again, with a note that it is."
+        }
+      },
+      "required": [
+        "id",
+        "about",
+        "change",
+        "at"
+      ],
+      "additionalProperties": false
+    },
+    "ParentNoticeChange": {
+      "type": "string",
+      "description": "parent: the recipient now works under the lead about; noParent: it has no lead now; joined: about now works under the recipient; left: about no longer does.",
+      "enum": [
+        "parent",
+        "noParent",
+        "joined",
+        "left"
+      ]
+    },
+    "ParentNotices": {
+      "type": "object",
+      "description": "An outbox (#7538): pending goes with the next turn, in the same record write that takes its words; sent is what that turn took, until the runtime answers it.",
+      "properties": {
+        "pending": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ParentNotice"
+          }
+        },
+        "more": {
+          "type": "integer"
+        },
+        "sentWith": {
+          "$ref": "core.schema.json#/definitions/UUID"
+        },
+        "sent": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ParentNotice"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
     "PeopleList": {
       "type": "object",
       "description": "people/list (#994): every user for an admin; for a member, only themselves.",
@@ -1376,6 +1481,42 @@
         "agent"
       ]
     },
+    "SessionParent": {
+      "type": "object",
+      "description": "Where a session is put in the tree (#7538): under the lead id, or at the top when id is absent.",
+      "properties": {
+        "id": {
+          "$ref": "core.schema.json#/definitions/UUID"
+        },
+        "setAt": {
+          "$ref": "core.schema.json#/definitions/WireDate"
+        },
+        "setBy": {
+          "$ref": "#/definitions/SessionParentSetBy"
+        }
+      },
+      "required": [
+        "setAt",
+        "setBy"
+      ],
+      "additionalProperties": false
+    },
+    "SessionParentSetBy": {
+      "type": "string",
+      "enum": [
+        "person",
+        "agent"
+      ]
+    },
+    "SessionPlacement": {
+      "type": "string",
+      "description": "under: under parentID; top: at the top, the starter ignored; starter: back under its starter (parent cleared).",
+      "enum": [
+        "under",
+        "top",
+        "starter"
+      ]
+    },
     "SessionPriority": {
       "type": "string",
       "enum": [
@@ -1419,12 +1560,19 @@
           "description": "The model that wrote the text."
         }
       },
-      "required": ["text", "state"],
+      "required": [
+        "text",
+        "state"
+      ],
       "additionalProperties": false
     },
     "SessionSummaryState": {
       "type": "string",
-      "enum": ["writing", "written", "failed"],
+      "enum": [
+        "writing",
+        "written",
+        "failed"
+      ],
       "description": "Where a session's summary is: being written; written; or the last try failed, and the text of the one before it stays."
     },
     "SessionsListRequest": {
@@ -1502,6 +1650,30 @@
         "agentID",
         "optionID",
         "value"
+      ],
+      "additionalProperties": false
+    },
+    "SetParentRequest": {
+      "type": "object",
+      "description": "agents/setParent (#7538).",
+      "properties": {
+        "agentID": {
+          "$ref": "core.schema.json#/definitions/UUID"
+        },
+        "placement": {
+          "$ref": "#/definitions/SessionPlacement"
+        },
+        "parentID": {
+          "$ref": "core.schema.json#/definitions/UUID"
+        },
+        "expectedRevision": {
+          "type": "integer",
+          "description": "The child's revision the client saw; a later one refuses with changedElsewhere."
+        }
+      },
+      "required": [
+        "agentID",
+        "placement"
       ],
       "additionalProperties": false
     },
@@ -1661,6 +1833,10 @@
         "autoChose": {
           "type": "string",
           "description": "The line the control plane made when Auto picked this machine (#5375), \"Auto chose Mac mini: you last started here.\": the session's chat says it first. A client sends what sessions/previewStart gave in text."
+        },
+        "parentID": {
+          "$ref": "core.schema.json#/definitions/UUID",
+          "description": "Puts the new session under this lead at once (#7538), with the checks of agents/setParent: a live session on this host labelled lead, within the depth and child limits."
         }
       },
       "required": [

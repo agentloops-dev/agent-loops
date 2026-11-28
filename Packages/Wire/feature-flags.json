@@ -32,6 +32,12 @@
       "issue": 7327
     },
     {
+      "name": "session-parents",
+      "title": "Session parents",
+      "about": "Put a session under a lead or director: in New Session, and by a drag in the sidebar. On the Mac.",
+      "issue": 7535
+    },
+    {
       "name": "session-summary",
       "title": "Session summary",
       "about": "On the Mac: a session opens on its summary (what is going on, the goal and plan, the last turn and what waits for you), with the full chat one click away.",
@@ -48,6 +54,12 @@
       "title": "Suggested",
       "about": "New Session ▸ Suggested: the epics with no lead.",
       "issue": 6572
+    },
+    {
+      "name": "timeline-forecast",
+      "title": "Timeline forecast",
+      "about": "On the Mac: Work ▸ Timeline draws the schedule as a Gantt: a row for each open epic, solid for the work so far, dashed to its predicted finish, or why it has no date.",
+      "issue": 7067
     },
     {
       "name": "work",

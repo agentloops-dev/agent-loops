@@ -529,6 +529,13 @@ func keepUplink(ctx context.Context, cl commandLine, d *agentsd.Daemon, member *
 	d.SetControlCapabilities(up.ControlCapabilities)
 	// What a capability gates goes when the control plane says it, not an hour later (#5410).
 	up.OnCapabilities = func([]string) { safe.Go("control capabilities", d.ControlCapabilitiesKnown) }
+	// Where the control plane saw this host come from, for an install of the control role
+	// on a machine behind NAT (#7493).
+	up.OnAddress = func(address string) {
+		if err := controllink.KeepSeenAddress(loc.Root, address); err != nil {
+			log.Printf("could not keep the uplink's address: %v", err)
+		}
+	}
 	// Its agents and workflows wait for the first answer: a host the control plane forgot
 	// starts none (#4985). The last run's answer counts until then.
 	d.AwaitMembership(strings.HasSuffix(joinProblem(loc.Root), controllink.Refuse(controllink.Forgotten).Error()))
