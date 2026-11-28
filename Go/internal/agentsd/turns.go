@@ -844,6 +844,10 @@ func (l *live) takeTurnWords() (wire.QueuedPrompt, turnNotices, bool) {
 	if len(told) > 0 {
 		tn.text = d.noticeText(l.id, told, more)
 	}
+	// What labelled workflows send goes with the turn, as the notices do (#6954).
+	if bt := d.broadcastTurnText(l.id); bt != "" {
+		tn.text = strings.TrimSpace(tn.text + "\n\n" + bt)
+	}
 	d.change(l.id, func(a *wire.Agent) {
 		if a.PendingSandboxFailure != nil {
 			a.PendingSandboxFailure = nil

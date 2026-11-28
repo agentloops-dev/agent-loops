@@ -45,6 +45,9 @@ Check the build and say whether it is green.
 | `agent:` `standing` | | Each run goes to the workflow's own agent, which keeps its conversation from run to run. |
 | `on:` `once` | `at:`, and optionally `time-zone:` and `grace:` | An alarm (#4966): runs once, at a set time, then archives itself. **At** is a date and a time, such as `"2026-11-13T09:15"`, in **time-zone** (an IANA name such as `Europe/London`), else in your time zone; a time with an offset, such as `"2026-11-13T09:15:00+01:00"`, is that instant. **Grace** is how late it may still run, from `1m` to `7d`; without it, an hour. When the time comes while the Mac is off or asleep or Agent Loops is stopped, it runs on wake or restart if it is still inside its grace; past it, it does not run: it is archived as missed (`workflow.refused`, `missed_while_closed`). Archived, the file stays, and its page keeps when it ran, what it started and how late. An alarm still waits for your approval, but it is on as soon as you approve it (Alex, 2026-11-12): approved after its time but inside its grace, it runs at once. `manage_workflows` refuses an alarm already past its grace. Its page shows the time it is due, and after it ran, "by its one-time alarm, 12 minutes late". It runs on each machine that runs the folder's workflows, as a schedule does, and is not sent to a bot's machines (`runs-on:` with a bot's name). |
 | `agent:` `triggering` | | Each run goes to the agent that set it off. For an event, it is the agent the event is about. A schedule, or an event with no agent, has no such agent, so it does not run. |
+| `agent:` `labelled` | `to:`, and optionally `deliver:` | Each run starts no agent: it sends the file's words to the sessions of the folder that match `to:`. Behind **Labelled workflows** in Settings ▸ This app ▸ Early Features. See [Send to labelled sessions](#send-to-labelled-sessions). |
+| `to:` | `labels:`, and optionally `not-labels:`, `runtime:` and `account:` | For `agent: labelled` only, and it needs it: a file with `agent: labelled` and no `to:` stops the workflow, and its page says why. A session matches when it has every label of `labels:` (at least one), none of `not-labels:`, ran on `runtime:` (the runtime Auto picked, on Auto), and is on `account:`, an account profile's id, or `default` for the runtime's own sign-in. |
+| `deliver:` | `next-turn`, `steer` or `wake` | For `agent: labelled` only. Without it, `next-turn`. See [Send to labelled sessions](#send-to-labelled-sessions). |
 | `permission-mode:` | `plan`, `ask`, `approve-for-me` or `bypass-permissions`; or, on a named runtime, one of its own modes, such as `acceptEdits` | The mode the agent runs in. A workflow runs with nobody watching, so `plan` is how to say it must not change anything. The four words are the same on every runtime ([Use Auto](../how-to/use-auto.md#read-and-change-the-mappings) says what each is on each runtime): use them. On Auto, three of Claude's own modes are read as a word (#2873): `default` as `ask`, `auto` as `approve-for-me` and `bypassPermissions` as `bypass-permissions`. |
 | `permission-requests:` | `request-cards` or `yes-to-all` | Cursor, Grok and OpenCode only: whether each permission request is a card, or the app says yes to it. Without it, the value from Settings. On Auto it follows `permission-mode:`. |
 | `sandbox:` | `default`, `runtime` or `none` | **Default sandbox**, **Runtime sandbox** or **No sandbox**. Without it, the value from Settings. |
@@ -269,6 +272,60 @@ permission-mode: plan
 
 Draft release notes from the commits since the last tag.
 ```
+
+## Send to labelled sessions
+
+A workflow with `agent: labelled` sends its words to sessions that are already there, and
+starts none (#6954, epic #6951). Turn on **Labelled workflows** in Settings ▸ This app ▸
+Early Features first: with it off, a run sends nothing, and the workflow's page says the
+feature is off.
+
+```markdown
+---
+name: Allowance is out
+on:
+  - cost.allowance_out
+agent: labelled
+to:
+  labels: [lane]
+  not-labels: [lead]
+  account: default
+deliver: next-turn
+---
+
+A runtime's allowance ran out. Push nothing new until it is back.
+```
+
+- **`deliver: next-turn`** (the default) queues nothing. At the start of each turn, a
+  matching session gets the words of each active broadcast that it has not read, before
+  its own prompt, once. An idle session is not started, and a session in a long turn
+  hears it at its next turn. A session that starts later, while the broadcast is active,
+  hears it at its first turn.
+- **`deliver: steer`** puts the words into each matching session's running turn at once,
+  when its runtime takes words in the middle of a turn. The rest hear it at their next
+  turn.
+- **`deliver: wake`** does the same, and also starts an idle session with the words.
+
+`steer` and `wake` tell 20 sessions at once at most; the rest hear it at their next turn.
+Neither ever starts a stopped session or one that waits for an answer: they hear it at
+their next turn. The app sends the words itself, as **From the app**, with a line that
+names the workflow and why it ran. Delivery asks for no approval.
+
+A broadcast is active for 24 hours, then it ends. A second run while it is active
+changes nothing, and the run says so. The workflow's cooldown and the chain limit apply
+as to any run. Its `workflow.ran` event says who was told now (`told`, `told_sessions`),
+how many hear it at their next turn (`next_turn`), and who was not told now and why
+(`not_told`). The workflow's page lists its active broadcasts, with how many sessions
+match now and how many were told.
+
+The broadcasts are in `broadcasts.json` in the app's folder, a bounded small file: 50
+broadcasts at most (an ended one goes first to make room, else a new one is refused and
+the run says why), 200 sessions told for each, 4,000 characters of words, and 32 KB for
+each. An ended broadcast is deleted a day after it ends, and a session that is gone is
+taken out of the sessions told.
+
+On the wire, a labelled workflow has `mode: new` with `to` beside it, so a client that does
+not know `labelled` still reads the list.
 
 ## One run at a time
 
