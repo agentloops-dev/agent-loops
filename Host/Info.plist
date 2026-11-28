@@ -26,6 +26,8 @@
 	<string>public.app-category.developer-tools</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>$(MACOSX_DEPLOYMENT_TARGET)</string>
+	<key>NSAudioCaptureUsageDescription</key>
+	<string>So meeting mode hears the other people on a call, from the call app you choose. No audio is kept.</string>
 	<key>NSBonjourServices</key>
 	<array>
 		<string>_agents-control._tcp</string>

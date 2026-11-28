@@ -1421,6 +1421,7 @@ final class AppModel {
         #if DEBUG
         openFromLaunchArguments()
         WalkNotify.model = work
+        WalkMeeting.client = { [weak self] in self?.macClient }
         WalkNotify.also = { [weak self] method, params in
             guard method == DaemonAPI.Notification.moveChanged,
                   let change = try? params?.decode(DaemonAPI.MoveNotification.self) else { return false }
