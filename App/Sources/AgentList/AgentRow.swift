@@ -26,6 +26,9 @@ struct AgentRow: View {
     private let showsArchivedTime: Bool
     /// This row's own id, so its title's field is in it alone (#5917).
     private let rowID: UUID?
+    /// Meeting mode (#7585): a meeting's row has a waveform mark and its state as the line.
+    @AppStorage(FeatureFlag.meetingMode.key, store: WindowDefaults.store) private var meetingModeOn = false
+    private var meeting: DaemonAPI.Meeting? { meetingModeOn ? model.meetings.meeting(for: agent.id) : nil }
 
     init(agent: Agent, isCompact: Bool = false, place: String? = nil,
          tree: SidebarTree.Row? = nil, showsArchivedTime: Bool = false, rowID: UUID? = nil, toggleFold: @escaping () -> Void = {}) {
@@ -89,6 +92,14 @@ struct AgentRow: View {
                     .frame(width: 16)
                     .padding(.top, 1)
                     .accessibilityLabel("Archived")
+            } else if isCompact, meeting != nil, ![.needsAttention, .blocked].contains(model.work.group(of: markAgent)) {
+                // A meeting (#7585, gate 2): the waveform in the accent, unless it needs you.
+                Image(icon: "waveform")
+                    .glyph(size: 13)
+                    .foregroundStyle(Paper.accent)
+                    .frame(width: 16)
+                    .padding(.top, 1)
+                    .accessibilityLabel("Meeting")
             } else if isCompact, let mark = SessionMark(agent: markAgent, group: model.work.group(of: markAgent)) {
                 mark.padding(.top, 1)
             } else {
@@ -227,6 +238,15 @@ struct AgentRow: View {
                         .foregroundStyle(Paper.secondary)
                         .lineLimit(isCompact ? 1 : 2)
                         .fixedSize(horizontal: false, vertical: true)
+                } else if let meeting {
+                    // Its state, not the agent's report (#7585): "Listening · 33:54".
+                    TimelineView(.periodic(from: .now, by: meeting.state == .listening ? 1 : 60)) { context in
+                        Text(MeetingLines.rowLine(meeting, now: context.date))
+                            .appText(isCompact ? .fine : .supporting)
+                            .monospacedDigit()
+                            .foregroundStyle(Paper.secondary)
+                            .lineLimit(1)
+                    }
                 } else if agent.missingFolder != nil, agent.state != .archived {
                     // Its folder gone (#119): said before anybody types, as a folder's
                     // row says it, in the report's place.

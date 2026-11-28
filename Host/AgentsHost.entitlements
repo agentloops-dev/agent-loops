@@ -14,5 +14,9 @@
 	<!-- Dictation and voice mode: the hardened runtime asks for the microphone. -->
 	<key>com.apple.security.device.audio-input</key>
 	<true/>
+	<!-- Meeting mode's New Meeting (#7585): the title from the calendar event on now, by
+	     EventKit. The hardened runtime asks for it. -->
+	<key>com.apple.security.personal-information.calendars</key>
+	<true/>
 </dict>
 </plist>

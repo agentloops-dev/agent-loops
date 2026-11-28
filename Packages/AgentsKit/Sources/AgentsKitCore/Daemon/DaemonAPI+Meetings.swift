@@ -8,6 +8,8 @@ extension DaemonAPI.Method {
     public static let meetingsSetState = "meetings/setState"
     public static let meetingsAppend = "meetings/append"
     public static let meetingsSegments = "meetings/segments"
+    public static let meetingsList = "meetings/list"
+    public static let meetingsSetSpeaker = "meetings/setSpeaker"
 }
 
 extension DaemonAPI.Notification {
@@ -173,5 +175,62 @@ extension DaemonAPI {
     public struct MeetingSegmentsPage: Codable, Hashable, Sendable {
         public var segments: [MeetingSegment]
         public var more: Bool
+    }
+
+    /// meetings/list: a page of the person's meetings, newest first.
+    public struct MeetingListRequest: Codable, Hashable, Sendable {
+        public var cursor: String?
+        /// At most 50.
+        public var limit: Int?
+
+        public static let pageLimit = 50
+
+        public init(cursor: String? = nil, limit: Int? = nil) {
+            self.cursor = cursor
+            self.limit = limit
+        }
+    }
+
+    public struct MeetingPage: Codable, Hashable, Sendable {
+        public var meetings: [Meeting]
+        /// Absent on the last page.
+        public var cursor: String?
+
+        public init(meetings: [Meeting], cursor: String? = nil) {
+            self.meetings = meetings
+            self.cursor = cursor
+        }
+    }
+
+    /// meetings/setSpeaker (#7585): names a voice for the whole meeting; an empty name takes it off.
+    public struct MeetingSetSpeakerRequest: Codable, Hashable, Sendable {
+        public var meetingID: UUID
+        public var source: String
+        public var index: Int
+        /// At most 100 characters.
+        public var name: String
+
+        public static let nameLimit = 100
+
+        public init(meetingID: UUID, source: String, index: Int, name: String) {
+            self.meetingID = meetingID
+            self.source = source
+            self.index = index
+            self.name = name
+        }
+    }
+
+    /// meetings/changed, as the window reads it: the meeting and its last seq. The notes and
+    /// the action items it may carry are the Meeting tab's (#7586).
+    public struct MeetingChangedNotification: Decodable, Hashable, Sendable {
+        public var meetingID: UUID
+        public var meeting: Meeting?
+        public var lastSeq: Int64
+
+        public init(meetingID: UUID, meeting: Meeting? = nil, lastSeq: Int64) {
+            self.meetingID = meetingID
+            self.meeting = meeting
+            self.lastSeq = lastSeq
+        }
     }
 }

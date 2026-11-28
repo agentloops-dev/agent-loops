@@ -33,6 +33,8 @@ struct ChatView: View {
     @AppStorage(FeatureFlag.sessionSummary.key, store: WindowDefaults.store) private var summaryOn = false
     /// The whole chat chosen over the summary; each session opens on its summary again.
     @State private var showsChat = false
+    /// Meeting mode (#7585): a meeting's session opens on its transcript.
+    @AppStorage(FeatureFlag.meetingMode.key, store: WindowDefaults.store) private var meetingModeOn = false
 
     private var agent: Agent? { popped.map { model.work.agent($0.id) } ?? model.selectedAgent }
 
@@ -74,7 +76,8 @@ struct ChatView: View {
                                 // What it works towards: the goal (#2742) and the plan
                                 // (#341), one Now card with two rows (#5033). The summary
                                 // draws it under its paragraph (#7322).
-                                if !showsSummary(agent) {
+                                // The transcript's capsule is in its place (#7585).
+                                if !showsSummary(agent), transcriptMeeting(agent) == nil {
                                     NowTopCard(agent: agent)
                                 }
                             }
@@ -424,7 +427,10 @@ struct ChatView: View {
     /// The summary in the transcript's place (#7322), or the transcript.
     @ViewBuilder
     private func page(for agent: Agent) -> some View {
-        if showsSummary(agent) {
+        if let meeting = transcriptMeeting(agent) {
+            // A meeting's transcript in the chat's place (#7585); the toolbar's switch shows the chat.
+            MeetingTranscriptPage(meeting: meeting, bottomInset: formHeight)
+        } else if showsSummary(agent) {
             let work = popped?.work ?? model.work
             SessionSummaryPage(agent: agent,
                                firstPrompt: Self.firstPrompt(work),
@@ -439,6 +445,13 @@ struct ChatView: View {
         } else {
             Transcript(agent: agent, bottomInset: formHeight, cards: cards)
         }
+    }
+
+    /// The meeting whose transcript shows in the chat's place: the main window's, with the
+    /// flag on, unless the toolbar's switch chose Chat.
+    private func transcriptMeeting(_ agent: Agent) -> DaemonAPI.Meeting? {
+        guard meetingModeOn, popped == nil, !model.meetings.showsChat.contains(agent.id) else { return nil }
+        return model.meetings.meeting(for: agent.id)
     }
 
     /// The person's first prompt, under a summary not written yet: the first turn's ask, else

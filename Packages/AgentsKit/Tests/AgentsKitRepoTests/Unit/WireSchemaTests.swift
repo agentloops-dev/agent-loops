@@ -377,6 +377,10 @@ struct WireSchemaTests {
             "MeetingAppended": Self.through(DaemonAPI.MeetingAppended.self),
             "MeetingSegmentsRequest": Self.through(DaemonAPI.MeetingSegmentsRequest.self),
             "MeetingSegmentsPage": Self.through(DaemonAPI.MeetingSegmentsPage.self),
+            // Meeting mode's screens on the Mac (#7585).
+            "MeetingListRequest": Self.through(DaemonAPI.MeetingListRequest.self),
+            "MeetingPage": Self.through(DaemonAPI.MeetingPage.self),
+            "MeetingSetSpeakerRequest": Self.through(DaemonAPI.MeetingSetSpeakerRequest.self),
         ]
         let all = samples.objectValue ?? [:]
         #expect(Set(all.keys) == Set(types.keys), "a sample with no Swift type, or a type with no sample")

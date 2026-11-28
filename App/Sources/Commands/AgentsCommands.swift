@@ -36,6 +36,9 @@ final class WindowRequests {
     /// its Prompts list.
     var wantsPrompts = false
 
+    /// New Meeting's sheet is up (#7585), with the flag `meeting-mode` on.
+    var newMeeting = false
+
     /// Open File… is up over the window (#415), searching the open session's folders.
     var showsFileSearch = false
 
@@ -97,6 +100,8 @@ struct AgentsCommands: Commands {
     @Environment(\.openSettings) private var openSettings
     /// Whether the chat draws the agent's thoughts (#1725), turned on and off here (#2383).
     @AppStorage(ChatThoughts.showsKey, store: WindowDefaults.store) private var showsThoughts = ChatThoughts.showsAtFirst
+    /// Meeting mode's New Meeting (#7585), behind its flag.
+    @AppStorage(FeatureFlag.meetingMode.key, store: WindowDefaults.store) private var meetingModeOn = false
 
     /// What the Session menu acts on: the key window's session, which is the main
     /// window's selection unless a session's (#826) or a folder's (#1089) own window is
@@ -141,6 +146,12 @@ struct AgentsCommands: Commands {
             Button(BackgroundStartScene.title) { openWindow(id: BackgroundStartScene.id) }
                 .keyboardShortcut(MenuKeys.newBackgroundSession)
                 .disabled(model.foldersInListOrder.isEmpty)
+            // Meeting mode (#7585), behind its flag: a session that listens to a meeting.
+            if meetingModeOn {
+                Button(MeetingLines.sheetTitle + "…") { requests.newMeeting = true }
+                    .keyboardShortcut(MenuKeys.newMeeting)
+                    .disabled(model.foldersInListOrder.isEmpty)
+            }
             Divider()
             Button("Add Folder…") { requests.folderSheet = .chooseFolder() }
                 .keyboardShortcut(MenuKeys.addFolder)
@@ -586,6 +597,8 @@ struct AgentsCommands: Commands {
             when: folder != nil && model.draftWorktrees.canMakeNew) { newSession(inWorktree: true) }
         add(BackgroundStartScene.title, MenuKeys.newBackgroundSession, keywords: ["start", "window"],
             when: !model.foldersInListOrder.isEmpty) { openWindow(id: BackgroundStartScene.id) }
+        add(MeetingLines.sheetTitle + "…", MenuKeys.newMeeting, keywords: ["meeting", "listen", "transcript"],
+            when: meetingModeOn && !model.foldersInListOrder.isEmpty) { requests.newMeeting = true }
         for summary in foldersInListOrder where summary.key != folder?.key {
             add("New Session in \(summary.name)", keywords: ["start"]) {
                 model.showFolder(summary.key)

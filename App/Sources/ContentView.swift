@@ -17,6 +17,8 @@ struct ContentView: View {
     /// ordinary thing to do here, and a list that hides itself when used is a list you
     /// have to keep fetching back.
     @State private var columns = NavigationSplitViewVisibility.all
+    /// Meeting mode (#7585): a meeting's session has the Transcript | Chat switch.
+    @AppStorage(FeatureFlag.meetingMode.key, store: WindowDefaults.store) private var meetingModeOn = false
 
     /// Put the file the selected agent asked about in front of the user.
     ///
@@ -264,6 +266,22 @@ struct ContentView: View {
         }
         // No New Session button (#375): the folder's New session row, ⌘N and the
         // folder menu start one.
+        // A meeting's Transcript | Chat (#7585, gate 2): the transcript, or the session's own
+        // chat with the gap prompts and the agent's turns.
+        if meetingModeOn, let agent = chatAgent, model.meetings.meeting(for: agent.id) != nil {
+            ToolbarItem {
+                Picker(MeetingSwitchWords.help, selection: Binding(
+                    get: { model.meetings.showsChat.contains(agent.id) },
+                    set: { model.meetings.setShowsChat($0, for: agent.id) })) {
+                    Text(MeetingSwitchWords.transcript).tag(false)
+                    Text(MeetingSwitchWords.chat).tag(true)
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .fixedSize()
+                .help(MeetingSwitchWords.help)
+            }
+        }
         // Pin and Archive (#586), as the workflow page has them: the two things a session
         // is most often done with. Archive leaves the chat, as ⌥⌘⌫ does.
         if let agent = chatAgent {
