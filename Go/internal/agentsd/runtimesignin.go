@@ -420,6 +420,7 @@ func (d *Daemon) signedInHere(rt *runtimeDef) wire.RuntimeStatus {
 	d.updateAccount(rt.ID, func(a *wire.RuntimeAccount) { a.State, a.CheckedAt = wire.RuntimeAccountStateReady, now() })
 	s := d.statusOf(rt)
 	Broadcast(d, wire.NotifyRuntimeChanged, s)
+	d.releaseSignInHolds(rt.ID) // the turns that waited for it go now (#7609)
 	return s
 }
 
