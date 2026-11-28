@@ -176,10 +176,10 @@ func (d *Daemon) signInCardWords(runtimeID string, step wire.RuntimeSignInStep, 
 		code = *step.UserCode
 	}
 	msg := "Sign Codex in on this server, so it works when the Mac is away. Open " + string(step.URL) +
-		" in any browser and enter the code " + code + ", then choose Accept."
+		" in any browser and enter the code " + code + ", then choose Done."
 	if out {
 		msg = signedOutTitle("Codex", d.serverName()) + ": its sign-in on this server ended. To sign in again, open " +
-			string(step.URL) + " in any browser and enter the code " + code + ", then choose Accept."
+			string(step.URL) + " in any browser and enter the code " + code + ", then choose Done."
 	}
 	mode := wire.ElicitationRequestMode{URL: &wire.ElicitationRequestModeURL{Value: string(step.URL)}}
 	if runtimeID == "claude" {
@@ -241,6 +241,11 @@ func signInEnded(f *sessionFailure) bool {
 func (d *Daemon) usesOwnSignIn(a *wire.Agent) bool {
 	if macToolsHome != "" || a.AccountID != nil || d.relayFor(a.RuntimeID) != nil {
 		return false
+	}
+	// Still signed out: Codex deletes its auth.json once its sign-in fails, so the next turn
+	// that fails is that same end, not a sign-in that was never made.
+	if d.signedOutHere(a.RuntimeID) {
+		return true
 	}
 	switch a.RuntimeID {
 	case "claude":

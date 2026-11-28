@@ -192,3 +192,23 @@ func TestTheCardNamesTheServerAsTheClientsDo(t *testing.T) {
 		t.Fatalf("%q, not the lock's %q", got, name)
 	}
 }
+
+// Codex deletes its auth.json once its sign-in fails: a server still signed out says the
+// next failed turn as that same end, not as a sign-in never made.
+func TestASignedOutServerStaysItsOwnAfterTheSignInIsGone(t *testing.T) {
+	fakeRuntimes(t)
+	fakeSignInTools(t)
+	d, c := start(t, t.TempDir())
+	defer d.Shutdown()
+	asAServer(t)
+	id := startAgent(t, c, 1, t.TempDir(), "")
+	c.until(t, "finished", ended(id, wire.AgentStateFinished))
+	a := d.Store.Agent(id)
+	if d.usesOwnSignIn(a) {
+		t.Fatal("no sign-in at all, and it is its own")
+	}
+	d.markSignedOut("claude", true)
+	if !d.usesOwnSignIn(a) {
+		t.Fatal("signed out, with the sign-in gone, is not its own any more")
+	}
+}
