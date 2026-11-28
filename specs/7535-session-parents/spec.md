@@ -195,8 +195,8 @@ host says it.
   a menu for touch. The control plane's copy of a host's list keeps the whole record, so a
   host that is offline still shows the tree. A move needs the host online, as a rename does.
 - **Sessions on another machine** (`thereAgents`): not a parent and not a child in the MVP.
-  The picker lists only this host's leads. A cross-host parent needs the check across hosts,
-  and is a follow-up for #7540 if Alex wants it.
+  The picker lists only this host's leads. Alex wants a parent on another machine in the port
+  (#7540), with the check across hosts designed there.
 
 ## Next-turn notices
 
@@ -255,15 +255,20 @@ you") shows the person the change at once.
 
 ## What this leaves out, and why
 
-- **No parent across hosts** (above): the cycle check needs one lock over every session it
-  walks.
+- **No parent across hosts in the MVP** (above): the cycle check needs one lock over every
+  session it walks. The port (#7540) adds it.
 - **No wake of the lead.** The epic says "on their next turns". A wake is a workflow the
   person can make (`agent.ended` and the like) if they want one.
 - **No change to `startedByAgent` or to the helper limits.** Helper limits still count by
   starter (`helpersIn`); a session moved under a lead does not count in that lead's limits.
 
-## Questions for Alex
+## Alex's answers (2026-11-27)
 
-1. Is the "at the top" state (`parent: {}`) wanted, so that a drag to the top takes a session
-   out from under its starter? Without it, a drag to the top puts it back under its starter.
-2. Should a parent on another machine be allowed in the port (#7540), or stay out?
+Alex approved the model (gate 1) on the form of #7536, and answered:
+
+1. **"At the top" stays.** A drag to the top takes a session out from under its starter
+   (`parent: {}`).
+2. **A parent on another machine is in the port (#7540).** The Mac MVP keeps same-host parents
+   only. The port adds a parent on another machine of the same person; its check across hosts
+   (one place that holds the lock over the sessions it walks, likely the control plane) is a
+   design child of #7540.
