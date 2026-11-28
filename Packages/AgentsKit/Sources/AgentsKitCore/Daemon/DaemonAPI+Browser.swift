@@ -75,6 +75,28 @@ public extension DaemonAPI {
         }
     }
 
+    /// browser/window (#7259): the browser's own window with `agent`'s tab onto this Mac's
+    /// screen and in front (`show`), or back below the screen.
+    struct BrowserWindowRequest: Codable, Sendable, Hashable {
+        public var agent: UUID
+        public var show: Bool
+        public init(agent: UUID, show: Bool) {
+            self.agent = agent
+            self.show = show
+        }
+    }
+
+    /// browser/window's answer: whether the window is in front, and its name as the host
+    /// says it. Not shown: the client shows the screencast.
+    struct BrowserWindowResult: Codable, Sendable, Hashable {
+        public var shown: Bool
+        public var window: String?
+        public init(shown: Bool, window: String? = nil) {
+            self.shown = shown
+            self.window = window
+        }
+    }
+
     struct BrowserAckRequest: Codable, Sendable, Hashable {
         public var ack: Int
         public init(ack: Int) { self.ack = ack }

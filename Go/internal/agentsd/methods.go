@@ -54,6 +54,7 @@ func (d *Daemon) register() {
 	d.registerChanges()
 	d.registerTurnUndo()
 	d.registerBrowserWatch()
+	d.registerBrowserWindow()
 	d.registerFolders()
 	d.registerGuarded()
 	d.registerEvents()

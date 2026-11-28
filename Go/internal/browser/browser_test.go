@@ -64,6 +64,10 @@ func newFake(t *testing.T) *fake {
 	}
 	// No Google Chrome unless a test gives one (#5207): Chrome for Testing, as on Linux.
 	f.m.chrome = func() string { return "" }
+	// Chrome for Testing headless unless a test says it is on a Mac (#7259), as on Linux.
+	was := windowBelowHere
+	windowBelowHere = false
+	t.Cleanup(func() { windowBelowHere = was })
 	f.m.launch = func(exe, profile string, env []string, how mode) (*process, error) {
 		n := f.launches.Add(1)
 		if how.chrome {
@@ -78,7 +82,7 @@ func newFake(t *testing.T) *fake {
 		}
 		f.crash = make(chan struct{})
 		return &process{endpoint: "ws://127.0.0.1:9222/devtools/browser/" + string(rune('a'+n-1)), pid: 1000 + int(n),
-			done: f.crash, stop: func() { f.stops.Add(1) }, headed: how.headed, chrome: how.chrome, webauthn: how.webauthn}, nil
+			done: f.crash, stop: func() { f.stops.Add(1) }, headed: how.headed, below: how.below, chrome: how.chrome, webauthn: how.webauthn}, nil
 	}
 	t.Cleanup(f.m.Shutdown)
 	return f
@@ -206,6 +210,39 @@ func TestHeadedKeepsWebAuthn(t *testing.T) {
 	mustStart(t, f.m)
 	if f.webauthn.Load() != 2 || f.headed.Load() != 1 {
 		t.Fatal(f.webauthn.Load(), f.headed.Load())
+	}
+}
+
+// On a Mac, Chrome for Testing always has a window, below the screen (#7259): a person can
+// be given it with the page as it is, so a site that checks for bots starts nothing again,
+// and the window is the one ShowWindow gives.
+func TestChromeForTestingOnAMacHasAWindowBelowTheScreen(t *testing.T) {
+	f := newFake(t)
+	windowBelowHere = true
+	if runtime.GOOS != "darwin" {
+		f.m.Env = func() []string { return []string{"PATH=/usr/bin:/bin", "DISPLAY=:0"} }
+	}
+	mustStart(t, f.m)
+	if f.headed.Load() != 1 || f.chrome.Load() != 0 {
+		t.Fatal("Chrome for Testing did not start with a window", f.headed.Load(), f.chrome.Load())
+	}
+	if f.m.Headed() || f.stops.Load() != 0 {
+		t.Fatal("a site that checks for bots started a browser with a window again")
+	}
+	f.m.mu.Lock()
+	below := f.m.running.below
+	f.m.mu.Unlock()
+	if !below {
+		t.Fatal("its window is not kept below the screen, for a person to be given")
+	}
+}
+
+// Headless, or with a window off every screen, the browser has no window to give a person.
+func TestAHeadlessBrowserHasNoWindowToShow(t *testing.T) {
+	f := newFake(t)
+	mustStart(t, f.m)
+	if _, err := f.m.ShowWindow(t.Context(), ""); !errors.Is(err, ErrNoWindow) {
+		t.Fatal("a headless browser showed a window:", err)
 	}
 }
 

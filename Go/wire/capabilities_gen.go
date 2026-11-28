@@ -25,6 +25,7 @@ const CapBackupsStore1 = "backups.store/1"
 const CapBackups1 = "backups/1"
 const CapBots1 = "bots/1"
 const CapBringBack1 = "bring.back/1"
+const CapBrowserWindow1 = "browser.window/1"
 const CapBrowser1 = "browser/1"
 const CapBrowser2 = "browser/2"
 const CapBuildsCopy1 = "builds.copy/1"
@@ -355,6 +356,7 @@ var HostCapabilities = pairs([][2]string{
 	{"browser/state", "host.browser-settings/1"},
 	{"browser/unwatch", "browser/1"},
 	{"browser/watch", "browser/1"},
+	{"browser/window", "browser.window/1"},
 	{"browserControl/set", "host.drive-approval/1"},
 	{"browserControl/state", "host.drive-approval/1"},
 	{"builds/history", "builds.trends/2"},

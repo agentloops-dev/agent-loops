@@ -1806,6 +1806,30 @@ export interface BrowserWatchRequest {
 }
 
 /**
+ * browser/window (#7259): show or put back the browser's own window with the session's tab, for a
+ * person at this machine.
+ */
+export interface BrowserWindowRequest {
+  /** The session whose tab the window shows: the newest tab its agent opened. */
+  agent: UUID;
+  /** true: onto the screen and to the front. false: back below the screen. */
+  show: boolean;
+}
+
+/** browser/window's answer (#7259). */
+export interface BrowserWindowResult {
+  /**
+   * The window is on the screen, in front, for the person. false: the client shows the screencast.
+   */
+  shown: boolean;
+  /**
+   * The window as the client names it, such as the agents' Chrome window, in front
+   * (accounts.google.com). Only when shown.
+   */
+  window?: string;
+}
+
+/**
  * A budget raised for one person for one UTC day (#998, FR-019), kept in the policy and swept the
  * day after.
  */
@@ -19560,6 +19584,8 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   BrowserSite: { required: ["site", "cookies"], optional: [] },
   BrowserState: { required: ["installed", "running", "downloadBytes", "sites"], optional: ["problem"] },
   BrowserWatchRequest: { required: ["width", "height"], optional: ["agent"] },
+  BrowserWindowRequest: { required: ["agent", "show"], optional: [] },
+  BrowserWindowResult: { required: ["shown"], optional: ["window"] },
   BudgetRaise: { required: ["user", "day", "by"], optional: ["daily", "dailyTokens", "request"] },
   BudgetRequest: { required: ["id", "user", "userName", "day", "at", "state"], optional: ["why", "daily", "dailyTokens", "decidedBy", "decidedAt"] },
   BudgetRequestList: { required: ["requests"], optional: [] },

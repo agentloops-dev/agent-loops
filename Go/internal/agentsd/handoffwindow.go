@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -24,13 +25,20 @@ import (
 // Can't do it, or the hand-off ends any other way), the window goes back below the screen,
 // the app that was in front before comes back, and the lease is let go.
 //
-// When it cannot (Chrome for Testing, another host than a Mac, no agents-drive, the screen
-// held by another agent), the card is as before: Open the page, on the screencast.
+// Chrome for Testing on a Mac has the same window (#7259). Take over (Open on a live tile)
+// on the Mac that runs the browser gives the person that window the same way, by
+// browser/window, until the take-over window closes or the client's connection ends.
+//
+// When it cannot (a headless Chrome for Testing, another host than a Mac, no agents-drive,
+// the screen held by another agent), the card is as before: Open the page, on the
+// screencast; and a take over shows the screencast.
 
-// handOffWindowState is the Daemon's hand-offs in the real window, by the card's request id.
+// handOffWindowState is the Daemon's hand-offs in the real window, by the card's request id,
+// and the take overs in it, by client and session.
 type handOffWindowState struct {
-	windowMu sync.Mutex
-	windows  map[wire.UUID]windowHandOff
+	windowMu  sync.Mutex
+	windows   map[wire.UUID]windowHandOff
+	takeOvers map[int64]map[wire.UUID]wire.UUID
 }
 
 // windowHandOff is one window on the screen for the person, and what puts things back.
@@ -114,8 +122,9 @@ var frontApp = func(pid int) (int, error) {
 // screenNowArgs is the "screen" lease, now or not at all: a hand-off does not wait in line.
 var screenNowArgs = map[string]json.RawMessage{"name": json.RawMessage(`"screen"`), "wait": json.RawMessage(`false`)}
 
-// showHandOffWindow gives the person the real window for the hand-off request, and says the
-// window as the card names it; false when the card stays on the screencast.
+// showHandOffWindow gives the person the real window for the hand-off request (or a take
+// over's), and says the window as the card names it; false when the card stays on the
+// screencast.
 func (d *Daemon) showHandOffWindow(agent, request wire.UUID) (string, bool) {
 	if d.browser == nil || !d.desktopControlAvailable() {
 		return "", false
@@ -210,4 +219,69 @@ func (d *Daemon) windowHandedOff(agent wire.UUID) bool {
 		}
 	}
 	return false
+}
+
+// takeOverWindow is browser/window (#7259): show gives the person at this Mac the window with
+// agent's tab, as a hand-off does; a second show for the same client and session brings it to
+// the front again. show false puts it back.
+func (d *Daemon) takeOverWindow(c *Client, agent wire.UUID, show bool) (wire.BrowserWindowResult, error) {
+	if c == nil || (c.Role != RoleControl && c.Role != RoleDevice) {
+		return wire.BrowserWindowResult{}, &Error{Code: CodeNotPermitted, Message: "Only your own clients can take over the browser's window."}
+	}
+	d.windowMu.Lock()
+	request, had := d.takeOvers[c.ID][agent]
+	if !show && had {
+		delete(d.takeOvers[c.ID], agent)
+	}
+	d.windowMu.Unlock()
+	if !show {
+		if had {
+			d.hideHandOffWindow(request)
+		}
+		return wire.BrowserWindowResult{}, nil
+	}
+	if had {
+		d.hideHandOffWindow(request)
+	}
+	request = store.NewUUID()
+	window, ok := d.showHandOffWindow(agent, request)
+	if !ok {
+		d.windowMu.Lock()
+		delete(d.takeOvers[c.ID], agent)
+		d.windowMu.Unlock()
+		return wire.BrowserWindowResult{}, nil
+	}
+	d.windowMu.Lock()
+	if d.takeOvers == nil {
+		d.takeOvers = map[int64]map[wire.UUID]wire.UUID{}
+	}
+	if d.takeOvers[c.ID] == nil {
+		d.takeOvers[c.ID] = map[wire.UUID]wire.UUID{}
+	}
+	d.takeOvers[c.ID][agent] = request
+	d.windowMu.Unlock()
+	return wire.BrowserWindowResult{Shown: true, Window: &window}, nil
+}
+
+// endTakeOvers puts back every window c took over: its connection ended.
+func (d *Daemon) endTakeOvers(c *Client) {
+	d.windowMu.Lock()
+	requests := d.takeOvers[c.ID]
+	delete(d.takeOvers, c.ID)
+	d.windowMu.Unlock()
+	if len(requests) == 0 {
+		return
+	}
+	// Putting a window back waits on the browser and agents-drive, so off the caller's path.
+	d.goJobOrNow("put back a taken-over window", func() {
+		for _, request := range requests {
+			d.hideHandOffWindow(request)
+		}
+	})
+}
+
+func (d *Daemon) registerBrowserWindow() {
+	On(d, wire.CallBrowserWindow, func(_ context.Context, c *Client, r wire.BrowserWindowRequest) (wire.BrowserWindowResult, error) {
+		return d.takeOverWindow(c, sessionKey(r.Agent), r.Show)
+	})
 }
