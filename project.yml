@@ -643,6 +643,10 @@ targets:
         NSMicrophoneUsageDescription: >-
           So you can say what you want done instead of typing it, and talk to your
           agents in voice mode. No audio is kept.
+        # Meeting mode (#7584): a process tap of the call app, the other side of the call.
+        NSAudioCaptureUsageDescription: >-
+          So meeting mode hears the other people on a call, from the call app you choose.
+          No audio is kept.
         NSSpeechRecognitionUsageDescription: >-
           So what you say becomes the words in the prompt. It is recognised on this Mac
           where this Mac can do it.

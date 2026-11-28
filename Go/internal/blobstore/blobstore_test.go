@@ -16,6 +16,7 @@ func init() { SyncWrites = false }
 func each(t *testing.T, fn func(t *testing.T, s Store)) {
 	t.Run("memory", func(t *testing.T) { fn(t, NewMemory()) })
 	t.Run("folder", func(t *testing.T) { fn(t, NewFolder(t.TempDir())) })
+	t.Run("bucket", func(t *testing.T) { fn(t, fakeBucket(t, "org/a")) })
 }
 
 func TestPutGetHeadDedupeDelete(t *testing.T) {

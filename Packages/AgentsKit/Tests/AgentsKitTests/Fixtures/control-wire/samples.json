@@ -1516,5 +1516,119 @@
     "pool": "dev",
     "fromPool": true,
     "note": "note"
+  },
+  "MeetingSegment": {
+    "seq": 7,
+    "source": "call:us.zoom.xos",
+    "audioStart": 12.5,
+    "audioEnd": 15.25,
+    "text": "Shall we start?",
+    "speakerIndex": 1,
+    "speakerSettled": true
+  },
+  "MeetingSpeaker": {
+    "source": "mic",
+    "index": 0,
+    "name": "Speaker 1"
+  },
+  "Meeting": {
+    "id": "6F9619FF-8B86-D011-B42D-00C04FC964FF",
+    "agentID": "6F9619FF-8B86-D011-B42D-00C04FC964FF",
+    "folder": "file:///tmp/folder/",
+    "title": "Planning",
+    "state": "listening",
+    "startedAt": 812345678.5,
+    "endedAt": 812345678.5,
+    "sources": [
+      "mic",
+      "call:us.zoom.xos"
+    ],
+    "speakers": [
+      {
+        "source": "mic",
+        "index": 0,
+        "name": "Speaker 1"
+      }
+    ],
+    "lastSeq": 7,
+    "sentThroughSeq": 5,
+    "segmentsRemoved": false,
+    "updatedAt": 812345678.5
+  },
+  "MeetingStartRequest": {
+    "folder": "file:///tmp/folder/",
+    "title": "Planning",
+    "sources": [
+      "mic"
+    ],
+    "runtimeID": "claude"
+  },
+  "MeetingStarted": {
+    "meeting": {
+      "id": "6F9619FF-8B86-D011-B42D-00C04FC964FF",
+      "agentID": "6F9619FF-8B86-D011-B42D-00C04FC964FF",
+      "folder": "file:///tmp/folder/",
+      "title": "Planning",
+      "state": "listening",
+      "startedAt": 812345678.5,
+      "endedAt": 812345678.5,
+      "sources": [
+        "mic",
+        "call:us.zoom.xos"
+      ],
+      "speakers": [
+        {
+          "source": "mic",
+          "index": 0,
+          "name": "Speaker 1"
+        }
+      ],
+      "lastSeq": 7,
+      "sentThroughSeq": 5,
+      "segmentsRemoved": false,
+      "updatedAt": 812345678.5
+    },
+    "agentID": "6F9619FF-8B86-D011-B42D-00C04FC964FF"
+  },
+  "MeetingSetStateRequest": {
+    "meetingID": "6F9619FF-8B86-D011-B42D-00C04FC964FF",
+    "state": "paused"
+  },
+  "MeetingAppendRequest": {
+    "meetingID": "6F9619FF-8B86-D011-B42D-00C04FC964FF",
+    "segments": [
+      {
+        "seq": 7,
+        "source": "call:us.zoom.xos",
+        "audioStart": 12.5,
+        "audioEnd": 15.25,
+        "text": "Shall we start?",
+        "speakerIndex": 1,
+        "speakerSettled": true
+      }
+    ]
+  },
+  "MeetingAppended": {
+    "lastSeq": 7,
+    "sentThroughSeq": 5
+  },
+  "MeetingSegmentsRequest": {
+    "meetingID": "6F9619FF-8B86-D011-B42D-00C04FC964FF",
+    "afterSeq": 3,
+    "limit": 200
+  },
+  "MeetingSegmentsPage": {
+    "segments": [
+      {
+        "seq": 7,
+        "source": "call:us.zoom.xos",
+        "audioStart": 12.5,
+        "audioEnd": 15.25,
+        "text": "Shall we start?",
+        "speakerIndex": 1,
+        "speakerSettled": true
+      }
+    ],
+    "more": false
   }
 }
