@@ -117,6 +117,7 @@ var appToolMethods = map[string]string{
 	"set_environment_gate":   "environments/setGate",
 	"make_app_repository":    "repositories/makeApp",
 	"make_public_repository": "repositories/makePublic",
+	"meeting_notes":          "meetings/notes",
 }
 
 // appToolMethod is the method a tool is, or the tool's own name for one not in the table.

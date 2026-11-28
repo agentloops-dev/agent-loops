@@ -62,6 +62,8 @@ type MeetingStore interface {
 	Create(m wire.Meeting) (wire.Meeting, error)
 	// Meeting is one meeting by its id.
 	Meeting(id wire.UUID) (wire.Meeting, error)
+	// MeetingOf is the meeting of a session, and false when the session has none.
+	MeetingOf(agentID wire.UUID) (wire.Meeting, bool, error)
 	// List is a page of the meetings, newest first.
 	List(cursor string, limit int) (wire.MeetingPage, error)
 	// SetState listens, pauses or ends a meeting. An ended meeting stays ended.
@@ -299,6 +301,26 @@ func (s *meetingFiles) Meeting(id wire.UUID) (wire.Meeting, error) {
 	defer s.mu.Unlock()
 	m, _, err := s.read(id)
 	return m, err
+}
+
+func (s *meetingFiles) MeetingOf(agentID wire.UUID) (wire.Meeting, bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	idx, err := s.readIndex()
+	if err != nil {
+		return wire.Meeting{}, false, err
+	}
+	for id, e := range idx {
+		if e.AgentID != agentID {
+			continue
+		}
+		m, _, err := s.read(id)
+		if IsMeetingRefusal(err, MeetingNotFound) {
+			return wire.Meeting{}, false, nil
+		}
+		return m, err == nil, err
+	}
+	return wire.Meeting{}, false, nil
 }
 
 func (s *meetingFiles) List(cursor string, limit int) (wire.MeetingPage, error) {
@@ -849,13 +871,22 @@ func changedItem(was, item wire.MeetingActionItem, base *wire.Date, by wire.Meet
 		}
 		return item, nil
 	}
-	if i := slices.IndexFunc(changed, func(f wire.MeetingActionItemField) bool { return slices.Contains(was.EditedByPerson, f) }); i >= 0 {
+	if i := slices.IndexFunc(changed, func(f wire.MeetingActionItemField) bool {
+		return slices.Contains(was.EditedByPerson, f) && !filesApproved(was, item, f)
+	}); i >= 0 {
 		return item, meetingRefused(MeetingPersonEdited, "a person edited the %s of action item %s: the agent does not change it", changed[i], item.ID)
 	}
 	if item.Quote != was.Quote || !slices.Equal(item.SegmentSeqs, was.SegmentSeqs) {
 		return item, meetingRefused(MeetingInvalid, "an action item's quote does not change")
 	}
 	return item, nil
+}
+
+// filesApproved is the one change of a field a person edited that the agent makes: an item
+// the person approved becomes filed, with its issue, as the approval asked (#7583).
+func filesApproved(was, item wire.MeetingActionItem, f wire.MeetingActionItemField) bool {
+	return f == wire.MeetingActionItemFieldState && was.State == wire.MeetingActionItemStateApproved &&
+		item.State == wire.MeetingActionItemStateFiled && item.Issue != nil
 }
 
 // checkItem holds an item to its limits, and a new one to its quote: the agent's quote is word
