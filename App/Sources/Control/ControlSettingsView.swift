@@ -340,7 +340,7 @@ struct CodeSheet: View {
                     .appText(.reading)
                     .fixedSize(horizontal: false, vertical: true)
             } else if let shown {
-                CodeText(shown: shown) { instructions(until: shown.expires, now: $0) }
+                PastedCode(shown: shown) { instructions(until: shown.expires, now: $0) }
             } else {
                 ProgressView().controlSize(.small)
             }

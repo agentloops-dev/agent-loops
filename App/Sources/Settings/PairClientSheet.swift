@@ -114,7 +114,7 @@ struct PairClientSheet: View {
 
     /// A Mac or a browser: the code as text, since a Mac has no camera.
     private func text(_ shown: DaemonAPI.ControlCodeShown) -> some View {
-        CodeText(shown: shown) { instructions(until: shown.expires, now: $0) }
+        PastedCode(shown: shown) { instructions(until: shown.expires, now: $0) }
     }
 
     private func remaining(until expires: Date, now: Date) -> String {
@@ -148,7 +148,7 @@ struct PairClientSheet: View {
 
 /// A code as text to paste, with what to do with it and Copy: a Mac's or a browser's (Pair a
 /// Client…), or a host's (Add by Code…).
-struct CodeText: View {
+struct PastedCode: View {
     let shown: DaemonAPI.ControlCodeShown
     /// What to do with the code, at a time, for its countdown.
     let instructions: (Date) -> String
