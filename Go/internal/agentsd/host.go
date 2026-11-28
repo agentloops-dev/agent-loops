@@ -506,6 +506,7 @@ func (d *Daemon) checkDisk() {
 	if changed {
 		Broadcast(d, wire.NotifyDiskChanged, wire.DiskState{Alarms: alarms})
 	}
+	d.recheckDiskBroadcasts(alarms)
 }
 
 // diskMount is one mount that checkDisk looked at: its reading, and the strictest

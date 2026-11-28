@@ -19044,6 +19044,18 @@ type Workflow struct {
 
 	// deliver: (#6954), for agent: labelled. Absent is next-turn.
 	Deliver *WorkflowDeliver `json:"deliver,omitzero"`
+
+	// until: (#6955), for agent: labelled: the events that end its broadcast, with the grammar of on:. A server's event is subscribed to only while a broadcast is active.
+	Until []WorkflowTrigger `json:"until,omitzero"`
+
+	// for: (#6955), for agent: labelled: the most a broadcast lasts, in seconds. Absent is 24 h; 7 days at most.
+	For *float64 `json:"for,omitzero"`
+
+	// match: (#6955), for agent: labelled: the details that a start and an end event must share, so two low volumes are two broadcasts. A server's event is matched by the server's own details, not the envelope.
+	Match []string `json:"match,omitzero"`
+
+	// end-message: (#6955), for agent: labelled: the words a session that read the broadcast gets once, at its next turn after the end.
+	EndMessage *string `json:"endMessage,omitzero"`
 }
 
 type WorkflowApproval struct {
@@ -19083,6 +19095,12 @@ type WorkflowBroadcastStatus struct {
 
 	// The sessions that were told.
 	Read int64 `json:"read"`
+
+	// The match: details it is for, such as volume=/ (#6955). Absent with no match:.
+	MatchKey *string `json:"matchKey,omitzero"`
+
+	// The level of its starting event, such as low or critical (#6955). A worse level replaces its words.
+	Level *string `json:"level,omitzero"`
 }
 
 type WorkflowCause struct {

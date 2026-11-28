@@ -134,6 +134,7 @@ func (d *Daemon) fireWorkflows(e wire.Event) {
 		return
 	}
 	var fires, sends []fireRequest
+	var ends []broadcastEnd
 	d.workflowMu.Lock()
 	if d.workflowFiles == nil {
 		d.scanLocked()
@@ -165,12 +166,19 @@ func (d *Daemon) fireWorkflows(e wire.Event) {
 				}
 				continue
 			}
+			// An until: event ends the broadcasts it is about (#6955).
+			if end, ok := broadcastEndForEventLocked(folder, id, w, e); ok {
+				ends = append(ends, end)
+			}
 			if fr, ok := d.workflowFireForEventLocked(folder, id, w, e, triggering); ok {
 				fires = append(fires, fr)
 			}
 		}
 	}
 	d.workflowMu.Unlock()
+	for _, end := range ends {
+		d.endBroadcastsForEvent(end)
+	}
 	for _, f := range fires {
 		f := f
 		d.goAfterTurn("workflow fire", func() { d.fire(f) })

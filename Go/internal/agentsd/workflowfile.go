@@ -584,7 +584,8 @@ func workflowApplyPlacement(w *wire.Workflow, m map[string]yamlnode.Node) string
 func workflowCollectUnknownFields(w *wire.Workflow, m map[string]yamlnode.Node) {
 	known := map[string]bool{"on": true, "agent": true, "name": true, "permission-mode": true, "runtime": true, "model": true,
 		"labels": true, "effort": true, "options": true, "enabled": true, "archived": true, "cooldown": true, "hours": true, "runs-on": true, "when-done": true,
-		"continue-when-back": true, "permission-requests": true, "sandbox": true, "to": true, "deliver": true}
+		"continue-when-back": true, "permission-requests": true, "sandbox": true, "to": true, "deliver": true,
+		"until": true, "for": true, "match": true, "end-message": true}
 	for k, v := range m {
 		if !known[k] {
 			b, _ := json.Marshal(v.JSON())

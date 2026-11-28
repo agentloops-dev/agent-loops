@@ -48,6 +48,10 @@ Check the build and say whether it is green.
 | `agent:` `labelled` | `to:`, and optionally `deliver:` | Each run starts no agent: it sends the file's words to the sessions of the folder that match `to:`. Behind **Labelled workflows** in Settings ▸ This app ▸ Early Features. See [Send to labelled sessions](#send-to-labelled-sessions). |
 | `to:` | `labels:`, and optionally `not-labels:`, `runtime:` and `account:` | For `agent: labelled` only, and it needs it: a file with `agent: labelled` and no `to:` stops the workflow, and its page says why. A session matches when it has every label of `labels:` (at least one), none of `not-labels:`, ran on `runtime:` (the runtime Auto picked, on Auto), and is on `account:`, an account profile's id, or `default` for the runtime's own sign-in. |
 | `deliver:` | `next-turn`, `steer` or `wake` | For `agent: labelled` only. Without it, `next-turn`. See [Send to labelled sessions](#send-to-labelled-sessions). |
+| `until:` | Events, as `on:` takes them | For `agent: labelled` only (#6955): the events that end its broadcast. A server's event is heard only while a broadcast is active. See [When a broadcast ends](#when-a-broadcast-ends). |
+| `for:` | A length of time, such as `4h` or `2d` | For `agent: labelled` only: the most a broadcast lasts. Without it, 24 hours; 7 days at most. |
+| `match:` | A detail of the events, or a list of them, such as `volume` | For `agent: labelled` only: the details a start and an end must share, so two low volumes are two broadcasts. For a server's event, a detail of the server's own, such as `repo`. |
+| `end-message:` | Words | For `agent: labelled` only: what a session that read the broadcast is told once, at its next turn after the end. |
 | `permission-mode:` | `plan`, `ask`, `approve-for-me` or `bypass-permissions`; or, on a named runtime, one of its own modes, such as `acceptEdits` | The mode the agent runs in. A workflow runs with nobody watching, so `plan` is how to say it must not change anything. The four words are the same on every runtime ([Use Auto](../how-to/use-auto.md#read-and-change-the-mappings) says what each is on each runtime): use them. On Auto, three of Claude's own modes are read as a word (#2873): `default` as `ask`, `auto` as `approve-for-me` and `bypassPermissions` as `bypass-permissions`. |
 | `permission-requests:` | `request-cards` or `yes-to-all` | Cursor, Grok and OpenCode only: whether each permission request is a card, or the app says yes to it. Without it, the value from Settings. On Auto it follows `permission-mode:`. |
 | `sandbox:` | `default`, `runtime` or `none` | **Default sandbox**, **Runtime sandbox** or **No sandbox**. Without it, the value from Settings. |
@@ -311,8 +315,10 @@ Neither ever starts a stopped session or one that waits for an answer: they hear
 their next turn. The app sends the words itself, as **From the app**, with a line that
 names the workflow and why it ran. Delivery asks for no approval.
 
-A broadcast is active for 24 hours, then it ends. A second run while it is active
-changes nothing, and the run says so. The workflow's cooldown and the chain limit apply
+A broadcast is active until it ends ([When a broadcast ends](#when-a-broadcast-ends)). A
+second run while it is active changes nothing, and the run says so, unless its event has a
+worse `level` (`low`, then `critical`): then its words replace the old ones, and each session
+that read the old words gets the new ones at its next turn. The workflow's cooldown and the chain limit apply
 as to any run. Its `workflow.ran` event says who was told now (`told`, `told_sessions`),
 how many hear it at their next turn (`next_turn`), and who was not told now and why
 (`not_told`). The workflow's page lists its active broadcasts, with how many sessions
@@ -326,6 +332,43 @@ taken out of the sessions told.
 
 On the wire, a labelled workflow has `mode: new` with `to` beside it, so a client that does
 not know `labelled` still reads the list.
+
+### When a broadcast ends
+
+```markdown
+---
+name: Disk is low
+on:
+  - machine.disk_low
+until:
+  - machine.disk_ok
+match: [volume]
+for: 4h
+agent: labelled
+to:
+  labels: [lead]
+end-message: Disk space is normal again. Carry on.
+---
+
+Disk space is low. Start nothing that builds until it is back.
+```
+
+A broadcast is **active** from its start to its end (#6955). It ends at the first of:
+
+- an event of `until:` with the same `match:` details (a broadcast started by hand, with no
+  details, ends at any `until:` event);
+- the end of `for:`, 24 hours without it. This ends the broadcast, not the alarm: the disk
+  stays low, and no new `machine.disk_low` comes until it was ok again;
+- turning the workflow off, archiving it, or deleting it.
+
+Nothing was queued, so at the end a session that did not read it gets nothing. A session
+that read it gets the end message once, at its next turn: a line that says the workflow
+ended, then `end-message:`. The end raises `workflow.completed` with no agent, and
+`ended_by` says why.
+
+After a restart, the disk's state decides: a broadcast started by `machine.disk_low`, with
+`until:`, whose volume is no longer low ended while the app was away. Other events rely on
+`for:`.
 
 ## One run at a time
 

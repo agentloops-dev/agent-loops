@@ -360,6 +360,8 @@ func newWith(ctx context.Context, root string, opts startOptions) (*Daemon, erro
 	d.checkReleaseTagsEveryHour()
 	d.saveFeaturesEveryMinute()
 	d.watchDisk()
+	// A timer for each active broadcast's end (#6955).
+	d.scheduleBroadcastEnds()
 	// The machine's capacity, ok, near or full (#4578).
 	d.watchCapacity()
 	// Autopilot starts a lead for the top epic with no lead (#5899).

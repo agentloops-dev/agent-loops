@@ -39,8 +39,10 @@ func workflowApplyLabelled(w *wire.Workflow, m map[string]yamlnode.Node) string 
 	toNode, hasTo := m["to"]
 	deliverNode, hasDeliver := m["deliver"]
 	if named != labelledMode {
-		if hasTo || hasDeliver {
-			return "`to:` and `deliver:` are only for `agent: labelled`"
+		for _, k := range []string{"to", "deliver", "until", "for", "match", "end-message"} {
+			if _, has := m[k]; has {
+				return "`to:`, `deliver:`, `until:`, `for:`, `match:` and `end-message:` are only for `agent: labelled`"
+			}
 		}
 		return ""
 	}
@@ -60,6 +62,56 @@ func workflowApplyLabelled(w *wire.Workflow, m map[string]yamlnode.Node) string 
 		default:
 			return "`deliver:` must be next-turn, steer or wake, not \"" + t + "\""
 		}
+	}
+	return workflowApplyBroadcastEnd(w, m)
+}
+
+// workflowApplyBroadcastEnd reads what ends a broadcast (#6955): until:, with the grammar of
+// on:, for:, at most 7 days, match:, the details a start and an end share, and end-message:.
+func workflowApplyBroadcastEnd(w *wire.Workflow, m map[string]yamlnode.Node) string {
+	if n, ok := m["until"]; ok {
+		ts, err := parseTriggers(n)
+		if err != nil {
+			return failureMessage(err, "`until:` could not be read")
+		}
+		for _, t := range ts {
+			if t.Schedule != nil {
+				return "`until:` takes events, not a schedule: `for:` says how long it lasts"
+			}
+			if !triggerSupported(t) {
+				return "`until:` does not know the event \"" + triggerName(t) + "\""
+			}
+		}
+		w.Until = ts
+	}
+	if n, ok := m["for"]; ok {
+		t, isText := n.Text()
+		if !isText || strings.TrimSpace(t) == "" {
+			return "`for:` must be a length of time, like 4h or 2d"
+		}
+		seconds, err := parseCooldown(t)
+		if err != nil {
+			return strings.ReplaceAll(failureMessage(err, ""), "`cooldown:`", "`for:`")
+		}
+		if seconds > broadcastForMost.Seconds() {
+			return "`for:` is at most 7 days (7d), not \"" + t + "\""
+		}
+		w.For = &seconds
+	}
+	if n, ok := m["match"]; ok {
+		names, err := runsOnLabels(n)
+		if err != nil || len(names) == 0 {
+			return "`match:` must be a detail of the events, such as volume, or a list of them"
+		}
+		w.Match = names
+	}
+	if n, ok := m["end-message"]; ok {
+		t, isText := n.Text()
+		if !isText || strings.TrimSpace(t) == "" {
+			return "`end-message:` must be the words to send when it ends"
+		}
+		t = strings.TrimSpace(t)
+		w.EndMessage = &t
 	}
 	return ""
 }
