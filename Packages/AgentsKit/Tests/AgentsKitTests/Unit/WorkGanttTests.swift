@@ -66,8 +66,9 @@ struct WorkGanttTests {
         #expect(planned.line == "Planned Jan 17 · 4 issues · forecast Jan 19")
     }
 
-    @Test func anUndatedEpicSaysWhyAndAnUnknownReasonSaysNoDate() {
+    @Test func anUndatedEpicSaysWhyAndAnUnknownReasonSaysNoDate() throws {
         let rows = WorkGantt.rows(Self.sample, now: Self.now, held: false, calendar: Self.utc)
+        try #require(rows.count == 4)
         #expect(rows[2].kind == .undated)
         #expect(rows[2].reason == "Dependency cycle")
         #expect(rows[2].line == "No forecast")
@@ -76,10 +77,10 @@ struct WorkGanttTests {
         #expect(rows[3].reason == "No date")
     }
 
-    @Test func heldEpicsShowOnlyWithTheToggle() {
+    @Test func heldEpicsShowOnlyWithTheToggle() throws {
         #expect(WorkGantt.rows(Self.sample, now: Self.now, held: false).count == 4)
         let rows = WorkGantt.rows(Self.sample, now: Self.now, held: true, calendar: Self.utc)
-        #expect(rows.count == 5)
+        try #require(rows.count == 5)
         #expect(rows[4].kind == .held)
         #expect(rows[4].solid == DateInterval(start: Self.d(-1), end: Self.now))
         #expect(rows[4].line == "On hold")
@@ -111,12 +112,12 @@ struct WorkGanttTests {
         #expect(WorkGantt.ticks(days, calendar: Self.utc).count == 9)
     }
 
-    @Test func theDaysAreAtLeastAWeekAndBounded() {
+    @Test func theDaysAreAtLeastAWeekAndBounded() throws {
         let today = Self.utc.startOfDay(for: Self.now)
         let none = WorkGantt.days([], now: Self.now, calendar: Self.utc)
         #expect(none.start == today.addingTimeInterval(-86400))
         #expect(none.duration == 7 * 86400)
-        var far = WorkGantt.rows(Self.sample, now: Self.now, held: false, calendar: Self.utc)[0]
+        var far = try #require(WorkGantt.rows(Self.sample, now: Self.now, held: false, calendar: Self.utc).first)
         far.ahead = DateInterval(start: Self.now, end: Self.d(400))
         far.solid = DateInterval(start: Self.d(-400), end: Self.now)
         let bounded = WorkGantt.days([far], now: Self.now, calendar: Self.utc)
