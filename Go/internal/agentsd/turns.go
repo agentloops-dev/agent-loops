@@ -416,11 +416,9 @@ func (d *Daemon) startAccount(r *wire.StartRequest, by startedBy, rt *runtimeDef
 	if err := d.accountRefusal(r.RuntimeID, account); err != nil {
 		return policyNote, err
 	}
-	if account == nil {
-		if err := d.needsSignIn(r.RuntimeID); err != nil {
-			return policyNote, err
-		}
-	}
+	// A server with no sign-in for the runtime starts the agent all the same: its first turn
+	// waits and the first sign-in card shows (holdsForSignIn, #7609). Refused here, there was
+	// no agent to show the card on, and only a Mac that could lend got past it.
 	return policyNote, nil
 }
 
@@ -661,7 +659,8 @@ func (l *live) run() {
 		l.mu.Unlock()
 		// What is queued waits while the organisation's policy refuses the turn (#998),
 		// and while the agent or the day is at its limit.
-		if l.d.holdsForPolicy(l) || l.d.holdsForLimit(l.id) {
+		// And while this server has no sign-in for the runtime (#7609).
+		if l.d.holdsForPolicy(l) || l.d.holdsForLimit(l.id) || l.d.holdsForSignIn(l.id) {
 			if l.onHeld != nil {
 				l.onHeld()
 			}
