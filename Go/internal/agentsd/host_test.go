@@ -81,7 +81,7 @@ func TestDiskLevelsTakeAWideGapToGetBetter(t *testing.T) {
 func TestDiskOscillatingAtTheLowLineDoesNotFlap(t *testing.T) {
 	const g = gigabyte
 	low, critical, ok := int64(10*g), int64(1*g), int64(20*g)
-	var level wire.DiskLevel = wire.DiskLevelOk
+	level := wire.DiskLevelOk
 	lows, oks := 0, 0
 	for range 10 {
 		for _, free := range []int64{9 * g, 11 * g, 15 * g, 19 * g} {
