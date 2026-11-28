@@ -155,9 +155,57 @@ func (m *Methods) controlEligible(ctx context.Context, params json.RawMessage, f
 	if h.ID == m.s.controlMachineID() {
 		return nil, fail(invalidParams, "%s already runs this control plane.", h.Name)
 	}
-	facts := m.s.eligibleFacts(ctx, *h, request.AllowSleep != nil && *request.AllowSleep)
+	allowSleep := request.AllowSleep != nil && *request.AllowSleep
+	// The uplink's address, its tunnel and machine/usage are only at the copy that holds the
+	// machine: that copy answers, so every copy gives the same answer (#7315).
+	if answer, ok := m.s.eligibleAtHolder(ctx, h.ID, allowSleep); ok {
+		return answer, nil
+	}
+	facts := m.s.eligibleFacts(ctx, *h, allowSleep)
 	reasons := eligibleReasons(facts)
 	return eligibleAnswer(facts, reasons), nil
+}
+
+// peerEligible is control/eligible's ask of the copy that holds the machine.
+const peerEligible = "control/eligible"
+
+// eligiblePeerParams is what the asking copy sends with it.
+type eligiblePeerParams struct {
+	AllowSleep bool `json:"allowSleep"`
+}
+
+// eligibleAtHolder is control/eligible's answer from the copy that holds host; false when this
+// copy holds it, or no copy answered in time.
+func (s *Service) eligibleAtHolder(ctx context.Context, host string, allowSleep bool) (wire.ControlEligible, bool) {
+	if s.mesh == nil || s.router.Holds(host) {
+		return wire.ControlEligible{}, false
+	}
+	// The holder's own facts take eligiblePatience at most; on top, the two trips on the link.
+	ctx, cancel := context.WithTimeout(ctx, eligiblePatience+eligibleDial)
+	defer cancel()
+	raw, ok := s.mesh.askHolder(ctx, host, peerEligible, eligiblePeerParams{AllowSleep: allowSleep})
+	if !ok {
+		return wire.ControlEligible{}, false
+	}
+	var answer wire.ControlEligible
+	if json.Unmarshal(raw, &answer) != nil {
+		return wire.ControlEligible{}, false
+	}
+	return answer, true
+}
+
+// eligibleForPeer answers another copy's control/eligible for a machine held here.
+func eligibleForPeer(ctx context.Context, s *Service, host string, params json.RawMessage) (any, bool) {
+	var p eligiblePeerParams
+	if len(params) > 0 && json.Unmarshal(params, &p) != nil {
+		return nil, false
+	}
+	h := s.records.Host(host)
+	if h == nil {
+		return nil, false
+	}
+	facts := s.eligibleFacts(ctx, *h, p.AllowSleep)
+	return eligibleAnswer(facts, eligibleReasons(facts)), true
 }
 
 // eligibleAnswer is control/eligible's answer: the reasons, and what the screen shows of the
@@ -235,7 +283,7 @@ func (s *Service) reach(ctx context.Context, host string) (address, why string) 
 	}
 	from, here := s.router.UplinkAddress(host)
 	if !here {
-		return "", "It is connected to another copy of this control plane, which can’t check it from here."
+		return "", "It is connected to another copy of this control plane, which did not answer. Try again in a minute."
 	}
 	control := s.router.ControlAddress(host)
 	name, ip, why := s.reachAt(ctx, from, control)
