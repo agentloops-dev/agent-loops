@@ -2,7 +2,6 @@ package agentsd
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
@@ -44,11 +43,7 @@ func (d *Daemon) meetings() store.MeetingStore {
 }
 
 // meetingModeOn says whether the person turned the flag meeting-mode on.
-func (d *Daemon) meetingModeOn() bool {
-	var on bool
-	v, ok := d.preferences()[meetingFlag]
-	return ok && json.Unmarshal(v, &on) == nil && on
-}
+func (d *Daemon) meetingModeOn() bool { return d.flagOn(meetingFlag) }
 
 var errMeetingModeOff = &Error{Code: CodeNotSupported, Message: "meeting mode is off: turn on the flag meeting-mode"}
 
