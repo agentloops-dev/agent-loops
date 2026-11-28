@@ -311,14 +311,31 @@ func TestADeferralSurvivesARestart(t *testing.T) {
 	msg := "Which port?"
 	req := wire.ElicitationRequest{ID: store.NewUUID(), AgentID: asker.ID, Message: &msg, AskedAt: now()}
 	d.openFormRequest(req)
-	c.call(t, 1, "requests/defer", map[string]any{"id": req.ID, "until": wire.DateOf(time.Now().Add(time.Second)), "atMac": true})
+	// An hour, so a slow restart cannot see it come back before it looks (#7680): with a
+	// second, a restart of more than a second on a loaded runner found its time come already.
+	until := wire.DateOf(time.Now().Add(time.Hour))
+	c.call(t, 1, "requests/defer", map[string]any{"id": req.ID, "until": until, "atMac": true})
 	d.Shutdown()
 	d2, _ := start(t, root)
 	defer d2.Shutdown()
 	r := d2.request(req.ID)
-	if r == nil || r.State != wire.RequestStateOpen || r.Deferred == nil || r.Deferred.AtMac == nil || !*r.Deferred.AtMac {
+	if r == nil || r.State != wire.RequestStateOpen || r.Deferred == nil || r.Deferred.AtMac == nil || !*r.Deferred.AtMac ||
+		r.Deferred.Until == nil || !r.Deferred.Until.Time().Equal(until.Time()) {
 		t.Fatalf("%+v", r)
 	}
+	// The restarted daemon aims its timer at the deferral it read.
+	d2.requests.mu.Lock()
+	armed := d2.requests.timer != nil
+	d2.requests.mu.Unlock()
+	if !armed {
+		t.Fatal("no timer for the deferral after the restart")
+	}
+	// Its time comes: the timer, aimed again, brings it back.
+	past := wire.DateOf(time.Now().Add(-time.Millisecond))
+	d2.requests.mu.Lock()
+	d2.requests.byID[req.ID].Deferred.Until = &past
+	d2.requests.mu.Unlock()
+	d2.armRequestTimer()
 	waitFor(t, "it comes back at its time", func() bool { return d2.request(req.ID).Deferred == nil })
 }
 
