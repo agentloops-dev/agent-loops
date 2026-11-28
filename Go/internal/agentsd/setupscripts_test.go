@@ -325,3 +325,44 @@ func TestAChangedScriptShowsBeforeAMake(t *testing.T) {
 		t.Fatalf("a changed root.sh: %v", err)
 	}
 }
+
+// #7461: setup/scripts gives each script's example from the pinned dotagents copy, what New
+// root.sh and New setup.sh write: gh with apt, and a setup.sh that declares GH_TOKEN and gives
+// it to gh only on stdin. A copy of another commit gives none.
+func TestSetUpScriptsGiveThePinnedExamples(t *testing.T) {
+	t.Parallel()
+	d, _, _, _, _ := senderWith(t, "#!/bin/bash\necho hi\n")
+	scripts, err := d.setupScripts()
+	must(t, err)
+	for _, s := range scripts.Scripts {
+		if s.Example != nil {
+			t.Fatalf("%s: an example with no ready-made copy: %q", s.Name, *s.Example)
+		}
+	}
+	fixture := readyMadeFixture()
+	must(t, saveReadyMade(d.PersonalHome, fixture))
+	scripts, err = d.setupScripts()
+	must(t, err)
+	if len(scripts.Scripts) != 2 || scripts.Scripts[0].Example == nil || scripts.Scripts[1].Example == nil {
+		t.Fatalf("%+v", scripts)
+	}
+	root, setup := *scripts.Scripts[0].Example, *scripts.Scripts[1].Example
+	if root != fixture.Scripts["root"] || !strings.Contains(root, "apt-get -o DPkg::Lock::Timeout=300 install -y gh\n") {
+		t.Errorf("root.sh: %q", root)
+	}
+	if got, err := declaredSecrets(setup); err != nil || len(got) != 1 || got[0] != "GH_TOKEN" {
+		t.Errorf("setup.sh declares %v: %v", got, err)
+	}
+	if !strings.Contains(setup, "agents-secret GH_TOKEN | gh auth login --with-token\n") {
+		t.Errorf("setup.sh: %q", setup)
+	}
+
+	other := *fixture
+	other.Commit = strings.Repeat("b", 40) // another size too, so the cached read is not used
+	must(t, saveReadyMade(d.PersonalHome, &other))
+	scripts, err = d.setupScripts()
+	must(t, err)
+	if scripts.Scripts[0].Example != nil {
+		t.Errorf("an unpinned copy gave an example")
+	}
+}

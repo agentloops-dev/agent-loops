@@ -15706,7 +15706,7 @@ type SetupRootLog struct {
 	Cut bool `json:"cut"`
 }
 
-// One set-up script on this machine (#7167): root (root.sh) or setup (setup.sh) in ~/.agents/machine-setup/. present: the file is there. text, hash and size are the file as it is now (hash: SHA-256 in lower-case hexadecimal); problem says why they are absent from a file that is there (over its limit, or unreadable). approvedText and approvedHash are the text a client approved last, and approvals the records in force for it, one a scope. changed: the file is not the approved text, so it is not used until a client approves it. nextSeq is the number to sign the next approval with.
+// One set-up script on this machine (#7167): root (root.sh) or setup (setup.sh) in ~/.agents/machine-setup/. present: the file is there. text, hash and size are the file as it is now (hash: SHA-256 in lower-case hexadecimal); problem says why they are absent from a file that is there (over its limit, or unreadable). approvedText and approvedHash are the text a client approved last, and approvals the records in force for it, one a scope. changed: the file is not the approved text, so it is not used until a client approves it. nextSeq is the number to sign the next approval with. example is the ready-made example of this script, from the pinned agentloops-dev/dotagents (scripts/<name>.sh, #7461): what New root.sh and New setup.sh write; left out when this machine has no copy of the pinned tag yet.
 type SetupScript struct {
 	Name string `json:"name"`
 
@@ -15719,6 +15719,8 @@ type SetupScript struct {
 	Size *int64 `json:"size,omitzero"`
 
 	Problem *string `json:"problem,omitzero"`
+
+	Example *string `json:"example,omitzero"`
 
 	ApprovedText *string `json:"approvedText,omitzero"`
 

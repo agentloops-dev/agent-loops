@@ -15121,7 +15121,9 @@ export interface SetupRootLog {
  * is there (over its limit, or unreadable). approvedText and approvedHash are the text a client
  * approved last, and approvals the records in force for it, one a scope. changed: the file is not
  * the approved text, so it is not used until a client approves it. nextSeq is the number to sign
- * the next approval with.
+ * the next approval with. example is the ready-made example of this script, from the pinned
+ * agentloops-dev/dotagents (scripts/<name>.sh, #7461): what New root.sh and New setup.sh write;
+ * left out when this machine has no copy of the pinned tag yet.
  */
 export interface SetupScript {
   name: "root" | "setup";
@@ -15130,6 +15132,7 @@ export interface SetupScript {
   hash?: string;
   size?: number;
   problem?: string;
+  example?: string;
   approvedText?: string;
   approvedHash?: string;
   approvals: LockRecord[];
@@ -20156,7 +20159,7 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   SetupRootAgain: { required: ["rest"], optional: [] },
   SetupRootCommand: { required: ["command", "hash"], optional: [] },
   SetupRootLog: { required: ["text", "cut"], optional: [] },
-  SetupScript: { required: ["name", "present", "approvals", "changed", "nextSeq"], optional: ["text", "hash", "size", "problem", "approvedText", "approvedHash"] },
+  SetupScript: { required: ["name", "present", "approvals", "changed", "nextSeq"], optional: ["text", "hash", "size", "problem", "example", "approvedText", "approvedHash"] },
   SetupScriptApproval: { required: ["hash", "size"], optional: [] },
   SetupScripts: { required: ["scripts"], optional: ["folder"] },
   SetupSend: { required: ["host", "approval"], optional: [] },
