@@ -340,31 +340,7 @@ struct CodeSheet: View {
                     .appText(.reading)
                     .fixedSize(horizontal: false, vertical: true)
             } else if let shown {
-                Text(shown.text)
-                    .appText(.code)
-                    .textSelection(.enabled)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(12)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Paper.raised, in: RoundedRectangle(cornerRadius: 8))
-                    .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Paper.rule, lineWidth: 1))
-                    // One element of its own: a label on the selectable Text overflows the stack (#1724).
-                    .accessibilityElement(children: .ignore)
-                    .accessibilityLabel("Code")
-                    .accessibilityValue(shown.text)
-                HStack(alignment: .firstTextBaseline) {
-                    TimelineView(.periodic(from: .now, by: 1)) { context in
-                        Text(instructions(until: shown.expires, now: context.date))
-                            .appText(.supporting).foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                    Spacer()
-                    Button("Copy") {
-                        NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString(shown.text, forType: .string)
-                    }
-                    .buttonStyle(.paper)
-                }
+                CodeText(shown: shown) { instructions(until: shown.expires, now: $0) }
             } else {
                 ProgressView().controlSize(.small)
             }

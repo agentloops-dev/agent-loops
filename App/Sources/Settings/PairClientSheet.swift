@@ -114,33 +114,7 @@ struct PairClientSheet: View {
 
     /// A Mac or a browser: the code as text, since a Mac has no camera.
     private func text(_ shown: DaemonAPI.ControlCodeShown) -> some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text(shown.text)
-                .appText(.code)
-                .textSelection(.enabled)
-                .fixedSize(horizontal: false, vertical: true)
-                .padding(12)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Paper.raised, in: RoundedRectangle(cornerRadius: 8))
-                .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Paper.rule, lineWidth: 1))
-                // One element of its own: a label on the selectable Text overflows the stack (#1724).
-                .accessibilityElement(children: .ignore)
-                .accessibilityLabel("Code")
-                .accessibilityValue(shown.text)
-            HStack(alignment: .firstTextBaseline) {
-                TimelineView(.periodic(from: .now, by: 1)) { context in
-                    Text(instructions(until: shown.expires, now: context.date))
-                        .appText(.supporting).foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                Spacer()
-                Button("Copy") {
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(shown.text, forType: .string)
-                }
-                .buttonStyle(.paper)
-            }
-        }
+        CodeText(shown: shown) { instructions(until: shown.expires, now: $0) }
     }
 
     private func remaining(until expires: Date, now: Date) -> String {
@@ -169,5 +143,43 @@ struct PairClientSheet: View {
             : "\(web.summary) Press Try Again beside Serve Agent Loops to browsers on this Mac in Settings ▸ Control plane, then open \(web.address) on this Mac and paste it in."
         guard let anywhere else { return here }
         return "In any browser, open \(anywhere) and paste it in. \(here)"
+    }
+}
+
+/// A code as text to paste, with what to do with it and Copy: a Mac's or a browser's (Pair a
+/// Client…), or a host's (Add by Code…).
+struct CodeText: View {
+    let shown: DaemonAPI.ControlCodeShown
+    /// What to do with the code, at a time, for its countdown.
+    let instructions: (Date) -> String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text(shown.text)
+                .appText(.code)
+                .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(12)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Paper.raised, in: RoundedRectangle(cornerRadius: 8))
+                .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Paper.rule, lineWidth: 1))
+                // One element of its own: a label on the selectable Text overflows the stack (#1724).
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel("Code")
+                .accessibilityValue(shown.text)
+            HStack(alignment: .firstTextBaseline) {
+                TimelineView(.periodic(from: .now, by: 1)) { context in
+                    Text(instructions(context.date))
+                        .appText(.supporting).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer()
+                Button("Copy") {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(shown.text, forType: .string)
+                }
+                .buttonStyle(.paper)
+            }
+        }
     }
 }
