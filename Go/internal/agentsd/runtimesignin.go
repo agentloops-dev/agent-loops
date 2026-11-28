@@ -390,7 +390,11 @@ func (d *Daemon) checkOwnClaudeSignIn(ctx context.Context, variable, value strin
 	}
 	ctx, cancel := context.WithTimeout(ctx, 90*time.Second)
 	defer cancel()
-	env := append(d.signInEnvironment(runtimeByID("claude")), variable+"="+value)
+	env, err := d.signInEnvironment(runtimeByID("claude"))
+	if err != nil {
+		return err
+	}
+	env = append(env, variable+"="+value)
 	if err := claudeCheckTurn(ctx, env); err != nil {
 		return &Error{Code: wire.FailureNeedsSignIn, Message: "Claude did not answer a check turn with this sign-in, so this server keeps using the Mac's" +
 			strings.TrimSuffix(": "+err.Error(), ": ") + "."}
