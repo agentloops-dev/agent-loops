@@ -32,8 +32,8 @@ var readyMadeRepo = "agentloops-dev/dotagents"
 // readyMadeTag and readyMadeCommit are the release's pin: the tag fetched, and the commit it
 // must be. A copy of another commit is refused, so a moved tag installs nothing.
 var (
-	readyMadeTag    = "v0.6.0"
-	readyMadeCommit = "8919e9a34ec94ebd4b8c40cad947e970457675e3"
+	readyMadeTag    = "v0.7.0"
+	readyMadeCommit = "2a9655b19d6db9ebb2250c3293c30afad6f9210e"
 )
 
 // readyMadeGitBase is where the repository is cloned from: GitHub, or a folder of bare
@@ -64,6 +64,21 @@ type readyMadeSet struct {
 	Commit    string                       `json:"commit"`
 	Workflows map[string]readyMadeWorkflow `json:"workflows"`
 	Skills    map[string]string            `json:"skills"` // with no workflow
+	// Scripts are the examples of the person's machine scripts (#7461), scripts/<name>.sh, by
+	// name (root, setup): what New root.sh and New setup.sh write.
+	Scripts map[string]string `json:"scripts,omitempty"`
+}
+
+// readyMadeScripts are the machine scripts the repository may have, scripts/<name>.sh.
+var readyMadeScripts = []string{"root", "setup"}
+
+// script is the pinned example of a machine script, or "" when this copy is not the release's
+// pin or has none.
+func (s *readyMadeSet) script(name string) string {
+	if !s.pinned() {
+		return ""
+	}
+	return s.Scripts[name]
 }
 
 // pinned is whether this set is the release's pin, so its text is the release's own.
@@ -205,8 +220,8 @@ func fetchReadyMadeFromGit(repo, tag, commit string) (*readyMadeSet, error) {
 	return set, nil
 }
 
-// readReadyMadeDir reads a copy of the repository: workflows/<id>.md and skills/<id>/SKILL.md.
-// A workflow with no skill of its id is left out.
+// readReadyMadeDir reads a copy of the repository: workflows/<id>.md, skills/<id>/SKILL.md and
+// scripts/<name>.sh. A workflow with no skill of its id is left out.
 func readReadyMadeDir(dir string) (*readyMadeSet, error) {
 	set := &readyMadeSet{Workflows: map[string]readyMadeWorkflow{}, Skills: map[string]string{}}
 	total := 0
@@ -245,6 +260,18 @@ func readReadyMadeDir(dir string) (*readyMadeSet, error) {
 			set.Workflows[id] = readyMadeWorkflow{Workflow: workflow, Skill: skill}
 		} else {
 			set.Skills[id] = skill
+		}
+	}
+	for _, name := range readyMadeScripts {
+		text, ok, err := read(filepath.Join(dir, "scripts", name+".sh"))
+		if err != nil {
+			return nil, err
+		}
+		if ok {
+			if set.Scripts == nil {
+				set.Scripts = map[string]string{}
+			}
+			set.Scripts[name] = text
 		}
 	}
 	if len(set.Workflows)+len(set.Skills) == 0 {

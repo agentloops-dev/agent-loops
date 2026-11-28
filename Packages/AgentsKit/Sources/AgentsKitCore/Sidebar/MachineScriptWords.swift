@@ -222,9 +222,11 @@ public extension MachineScriptWords {
     }
 
     /// The example New root.sh and New setup.sh write: gh, from GitHub's own package source,
-    /// then signed in with a token from Secrets.
-    static func example(_ name: String) -> String {
-        name == "root" ? exampleRoot : exampleSetup
+    /// then signed in with a token from Secrets. It is the host's, from the pinned dotagents
+    /// (`readyMade`, #7461), when it has one; else the copy below.
+    static func example(_ name: String, readyMade: String? = nil) -> String {
+        if let readyMade, !readyMade.isEmpty { return readyMade }
+        return name == "root" ? exampleRoot : exampleSetup
     }
 
     static let exampleRoot = """
@@ -232,10 +234,20 @@ public extension MachineScriptWords {
         # root.sh: runs once, as root, on each new machine's first boot, with bash -e.
         # It goes to the provider in clear: do not put a token here.
         # An example: the GitHub CLI, from GitHub's own package source.
+        set -eu
+        if command -v gh >/dev/null 2>&1; then
+          gh --version
+          exit 0
+        fi
+        if ! command -v apt-get >/dev/null 2>&1; then
+          echo "root.sh: no apt-get here; install gh with this machine's package manager" >&2
+          exit 0
+        fi
         export DEBIAN_FRONTEND=noninteractive
         install -d -m 755 /etc/apt/keyrings
         curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \\
           -o /etc/apt/keyrings/githubcli-archive-keyring.gpg
+        chmod 644 /etc/apt/keyrings/githubcli-archive-keyring.gpg
         echo "deb [signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \\
           > /etc/apt/sources.list.d/github-cli.list
         apt-get -o DPkg::Lock::Timeout=300 update
@@ -250,6 +262,12 @@ public extension MachineScriptWords {
         # setup.sh: runs as your user on each new machine, after it joins, with bash -e.
         # It reads only the secrets named above, with agents-secret. Keep it safe to run again.
         # An example: sign gh in with the token GH_TOKEN from your Secrets.
+        set -eu
+        if ! command -v gh >/dev/null 2>&1; then
+          echo "setup.sh: gh is not installed; root.sh installs it" >&2
+          exit 1
+        fi
+        # The token goes from agents-secret to gh on stdin: it is never in a line or a log.
         agents-secret GH_TOKEN | gh auth login --with-token
         gh auth setup-git
         gh auth status

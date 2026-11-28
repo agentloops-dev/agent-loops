@@ -1,0 +1,631 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://agents.alexecollins.com/schema/meetings.schema.json",
+  "title": "The wire: meetings types",
+  "description": "Part of the source of every type on the wire (#1135, #5380): one file per domain in Packages/Wire/schema. A $ref to another file names it (core.schema.json#/definitions/JSONValue); scripts/wire.sh gen reads them all.",
+  "definitions": {
+    "Meeting": {
+      "type": "object",
+      "description": "A meeting (#7581, epic #7327): one per session, kept in the session's folder on the machine that runs it. Behind the flag meeting-mode.",
+      "properties": {
+        "id": {
+          "$ref": "core.schema.json#/definitions/UUID"
+        },
+        "agentID": {
+          "$ref": "core.schema.json#/definitions/UUID",
+          "description": "The meeting's session."
+        },
+        "folder": {
+          "$ref": "core.schema.json#/definitions/URLString",
+          "description": "The folder the session works in."
+        },
+        "title": {
+          "type": "string",
+          "description": "At most 200 characters."
+        },
+        "state": {
+          "$ref": "#/definitions/MeetingState"
+        },
+        "startedAt": {
+          "$ref": "core.schema.json#/definitions/WireDate"
+        },
+        "endedAt": {
+          "$ref": "core.schema.json#/definitions/WireDate",
+          "description": "When it ended; absent while it listens or is paused."
+        },
+        "sources": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 4,
+          "description": "What it listens to: mic, and call:<bundle id> for a call app. At most 4."
+        },
+        "speakers": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/MeetingSpeaker"
+          },
+          "maxItems": 64,
+          "description": "Each voice heard, by its stream and its slot there (#7580: one diarizer per stream). At most 64."
+        },
+        "lastSeq": {
+          "type": "integer",
+          "description": "The seq of the last segment kept; 0 before the first."
+        },
+        "sentThroughSeq": {
+          "type": "integer",
+          "description": "The last seq sent to the session's agent as a prompt; 0 before the first."
+        },
+        "segmentsRemoved": {
+          "type": "boolean",
+          "description": "Its segments aged out (90 days): the notes and the action items stay."
+        },
+        "updatedAt": {
+          "$ref": "core.schema.json#/definitions/WireDate"
+        }
+      },
+      "required": [
+        "id",
+        "agentID",
+        "folder",
+        "title",
+        "state",
+        "startedAt",
+        "sources",
+        "speakers",
+        "lastSeq",
+        "sentThroughSeq",
+        "updatedAt"
+      ],
+      "additionalProperties": false
+    },
+    "MeetingActionItem": {
+      "type": "object",
+      "description": "An action item of a meeting (#7581). At most 100 a meeting, 2 KB each. Its quote is word for word in its segments, or the daemon refuses it.",
+      "properties": {
+        "id": {
+          "$ref": "core.schema.json#/definitions/UUID"
+        },
+        "meetingID": {
+          "$ref": "core.schema.json#/definitions/UUID"
+        },
+        "text": {
+          "type": "string",
+          "description": "What is to be done; at most 500 characters."
+        },
+        "owner": {
+          "type": "string",
+          "description": "Who does it, as spoken; at most 100 characters."
+        },
+        "due": {
+          "type": "string",
+          "description": "When, as spoken (\"by Friday\"); at most 100 characters."
+        },
+        "dueOn": {
+          "type": "string",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+          "description": "The due date as YYYY-MM-DD, when known."
+        },
+        "quote": {
+          "type": "string",
+          "description": "The words of the meeting it comes from, word for word in the segments of segmentSeqs; at most 500 characters."
+        },
+        "segmentSeqs": {
+          "type": "array",
+          "items": {
+            "type": "integer"
+          },
+          "maxItems": 20,
+          "description": "The segments the quote is in, at most 20."
+        },
+        "state": {
+          "$ref": "#/definitions/MeetingActionItemState"
+        },
+        "issue": {
+          "$ref": "#/definitions/MeetingActionItemIssue"
+        },
+        "editedByPerson": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/MeetingActionItemField"
+          },
+          "description": "The fields a person changed: the agent may not change them."
+        },
+        "updatedAt": {
+          "$ref": "core.schema.json#/definitions/WireDate"
+        }
+      },
+      "required": [
+        "id",
+        "meetingID",
+        "text",
+        "quote",
+        "segmentSeqs",
+        "state",
+        "updatedAt"
+      ],
+      "additionalProperties": false
+    },
+    "MeetingActionItemField": {
+      "type": "string",
+      "enum": [
+        "text",
+        "owner",
+        "due",
+        "dueOn",
+        "state",
+        "issue"
+      ],
+      "description": "A field of an action item that a person can change."
+    },
+    "MeetingActionItemIssue": {
+      "type": "object",
+      "description": "The issue an action item was filed as.",
+      "properties": {
+        "forge": {
+          "type": "string",
+          "description": "The forge, as github."
+        },
+        "repo": {
+          "type": "string",
+          "description": "owner/name"
+        },
+        "number": {
+          "type": "integer"
+        },
+        "url": {
+          "$ref": "core.schema.json#/definitions/URLString"
+        }
+      },
+      "required": [
+        "forge",
+        "repo",
+        "number",
+        "url"
+      ],
+      "additionalProperties": false
+    },
+    "MeetingActionItemState": {
+      "type": "string",
+      "enum": [
+        "proposed",
+        "approved",
+        "dismissed",
+        "filed"
+      ]
+    },
+    "MeetingAppendRequest": {
+      "type": "object",
+      "description": "meetings/append: the listening client's final segments. A segment with a seq after the last is new and must follow it with no gap; one with an earlier seq is a changed speaker of that segment (its text is not changed).",
+      "properties": {
+        "meetingID": {
+          "$ref": "core.schema.json#/definitions/UUID"
+        },
+        "segments": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/MeetingSegment"
+          },
+          "maxItems": 200,
+          "description": "At most 200."
+        }
+      },
+      "required": [
+        "meetingID",
+        "segments"
+      ],
+      "additionalProperties": false
+    },
+    "MeetingAppended": {
+      "type": "object",
+      "description": "What meetings/append kept.",
+      "properties": {
+        "lastSeq": {
+          "type": "integer",
+          "description": "The last seq kept."
+        },
+        "sentThroughSeq": {
+          "type": "integer",
+          "description": "The last seq sent to the agent."
+        }
+      },
+      "required": [
+        "lastSeq",
+        "sentThroughSeq"
+      ],
+      "additionalProperties": false
+    },
+    "MeetingAuthor": {
+      "type": "string",
+      "enum": [
+        "agent",
+        "person"
+      ],
+      "description": "Who wrote a change."
+    },
+    "MeetingChangedNotification": {
+      "type": "object",
+      "description": "meetings/changed: what changed in a meeting, sent to every client.",
+      "properties": {
+        "meetingID": {
+          "$ref": "core.schema.json#/definitions/UUID"
+        },
+        "meeting": {
+          "$ref": "#/definitions/Meeting"
+        },
+        "notes": {
+          "$ref": "#/definitions/MeetingNotes"
+        },
+        "actionItems": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/MeetingActionItem"
+          },
+          "description": "The items that changed."
+        },
+        "lastSeq": {
+          "type": "integer",
+          "description": "The last seq kept: a client reads the segments after its own."
+        }
+      },
+      "required": [
+        "meetingID",
+        "lastSeq"
+      ],
+      "additionalProperties": false
+    },
+    "MeetingListRequest": {
+      "type": "object",
+      "description": "meetings/list: a page of this machine's meetings, newest first.",
+      "properties": {
+        "cursor": {
+          "type": "string",
+          "description": "The cursor of the page before."
+        },
+        "limit": {
+          "type": "integer",
+          "description": "At most 50; 50 when absent."
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "MeetingNotes": {
+      "type": "object",
+      "description": "A meeting's notes (#7581): Markdown, at most 64 KB. The last 20 revisions are kept.",
+      "properties": {
+        "meetingID": {
+          "$ref": "core.schema.json#/definitions/UUID"
+        },
+        "markdown": {
+          "type": "string"
+        },
+        "revision": {
+          "type": "integer",
+          "description": "1 for the first write; each write adds 1."
+        },
+        "updatedAt": {
+          "$ref": "core.schema.json#/definitions/WireDate"
+        },
+        "updatedBy": {
+          "$ref": "#/definitions/MeetingAuthor"
+        }
+      },
+      "required": [
+        "meetingID",
+        "markdown",
+        "revision",
+        "updatedAt",
+        "updatedBy"
+      ],
+      "additionalProperties": false
+    },
+    "MeetingPage": {
+      "type": "object",
+      "description": "A page of meetings, newest first.",
+      "properties": {
+        "meetings": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Meeting"
+          }
+        },
+        "cursor": {
+          "type": "string",
+          "description": "Pass it as the next request's cursor; absent on the last page."
+        }
+      },
+      "required": [
+        "meetings"
+      ],
+      "additionalProperties": false
+    },
+    "MeetingRead": {
+      "type": "object",
+      "description": "meetings/read: a meeting with its notes and its action items.",
+      "properties": {
+        "meeting": {
+          "$ref": "#/definitions/Meeting"
+        },
+        "notes": {
+          "$ref": "#/definitions/MeetingNotes",
+          "description": "Absent before the first write."
+        },
+        "actionItems": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/MeetingActionItem"
+          }
+        }
+      },
+      "required": [
+        "meeting",
+        "actionItems"
+      ],
+      "additionalProperties": false
+    },
+    "MeetingRequest": {
+      "type": "object",
+      "description": "A meeting, by its id.",
+      "properties": {
+        "meetingID": {
+          "$ref": "core.schema.json#/definitions/UUID"
+        }
+      },
+      "required": [
+        "meetingID"
+      ],
+      "additionalProperties": false
+    },
+    "MeetingSegment": {
+      "type": "object",
+      "description": "A final piece of a meeting's words, from one stream (#7581). At most 6,000 a meeting (a 4-hour cap), 1,500 characters of text each. Audio is never kept.",
+      "properties": {
+        "seq": {
+          "type": "integer",
+          "description": "1 for the first segment of the meeting; each next one adds 1."
+        },
+        "source": {
+          "type": "string",
+          "description": "The stream it was heard on: mic, or call:<bundle id>."
+        },
+        "audioStart": {
+          "type": "number",
+          "description": "Seconds from the meeting's start."
+        },
+        "audioEnd": {
+          "type": "number",
+          "description": "Seconds from the meeting's start."
+        },
+        "text": {
+          "type": "string"
+        },
+        "speakerIndex": {
+          "type": "integer",
+          "description": "The diarizer's slot in this segment's own stream: the speaker is (source, speakerIndex), so a slot of mic and one of call never collide (#7580)."
+        },
+        "speakerSettled": {
+          "type": "boolean",
+          "description": "The diarizer will not change the speaker any more."
+        }
+      },
+      "required": [
+        "seq",
+        "source",
+        "audioStart",
+        "audioEnd",
+        "text",
+        "speakerSettled"
+      ],
+      "additionalProperties": false
+    },
+    "MeetingSegmentsPage": {
+      "type": "object",
+      "description": "A page of segments, oldest first.",
+      "properties": {
+        "segments": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/MeetingSegment"
+          }
+        },
+        "more": {
+          "type": "boolean",
+          "description": "There are segments after the last of this page."
+        }
+      },
+      "required": [
+        "segments",
+        "more"
+      ],
+      "additionalProperties": false
+    },
+    "MeetingSegmentsRequest": {
+      "type": "object",
+      "description": "meetings/segments: the segments after a seq.",
+      "properties": {
+        "meetingID": {
+          "$ref": "core.schema.json#/definitions/UUID"
+        },
+        "afterSeq": {
+          "type": "integer",
+          "description": "0 for the first."
+        },
+        "limit": {
+          "type": "integer",
+          "description": "At most 200; 200 when absent."
+        }
+      },
+      "required": [
+        "meetingID",
+        "afterSeq"
+      ],
+      "additionalProperties": false
+    },
+    "MeetingSetActionItemRequest": {
+      "type": "object",
+      "description": "meetings/setActionItem: a person's new or changed action item. Each field it changes is then the person's (editedByPerson).",
+      "properties": {
+        "meetingID": {
+          "$ref": "core.schema.json#/definitions/UUID"
+        },
+        "item": {
+          "$ref": "#/definitions/MeetingActionItem"
+        },
+        "baseUpdatedAt": {
+          "$ref": "core.schema.json#/definitions/WireDate",
+          "description": "The updatedAt of the item the change was made to; absent for a new item. Refused (changedElsewhere) when the item changed since."
+        }
+      },
+      "required": [
+        "meetingID",
+        "item"
+      ],
+      "additionalProperties": false
+    },
+    "MeetingSetNotesRequest": {
+      "type": "object",
+      "description": "meetings/setNotes: a person's notes. Refused (changedElsewhere) when the notes moved past baseRevision.",
+      "properties": {
+        "meetingID": {
+          "$ref": "core.schema.json#/definitions/UUID"
+        },
+        "markdown": {
+          "type": "string"
+        },
+        "baseRevision": {
+          "type": "integer",
+          "description": "The revision the change was made to; 0 before the first write."
+        }
+      },
+      "required": [
+        "meetingID",
+        "markdown",
+        "baseRevision"
+      ],
+      "additionalProperties": false
+    },
+    "MeetingSetSpeakerRequest": {
+      "type": "object",
+      "description": "meetings/setSpeaker: a name for a voice, for the whole meeting.",
+      "properties": {
+        "meetingID": {
+          "$ref": "core.schema.json#/definitions/UUID"
+        },
+        "source": {
+          "type": "string",
+          "description": "The voice's stream."
+        },
+        "index": {
+          "type": "integer",
+          "description": "Its slot in that stream."
+        },
+        "name": {
+          "type": "string",
+          "description": "At most 100 characters; empty takes the name off."
+        }
+      },
+      "required": [
+        "meetingID",
+        "source",
+        "index",
+        "name"
+      ],
+      "additionalProperties": false
+    },
+    "MeetingSetStateRequest": {
+      "type": "object",
+      "description": "meetings/setState: listen, pause or end. An ended meeting does not start again.",
+      "properties": {
+        "meetingID": {
+          "$ref": "core.schema.json#/definitions/UUID"
+        },
+        "state": {
+          "$ref": "#/definitions/MeetingState"
+        }
+      },
+      "required": [
+        "meetingID",
+        "state"
+      ],
+      "additionalProperties": false
+    },
+    "MeetingSpeaker": {
+      "type": "object",
+      "description": "A voice of a meeting: its stream and its slot there, and its name once the agent or a person gives one. Shown as Speaker <n> with no name.",
+      "properties": {
+        "source": {
+          "type": "string"
+        },
+        "index": {
+          "type": "integer"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "source",
+        "index"
+      ],
+      "additionalProperties": false
+    },
+    "MeetingStartRequest": {
+      "type": "object",
+      "description": "meetings/start: a new meeting, with a new session in the folder for its agent.",
+      "properties": {
+        "folder": {
+          "$ref": "core.schema.json#/definitions/URLString"
+        },
+        "title": {
+          "type": "string",
+          "description": "At most 200 characters; \"Meeting\" and the time when absent."
+        },
+        "sources": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "maxItems": 4,
+          "description": "mic, and call:<bundle id> for a call app. 1 to 4."
+        },
+        "runtimeID": {
+          "type": "string",
+          "description": "The session's runtime; auto when absent."
+        }
+      },
+      "required": [
+        "folder",
+        "sources"
+      ],
+      "additionalProperties": false
+    },
+    "MeetingStarted": {
+      "type": "object",
+      "description": "The meeting meetings/start made, and its session.",
+      "properties": {
+        "meeting": {
+          "$ref": "#/definitions/Meeting"
+        },
+        "agentID": {
+          "$ref": "core.schema.json#/definitions/UUID"
+        }
+      },
+      "required": [
+        "meeting",
+        "agentID"
+      ],
+      "additionalProperties": false
+    },
+    "MeetingState": {
+      "type": "string",
+      "enum": [
+        "listening",
+        "paused",
+        "ended"
+      ]
+    }
+  }
+}

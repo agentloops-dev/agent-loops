@@ -21,11 +21,21 @@ type TimelineChild struct {
 	PROpenedAt  []string
 }
 
-// TimelineEpic is an epic with its dates and its sub-issues (at most 100), in GitHub's order.
+// TimelineEpic is an epic with its dates, its sub-issues (at most 100), in GitHub's order, and the issues that
+// block it (at most 50), for the schedule (#7525). More says GitHub has more sub-issues or blockers than these.
 type TimelineEpic struct {
 	Item
 	StateReason string
 	Children    []TimelineChild
+	BlockedBy   []TimelineBlocker
+	More        bool
+}
+
+// TimelineBlocker is an issue that blocks an epic: where it is, whether it is open, and its labels, which say
+// whether it is an epic and whether it is on hold.
+type TimelineBlocker struct {
+	Ref
+	Labels []string
 }
 
 // Release is a published release: its tag, when, and its page.
@@ -39,6 +49,8 @@ type Timeline struct {
 	Releases []Release
 	// Rest are the ids of the epics that a first read left for TimelineRest (#7027).
 	Rest []string
+	// OpenMore says the repo has more open epics than the read lists (#7525).
+	OpenMore bool
 }
 
 // The read is in two steps (so a first open of Work ▸ Timeline or Features is not a dozen
@@ -61,7 +73,7 @@ const (
 const timelineListQuery = `query($owner: String!, $name: String!, $states: [IssueState!], $since: DateTime, $first: Int!, $releases: Int!) {
   repository(owner: $owner, name: $name) {
     issues(labels: ["epic"], states: $states, filterBy: {since: $since}, first: $first, orderBy: {field: UPDATED_AT, direction: DESC}) {
-      nodes { id number closedAt updatedAt labels(first: 50) { nodes { name } } } }
+      totalCount nodes { id number closedAt updatedAt labels(first: 50) { nodes { name } } } }
     releases(first: $releases, orderBy: {field: CREATED_AT, direction: DESC}) { nodes { tagName publishedAt url isDraft } } } }`
 
 // timelineChildFields are a sub-issue's: what its epic's block and forecast need, and no field of a list's row
@@ -71,13 +83,26 @@ const timelineChildFields = `issueState: state stateReason number createdAt clos
 
 const timelineEpicsQuery = `query($ids: [ID!]!) {
   nodes(ids: $ids) { ... on Issue { issueState: state ` + itemFields + ` ` + issueFields + `
-    subIssues(first: 100) { nodes { ` + timelineChildFields + ` } } } } }`
+    subIssues(first: 100) { totalCount nodes { ` + timelineChildFields + ` } }
+    blockedBy(first: 50) { totalCount nodes { number state repository { nameWithOwner } labels(first: 50) { nodes { name } } } } } } }`
 
 // timelineNode is an epic as timelineEpicsQuery gives it.
 type timelineNode struct {
 	gqlItem
+	BlockedBy struct {
+		TotalCount int `json:"totalCount"`
+		Nodes      []struct {
+			Number     int    `json:"number"`
+			State      string `json:"state"`
+			Repository struct {
+				NameWithOwner string `json:"nameWithOwner"`
+			} `json:"repository"`
+			Labels gqlLabels `json:"labels"`
+		} `json:"nodes"`
+	} `json:"blockedBy"`
 	SubIssues struct {
-		Nodes []struct {
+		TotalCount int `json:"totalCount"`
+		Nodes      []struct {
 			gqlItem
 			ClosedBy struct {
 				Nodes []struct {
@@ -135,6 +160,7 @@ func (g *RealGitHub) Timeline(ctx context.Context, repo, since, from string, ski
 		}
 	}
 	out.Releases = lists[0].releases()
+	out.OpenMore = lists[0].Repository.Issues.TotalCount > len(lists[0].Repository.Issues.Nodes)
 	if out.Epics, err = g.timelineEpics(ctx, repo, ids); err != nil {
 		return Timeline{}, err
 	}
@@ -174,7 +200,8 @@ func (g *RealGitHub) timelineEpics(ctx context.Context, repo string, ids []strin
 type timelineList struct {
 	Repository *struct {
 		Issues struct {
-			Nodes []struct {
+			TotalCount int `json:"totalCount"`
+			Nodes      []struct {
 				ID        string    `json:"id"`
 				Number    int       `json:"number"`
 				ClosedAt  string    `json:"closedAt"`
@@ -279,5 +306,14 @@ func timelineEpicOf(e timelineNode, repo string) TimelineEpic {
 		}
 		epic.Children = append(epic.Children, child)
 	}
+	for _, b := range e.BlockedBy.Nodes {
+		if b.Number < 1 || b.Repository.NameWithOwner == "" {
+			continue
+		}
+		labels, _ := labelsOf(b.Labels.Nodes)
+		epic.BlockedBy = append(epic.BlockedBy, TimelineBlocker{Ref: Ref{Repo: b.Repository.NameWithOwner, Number: b.Number,
+			Open: b.State != "CLOSED"}, Labels: labels})
+	}
+	epic.More = e.SubIssues.TotalCount > len(e.SubIssues.Nodes) || e.BlockedBy.TotalCount > len(e.BlockedBy.Nodes)
 	return epic
 }

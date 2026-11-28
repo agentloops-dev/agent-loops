@@ -194,8 +194,9 @@ extension AppModel {
     }
 
     /// New root.sh and New setup.sh: writes the example into `folder` when there is no file of
-    /// that name, and never over one. Nil once written; else why not.
-    nonisolated static func writeExampleScript(_ name: String, folder: String) -> String? {
+    /// that name, and never over one: `readyMade`, the host's from the pinned dotagents (#7461),
+    /// else the app's own. Nil once written; else why not.
+    nonisolated static func writeExampleScript(_ name: String, folder: String, readyMade: String? = nil) -> String? {
         let dir = URL(fileURLWithPath: folder, isDirectory: true)
         let file = dir.appendingPathComponent(name + ".sh")
         do {
@@ -203,7 +204,7 @@ extension AppModel {
                                                     attributes: [.posixPermissions: 0o700])
             // .withoutOverwriting: a file made since the read stays as it is.
             // store-bounds: not a store: one of the person's two scripts, a fixed example, written once
-            try Data(MachineScriptWords.example(name).utf8).write(to: file, options: .withoutOverwriting)
+            try Data(MachineScriptWords.example(name, readyMade: readyMade).utf8).write(to: file, options: .withoutOverwriting)
             return nil
         } catch CocoaError.fileWriteFileExists {
             return "\(name).sh is there already."
