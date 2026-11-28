@@ -851,6 +851,8 @@ public enum WorkTimeline {
             if let e = t.errors, !e.isEmpty { out.errors = (out.errors ?? []) + e.filter { !(out.errors ?? []).contains($0) } }
         }
         out.releases.sort { $0.at < $1.at }
+        // Each machine's schedule of its repos, as one (#7526).
+        out.schedule = DaemonAPI.WorkTimelineSchedule.merged(timelines.compactMap(\.schedule))
         return out
     }
 
@@ -862,6 +864,8 @@ public enum WorkTimeline {
         for e in out.epics.indices where out.epics[e].closedAt == nil && out.epics[e].forecast == nil {
             out.epics[e].forecast = kept[out.epics[e].item.node.ref]
         }
+        // A first answer has no schedule either (#7526): the one on screen stays until it comes.
+        if out.schedule == nil { out.schedule = shown?.schedule }
         return out
     }
 
