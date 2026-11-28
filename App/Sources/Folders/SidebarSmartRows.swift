@@ -42,7 +42,7 @@ struct SmartFold: View {
                     }
                 }
                 // Each under the session that started it when this group lists that too (#835).
-                ForEach(FoldedRow.rows(SidebarTree.rows(agents, in: model.work, folds: folds), in: .smart(row))) { item in
+                ForEach(FoldedRow.rows(SidebarTree.rows(agents, in: model.work, folds: folds, followsParent: model.sessionParentsOn), in: .smart(row))) { item in
                     SessionSidebarRow(agent: item.item.agent, place: place(of: item.item.agent),
                                       tree: item.item, folds: folds)
                 }

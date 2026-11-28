@@ -380,6 +380,8 @@ extension AppModel {
                                              levels: Levels(model: draftLevels.model, permission: draftLevels.permission,
                                                             permissionRequests: isAutoDraft ? nil : draftClientPermission))
         request.autoChose = auto?.autoChose
+        // Under the lead chosen (#7539), a session of this host: not when Auto picked another.
+        if !moved, host == draftHost { request.parentID = draftLead?.id }
         // A stopped workspace that starts when used: kept, and shown under this prompt (#691 US3).
         if host != .mac, hosts.isOffline(host), startsWhenUsed(host) {
             var kept = request
@@ -403,6 +405,7 @@ extension AppModel {
             // Back to the folder, and the list fetched again: the start may
             // have made a worktree, and it has put an agent in one.
             draftWorktree = nil
+            draftParentID = nil
             Task { await loadDraftWorktrees() }
             if host == .mac {
                 await refreshAgents()

@@ -25,7 +25,8 @@ enum WindowToast: Identifiable, Equatable {
     /// The words say what happened, then what to do.
     var text: String {
         switch self {
-        case .problem(let words): "Could not finish that. \(words.text)"
+        // A line that says already what could not be done is not said twice (#7539).
+        case .problem(let words): words.text.hasPrefix("Could not ") ? words.text : "Could not finish that. \(words.text)"
         case .archived(let undo): undo.line
         case .changed(let undo): undo.line
         }

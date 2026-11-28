@@ -173,6 +173,9 @@ public struct Agent: Codable, Hashable, Sendable, Identifiable {
     /// never changed. It is what lets that agent stop and archive this one, what keeps
     /// the tools from this one, and what counts it against its folder's three.
     public var startedByAgent: UUID?
+    /// The lead this session works under (#7538, spec 7535): absent, the tree follows
+    /// `startedByAgent`; with no id, the session is at the top. Set by `agents/setParent`.
+    public var parent: SessionParent?
     /// How deep a workflow fire caused by this agent is, when the agent that started it
     /// was part of a workflow chain (028). Taken when this agent is made, because the
     /// starter's run can end long before this agent does, and a depth read from it then
@@ -402,6 +405,7 @@ public struct Agent: Codable, Hashable, Sendable, Identifiable {
         purpose = try c.decodeIfPresent(AgentPurpose.self, forKey: .purpose)
         startedByRun = try c.decodeIfPresent(UUID.self, forKey: .startedByRun)
         startedByAgent = try c.decodeIfPresent(UUID.self, forKey: .startedByAgent)
+        parent = (try? c.decodeIfPresent(SessionParent.self, forKey: .parent)) ?? nil
         chainDepth = try c.decodeIfPresent(Int.self, forKey: .chainDepth)
         eventWait = try c.decodeIfPresent(EventWait.self, forKey: .eventWait)
         // Optional: an agent outside a worktree works in its folder.
@@ -521,6 +525,7 @@ public struct Agent: Codable, Hashable, Sendable, Identifiable {
         try c.encodeIfPresent(purpose, forKey: .purpose)
         try c.encodeIfPresent(startedByRun, forKey: .startedByRun)
         try c.encodeIfPresent(startedByAgent, forKey: .startedByAgent)
+        try c.encodeIfPresent(parent, forKey: .parent)
         try c.encodeIfPresent(chainDepth, forKey: .chainDepth)
         try c.encodeIfPresent(eventWait, forKey: .eventWait)
         try c.encodeIfPresent(worktree, forKey: .worktree)
@@ -574,7 +579,7 @@ public struct Agent: Codable, Hashable, Sendable, Identifiable {
         case endedReason, archivedReason
         case usage, lastTurnUsage, costToDate, costCeiling, tokensToDate, tokenCeiling, plans, additionalDirectories, mcpServers
         case queuedPrompts, suggestedPrompts
-        case startedByWorkflow, startedByRun, startedByAgent, chainDepth, eventWait, startRequestID
+        case startedByWorkflow, startedByRun, startedByAgent, parent, chainDepth, eventWait, startRequestID
         case purpose
         case persona
         case accountID

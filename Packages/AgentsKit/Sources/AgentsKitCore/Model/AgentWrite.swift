@@ -22,6 +22,8 @@ public enum AgentWrite: Sendable, Hashable {
     /// waits (#4814). Drawn as the move that waits: the host makes it at once between
     /// turns, and its record then says where the agent is.
     case move(MoveTarget?)
+    /// Under a lead, at the top or under its starter (#7539): the row moves at once.
+    case parent(SessionPlacement)
 
     /// The verb for the line that says what failed: "Could not archive".
     public var verb: String {
@@ -35,6 +37,7 @@ public enum AgentWrite: Sendable, Hashable {
         case .sendNow: return "send now"
         case .startNow: return "start it now"
         case .move(let target): return target == nil ? "cancel the move" : "move"
+        case .parent: return "move"
         }
     }
 
@@ -97,6 +100,8 @@ public enum AgentWrite: Sendable, Hashable {
             agent.state = .starting
         case .move(let target):
             agent.pendingMove = target.map { PendingMove(target: $0, askedBy: .person, askedAt: now) }
+        case .parent(let placement):
+            agent.parent = placement.parent.map { SessionParent(id: $0.id, setAt: now) }
         }
         return agent
     }
@@ -124,6 +129,7 @@ public enum AgentWrite: Sendable, Hashable {
             // Waiting for the turn to end, or taken back. A move made at once is settled by
             // the host's answer instead (`settleWrite(_:on:failed:done:)`).
             return agent.pendingMove?.target == target
+        case .parent(let placement): return SessionPlacement(of: agent) == placement
         }
     }
 }

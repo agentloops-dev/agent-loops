@@ -104,6 +104,8 @@ public enum DaemonAPI {
         public static let agentsStart = "agents/start"
         public static let agentsSetLabels = "agents/setLabels"
         public static let agentsSetPriority = "agents/setPriority"
+        /// Under a lead, at the top or back under the starter (#7538, spec 7535).
+        public static let agentsSetParent = "agents/setParent"
         public static let agentsLabelVocabulary = "agents/labelVocabulary"
         public static let agentsPrompt = "agents/prompt"
         public static let agentsUnqueue = "agents/unqueue"
@@ -1176,6 +1178,9 @@ public enum DaemonAPI {
         /// The line the control plane made when Auto picked this machine (#5375): the
         /// session's chat says it first.
         public var autoChose: String?
+        /// The lead the new session works under from its start (#7538), with the checks of
+        /// `agents/setParent`. Nil: under its starter, as before.
+        public var parentID: UUID?
 
         public init(runtimeID: String, cwd: URL, prompt: String,
                     attachments: [Attachment] = [],
@@ -1230,6 +1235,7 @@ public enum DaemonAPI {
             levels = try c.decodeIfPresent(Levels.self, forKey: .levels)
             autoChose = try c.decodeIfPresent(String.self, forKey: .autoChose)
             priority = try? c.decodeIfPresent(SessionPriority.self, forKey: .priority)
+            parentID = try c.decodeIfPresent(UUID.self, forKey: .parentID)
         }
 
         /// What goes to the runtime: the words, then whatever was attached.
@@ -1363,6 +1369,22 @@ public enum DaemonAPI {
         public init(agentID: UUID, priority: SessionPriority?) {
             self.agentID = agentID
             self.priority = priority
+        }
+    }
+
+    /// agents/setParent (#7538): `placement` "under" needs `parentID`; `expectedRevision` is
+    /// the child's revision the client saw, and a later one refuses with changedElsewhere.
+    public struct SetParentRequest: Codable, Sendable {
+        public var agentID: UUID
+        public var placement: String
+        public var parentID: UUID?
+        public var expectedRevision: Int?
+
+        public init(agentID: UUID, placement: SessionPlacement, expectedRevision: Int? = nil) {
+            self.agentID = agentID
+            self.placement = placement.wire
+            self.parentID = placement.leadID
+            self.expectedRevision = expectedRevision
         }
     }
 
@@ -2684,6 +2706,17 @@ public enum DaemonAPI {
         /// A change another copy of the control plane made first: the store refused this
         /// one's write, and nothing was changed. Try again (058, contracts/store.md).
         public static let changedElsewhere = -32093
+        /// agents/setParent and a start with a parent (#7538): the lead is not on this host,
+        /// or is archived.
+        public static let parentNotFound = -32112
+        /// The parent has no `lead` label.
+        public static let parentNotLead = -32113
+        /// The parent is the session itself, or in its subtree.
+        public static let parentCycle = -32114
+        /// The move makes the tree deeper than 6 levels.
+        public static let parentTooDeep = -32115
+        /// The lead has 100 live sessions under it.
+        public static let parentFull = -32116
         /// A machine that holds its person's lock took a request no key of the lock vouched
         /// for (#3492, specs/3399-machine-lock D6): this device is not in the lock yet, or the
         /// control plane sent it.

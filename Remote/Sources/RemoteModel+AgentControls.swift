@@ -193,6 +193,8 @@ extension RemoteModel {
         case .labels(let id, let add, let remove): _ = await setLabels(on: id, add: add, remove: remove, offeringUndo: false)
         case .mute(let id, let muted): await setMuted(id, muted, offeringUndo: false)
         case .bringBack(let request): await undeferRequest(request)
+        // The Remote moves no session under a lead until the port (#7540), so offers no such Undo.
+        case .parent: break
         }
     }
 

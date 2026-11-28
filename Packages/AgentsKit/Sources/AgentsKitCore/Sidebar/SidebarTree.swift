@@ -37,10 +37,20 @@ public enum SidebarTree {
     /// the nearest of its starters the list also holds, oldest started first: the rows at
     /// the top, and each parent's own children. `starter` says who started a session the
     /// list does not hold, so a chain is followed through one listed elsewhere.
-    public static func nest(_ list: [Agent], starter: (UUID) -> UUID?) -> (tops: [Agent], children: [UUID: [Agent]]) {
+    ///
+    /// With `followsParent` (the flag `session-parents`, #7539), a session with a `parent`
+    /// sits under that lead when the list holds it, and at the top otherwise or when its
+    /// parent says so (spec 7535): the starter is ignored for it. Without it, the tree is the
+    /// starter's only, as the Remote and the web draw it until the port (#7540).
+    public static func nest(_ list: [Agent], starter: (UUID) -> UUID?,
+                            followsParent: Bool = false) -> (tops: [Agent], children: [UUID: [Agent]]) {
         let listed = Dictionary(list.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         var parentOf: [UUID: UUID] = [:]
         for agent in list {
+            if followsParent, let parent = agent.parent {
+                if let id = parent.id, id != agent.id, listed[id] != nil { parentOf[agent.id] = id }
+                continue
+            }
             var parent: UUID?
             var seen: Set<UUID> = [agent.id]
             var next = agent.startedByAgent
@@ -52,6 +62,19 @@ public enum SidebarTree {
             }
             if let parent { parentOf[agent.id] = parent }
         }
+        // A parent and a starter can make a loop the daemon never made (an old cache): each
+        // session in one stands alone, as a starter's loop does.
+        if followsParent {
+            for agent in list where parentOf[agent.id] != nil {
+                var seen: Set<UUID> = [agent.id]
+                var next = parentOf[agent.id]
+                while let id = next {
+                    if id == agent.id { parentOf[agent.id] = nil; break }
+                    guard seen.insert(id).inserted else { break }
+                    next = parentOf[id]
+                }
+            }
+        }
         var children: [UUID: [Agent]] = [:]
         for agent in list {
             if let parent = parentOf[agent.id] { children[parent, default: []].append(agent) }
@@ -62,8 +85,9 @@ public enum SidebarTree {
 
     /// The rows to draw: each parent, then, while it is unfolded, each of its children with
     /// that child's own rows under it.
-    public static func rows(_ list: [Agent], starter: (UUID) -> UUID?, isOpen: (UUID) -> Bool) -> [Row] {
-        let (tops, children) = nest(list, starter: starter)
+    public static func rows(_ list: [Agent], starter: (UUID) -> UUID?, isOpen: (UUID) -> Bool,
+                            followsParent: Bool = false) -> [Row] {
+        let (tops, children) = nest(list, starter: starter, followsParent: followsParent)
         func rows(of agent: Agent, depth: Int) -> [Row] {
             let own = children[agent.id] ?? []
             let open = !own.isEmpty && isOpen(agent.id)
@@ -76,8 +100,10 @@ public enum SidebarTree {
 
     /// The rows of a list as the model holds it.
     @MainActor
-    public static func rows(_ list: [Agent], in work: AgentsModel, folds: SidebarFolds) -> [Row] {
-        rows(list, starter: { work.starter(of: $0) }, isOpen: { folds.isOpen(session: $0) })
+    public static func rows(_ list: [Agent], in work: AgentsModel, folds: SidebarFolds,
+                            followsParent: Bool = false) -> [Row] {
+        rows(list, starter: { work.starter(of: $0) }, isOpen: { folds.isOpen(session: $0) },
+             followsParent: followsParent)
     }
 
     /// The session whose mark a folded parent shows (#835): the most urgent of the parent

@@ -451,6 +451,8 @@ struct FolderListView: View {
         .safeAreaInset(edge: .bottom, spacing: 0) {
             SidebarFoot()
         }
+        // What the drop under the pointer does, or why not, while a row is dragged (#7539).
+        .overlay(alignment: .bottom) { ParentDropTipView() }
         // ⌫ archives everything highlighted that is not already archived (one or many).
         .onDeleteCommand { archivePicked() }
         // Return renames the one session highlighted, as Finder renames a file (#751).
@@ -752,9 +754,11 @@ struct FolderFold: View {
                     SidebarFoldRow(title: "Sessions", count: fold.sessions.count, isOpen: Binding(
                         get: { sessionsOpen },
                         set: { folds.set(key, .sessions, open: $0) }))
+                        // A session dropped here goes to the top (#7539).
+                        .sessionTopDrop(folders: Set([key] + group.otherKeys), name: label)
                 }
                 // A closed fold has no rows at all (#237).
-                ForEach(FoldedRow.rows(sessionsOpen ? SidebarTree.rows(fold.sessions, in: model.work, folds: folds) : [],
+                ForEach(FoldedRow.rows(sessionsOpen ? SidebarTree.rows(fold.sessions, in: model.work, folds: folds, followsParent: model.sessionParentsOn) : [],
                                        in: .sessions)) { row in
                     // A session on another machine of the project says which (#3278).
                     SessionSidebarRow(agent: row.item.agent, place: machineMark(row.item.agent),
@@ -765,7 +769,7 @@ struct FolderFold: View {
                 // search holds Sessions.
                 ForEach(fold.issueGroups) { group in
                     IssueGroupHeading(title: group.title, count: group.sessions.count)
-                    ForEach(FoldedRow.rows(SidebarTree.rows(group.sessions, in: model.work, folds: folds), in: .sessions)) { row in
+                    ForEach(FoldedRow.rows(SidebarTree.rows(group.sessions, in: model.work, folds: folds, followsParent: model.sessionParentsOn), in: .sessions)) { row in
                         SessionSidebarRow(agent: row.item.agent, place: machineMark(row.item.agent),
                                           tree: row.item, folds: folds, isNested: true)
                     }
@@ -913,6 +917,13 @@ struct SessionSidebarRow: View {
     /// The row's own id: a session a smart group lists has another in its folder (#5917).
     @State private var rowID = UUID()
 
+    /// Its lead and its starter, when the lead is not the session that started it (#7539).
+    private var parentHelp: String? {
+        guard model.sessionParentsOn, let lead = model.lead(of: agent), lead.id != agent.startedByAgent else { return nil }
+        return SessionParents.help(lead: SessionParents.title(lead),
+                                   starter: agent.startedByAgent.flatMap { model.work.agent($0) }.map(SessionParents.title))
+    }
+
     var body: some View {
         AgentRow(agent: agent, isCompact: true, place: place, tree: tree, showsArchivedTime: showsArchivedTime,
                  rowID: rowID) {
@@ -921,6 +932,8 @@ struct SessionSidebarRow: View {
         }
             .padding(.leading, isNested ? 22 : 0)
             .padding(.vertical, 2)
+            // Onto a lead, and a lead taking a drop (#7539, flag session-parents).
+            .sessionParentDrag(agent, tree: tree, folds: folds)
             .listRowInsets(.vertical, 2)
             .sidebarInk(.session(agent.id))
             .tag(SidebarItem.session(agent.id))
@@ -943,6 +956,16 @@ struct SessionSidebarRow: View {
             }
             // Into its folder's drop box, never its worktree (#231).
             .dropsIntoDropbox(of: FolderKey(host: agent.host, folder: agent.folderPath))
+            // Every move a drag makes, without one (#7539, wireframe 4c).
+            .accessibilityActions {
+                if model.canSetParent(agent) {
+                    Button(SessionParents.moveUnderLead) { model.movingUnderLead = agent.id }
+                    if SessionParents.effectiveParent(of: agent) != nil {
+                        Button(SessionParents.moveToTop) { Task { await model.setParent(agent.id, .top) } }
+                    }
+                }
+            }
+            .help(ifAny: parentHelp)
             // Pin or Unpin (#180), from the other edge.
             .swipeActions(edge: .leading) {
                 if agent.state != .archived {

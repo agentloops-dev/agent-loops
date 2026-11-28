@@ -411,6 +411,13 @@ struct AgentRow: View {
                 PinSessionButton(agent: agent)
                 // Branching leaves the original alone and carries the history so far.
                 Button("Branch") { Task { await model.fork(agent.id) } }
+                // Under a lead (#7539): the sheet with every placement, and the top at once.
+                if model.canSetParent(agent) {
+                    Button(SessionParents.moveUnderLead) { model.movingUnderLead = agent.id }
+                    if SessionParents.effectiveParent(of: agent) != nil {
+                        Button(SessionParents.moveToTop) { Task { await model.setParent(agent.id, .top) } }
+                    }
+                }
                 // To another of the person's machines, with its unpushed work (#3790).
                 if model.moveTargets(for: agent) != nil {
                     Button(MoveToMachineWords.menu) { movingToMachine = true }

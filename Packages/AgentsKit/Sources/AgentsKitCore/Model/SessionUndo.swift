@@ -18,6 +18,8 @@ public struct SessionUndo: Equatable, Sendable, Identifiable {
         case labels(add: [String], remove: [String])
         case muted(Bool)
         case later
+        /// Under a lead, at the top or under its starter (#7539); `lead` names the lead.
+        case parent(SessionPlacement, lead: String?)
     }
 
     /// What Undo sends.
@@ -28,6 +30,8 @@ public struct SessionUndo: Equatable, Sendable, Identifiable {
         case labels(UUID, add: [String], remove: [String])
         case mute(UUID, Bool)
         case bringBack(NeedRequest)
+        /// The placement it had (#7539).
+        case parent(UUID, SessionPlacement)
     }
 
     /// Each action its own toast, so a second one starts its seconds again.
@@ -88,6 +92,13 @@ public struct SessionUndo: Equatable, Sendable, Identifiable {
         SessionUndo(change: .later, title: request.title, inverse: .bringBack(request))
     }
 
+    /// A move in the tree (#7539): Undo puts the placement it had back.
+    public static func parent(_ agent: Agent, to placement: SessionPlacement, lead: String?) -> SessionUndo? {
+        let was = SessionPlacement(of: agent)
+        guard was != placement else { return nil }
+        return SessionUndo(change: .parent(placement, lead: lead), title: agent.title, inverse: .parent(agent.id, was))
+    }
+
     // MARK: Words
 
     public static func line(_ change: Change, title: String?) -> String {
@@ -103,6 +114,12 @@ public struct SessionUndo: Equatable, Sendable, Identifiable {
             return "Changed the labels of \(shown)"
         case .muted(let muted): return muted ? "Muted \(shown)" : "Unmuted \(shown)"
         case .later: return "Moved \(shown) to Later"
+        case .parent(let placement, let lead):
+            switch placement {
+            case .under: return "Moved \(shown) under “\(lead ?? "its lead")”"
+            case .top: return "Moved \(shown) to the top"
+            case .starter: return "Moved \(shown) under its starter"
+            }
         }
     }
 
@@ -113,6 +130,7 @@ public struct SessionUndo: Equatable, Sendable, Identifiable {
         case .labels: return "Undo Labels"
         case .muted(let muted): return muted ? "Undo Mute" : "Undo Unmute"
         case .later: return "Undo Later"
+        case .parent: return "Undo Move"
         }
     }
 
