@@ -16,6 +16,7 @@ export const Capability = {
   agents1: "agents/1",
   approvals1: "approvals/1",
   artifact1: "artifact/1",
+  artifacts1: "artifacts/1",
   attention1: "attention/1",
   attention2: "attention/2",
   auditSinks1: "audit.sinks/1",
@@ -800,6 +801,9 @@ export const HostCapabilities: Readonly<Record<string, Capability>> = {
 export const ControlCapabilities: Readonly<Record<string, Capability>> = {
   "approvals/list": "approvals/1",
   "approvals/put": "approvals/1",
+  "artifacts/get": "artifacts/1",
+  "artifacts/put": "artifacts/1",
+  "artifacts/versions": "artifacts/1",
   "attention/need": "attention/2",
   "attention/turn": "liveactivity/1",
   "audit/export": "events.audit/1",

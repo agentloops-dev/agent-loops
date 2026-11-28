@@ -21,6 +21,7 @@ control/status
   },
   "capabilities": [
     "approvals/1",
+    "artifacts/1",
     "attention/1",
     "attention/2",
     "audit.sinks/1",
@@ -303,6 +304,7 @@ control/status
   },
   "capabilities": [
     "approvals/1",
+    "artifacts/1",
     "attention/1",
     "attention/2",
     "audit.sinks/1",

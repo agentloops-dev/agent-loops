@@ -896,6 +896,164 @@ export type ArchiveRequest =
   | { whenTurnEnds: { since: WireDate; reason?: string } }
   | { requested: { at: WireDate; reason?: string } };
 
+/**
+ * An artifact's record (#5953, spec 5713 §1): its name, kind, labels and head. Its versions are OCI
+ * image manifests in the blob store.
+ */
+export interface Artifact {
+  /**
+   * The artifact's id, unique in the organisation's store: 1 to 64 of a-z, 0-9, '.', '_' and '-',
+   * starting with a letter or digit.
+   */
+  id: string;
+  /** Its project's id, or the organisation's; the <topic> of its ref. */
+  topic: string;
+  /** agents:artifact:<topic>#<id>: the name form, which moves with the head. */
+  ref: string;
+  /** What a person reads. */
+  name: string;
+  kind: ArtifactKind;
+  /**
+   * Free labels, key to value: at most 32, a key at most 64 bytes and a value at most 256. A
+   * version carries them as dev.agentloops.label.<key> annotations.
+   */
+  labels?: Record<string, string>;
+  /** The current version's manifest digest; the newest head when there are two or more. */
+  head: string;
+  /**
+   * Every head, when writers diverged (a write whose parent was not the head): set aside, never
+   * overwritten. Absent with one head.
+   */
+  heads?: string[];
+  /** How many versions it has; the newest is this number. */
+  versions: number;
+  /** The head is a tombstone: the artifact was deleted, and its versions are kept. */
+  deleted?: boolean;
+  created: string;
+  updated: string;
+}
+
+/**
+ * artifacts/get: an artifact by its ref, the head for a name (agents:artifact:<topic>#<id>) or one
+ * version for a digest (agents:artifact:<topic>#sha256:…).
+ */
+export interface ArtifactGet {
+  ref: string;
+  /** Also send each layer's bytes, at most 24 MiB in all; a larger version is refused. */
+  content?: boolean;
+}
+
+/** artifacts/get's answer: the record and the version the ref names. */
+export interface ArtifactGot {
+  artifact: Artifact;
+  version: ArtifactVersion;
+}
+
+/**
+ * What an artifact is (epic #5713): its version's artifactType is
+ * application/vnd.agentloops.<kind>.v1.
+ */
+export type ArtifactKind =
+  | "archive"
+  | "binary"
+  | "build"
+  | "document"
+  | "image"
+  | "other"
+  | "package";
+
+/** One file of a version: an OCI descriptor. */
+export interface ArtifactLayer {
+  /** The file's own type, as text/markdown or image/svg+xml. */
+  mediaType: string;
+  /** The blob's digest. */
+  digest: string;
+  size: number;
+  /** The file's name (org.opencontainers.image.title). */
+  title?: string;
+  /** The bytes, when artifacts/get was asked for content. */
+  data?: Base64;
+}
+
+/** One file of a version to put. */
+export interface ArtifactLayerPut {
+  mediaType: string;
+  /** The file's name: no '/', at most 255 bytes. */
+  title: string;
+  data: Base64;
+}
+
+/**
+ * artifacts/put: a new version of an artifact, or its first, which makes the record. At most 64
+ * layers and 24 MiB in all.
+ */
+export interface ArtifactPut {
+  topic: string;
+  id: string;
+  /** Sets the name; the first version's default is the id. */
+  name?: string;
+  /** Required for the first version; a later one keeps the record's. */
+  kind?: ArtifactKind;
+  /**
+   * Free labels, key to value: at most 32, a key at most 64 bytes and a value at most 256. A
+   * version carries them as dev.agentloops.label.<key> annotations.
+   */
+  labels?: Record<string, string>;
+  /**
+   * The head (or heads) the writer saw: none for the first version, two or more to settle a
+   * divergence. A parent that is no longer a head makes a second head, never an overwrite.
+   */
+  parents?: string[];
+  /** How the version was made (dev.agentloops.capture); manual when absent. */
+  capture?: "checkpoint" | "manual" | "settled";
+  /** Delete: a version with no layers that marks the artifact deleted; its versions are kept. */
+  tombstone?: boolean;
+  layers: ArtifactLayerPut[];
+}
+
+/** artifacts/put's answer. */
+export interface ArtifactPutResult {
+  artifact: Artifact;
+  version: ArtifactVersion;
+  /** The parents were not every head, so the artifact now has two or more heads. */
+  diverged?: boolean;
+}
+
+/** One version: its manifest, as the record and the log say it. */
+export interface ArtifactVersion {
+  /** Its place in the artifact's log, from 1. */
+  number: number;
+  /** The manifest's digest: the version's id, immutable. */
+  digest: string;
+  /** agents:artifact:<topic>#sha256:…: the immutable form. */
+  ref: string;
+  parents?: string[];
+  created: string;
+  /** Who made it, recorded, never guessed: person:<id>, session:<id> or unknown. */
+  author: string;
+  capture?: string;
+  tombstone?: boolean;
+  /** Its files; absent in a listing. */
+  layers?: ArtifactLayer[];
+}
+
+/** artifacts/versions's answer: newest first. */
+export interface ArtifactVersionPage {
+  versions: ArtifactVersion[];
+  /** Pass as before for the next page; absent on the last. */
+  next?: number;
+}
+
+/** artifacts/versions: an artifact's versions, newest first. */
+export interface ArtifactVersionsAsk {
+  /** The artifact's name ref, agents:artifact:<topic>#<id>. */
+  ref: string;
+  /** Only versions numbered below this. */
+  before?: number;
+  /** At most 100; 0 is 50. */
+  limit?: number;
+}
+
 export interface ArtifactWriteRequest {
   agentID: UUID;
   path: string;
@@ -19534,6 +19692,16 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   Approval: { required: ["kind", "key", "title", "line", "actions"], optional: ["digest", "since", "agentID"] },
   ApprovalAnswer: { required: ["folder", "kind", "key", "action"], optional: ["digest", "note"] },
   ApprovalReadRequest: { required: ["folder", "kind", "key"], optional: [] },
+  Artifact: { required: ["id", "topic", "ref", "name", "kind", "head", "versions", "created", "updated"], optional: ["labels", "heads", "deleted"] },
+  ArtifactGet: { required: ["ref"], optional: ["content"] },
+  ArtifactGot: { required: ["artifact", "version"], optional: [] },
+  ArtifactLayer: { required: ["mediaType", "digest", "size"], optional: ["title", "data"] },
+  ArtifactLayerPut: { required: ["mediaType", "title", "data"], optional: [] },
+  ArtifactPut: { required: ["topic", "id", "layers"], optional: ["name", "kind", "labels", "parents", "capture", "tombstone"] },
+  ArtifactPutResult: { required: ["artifact", "version"], optional: ["diverged"] },
+  ArtifactVersion: { required: ["number", "digest", "ref", "created", "author"], optional: ["parents", "capture", "tombstone", "layers"] },
+  ArtifactVersionPage: { required: ["versions"], optional: ["next"] },
+  ArtifactVersionsAsk: { required: ["ref"], optional: ["before", "limit"] },
   ArtifactWriteRequest: { required: ["agentID", "path", "text"], optional: ["base"] },
   AssessRuntimeRequest: { required: ["runtimeID", "folder"], optional: ["model"] },
   AssessRuntimeResult: { required: ["agentID", "reportPath"], optional: ["model"] },

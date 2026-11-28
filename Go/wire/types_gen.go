@@ -923,6 +923,178 @@ type ArchiveRequestRequested struct {
 	Reason *string `json:"reason,omitzero"`
 }
 
+// An artifact's record (#5953, spec 5713 §1): its name, kind, labels and head. Its versions are OCI image manifests in the blob store.
+type Artifact struct {
+	// The artifact's id, unique in the organisation's store: 1 to 64 of a-z, 0-9, '.', '_' and '-', starting with a letter or digit.
+	ID string `json:"id"`
+
+	// Its project's id, or the organisation's; the <topic> of its ref.
+	Topic string `json:"topic"`
+
+	// agents:artifact:<topic>#<id>: the name form, which moves with the head.
+	Ref string `json:"ref"`
+
+	// What a person reads.
+	Name string `json:"name"`
+
+	Kind ArtifactKind `json:"kind"`
+
+	// Free labels, key to value: at most 32, a key at most 64 bytes and a value at most 256. A version carries them as dev.agentloops.label.<key> annotations.
+	Labels map[string]string `json:"labels,omitzero"`
+
+	// The current version's manifest digest; the newest head when there are two or more.
+	Head string `json:"head"`
+
+	// Every head, when writers diverged (a write whose parent was not the head): set aside, never overwritten. Absent with one head.
+	Heads []string `json:"heads,omitzero"`
+
+	// How many versions it has; the newest is this number.
+	Versions int64 `json:"versions"`
+
+	// The head is a tombstone: the artifact was deleted, and its versions are kept.
+	Deleted *bool `json:"deleted,omitzero"`
+
+	Created string `json:"created"`
+
+	Updated string `json:"updated"`
+}
+
+// artifacts/get: an artifact by its ref, the head for a name (agents:artifact:<topic>#<id>) or one version for a digest (agents:artifact:<topic>#sha256:…).
+type ArtifactGet struct {
+	Ref string `json:"ref"`
+
+	// Also send each layer's bytes, at most 24 MiB in all; a larger version is refused.
+	Content *bool `json:"content,omitzero"`
+}
+
+// artifacts/get's answer: the record and the version the ref names.
+type ArtifactGot struct {
+	Artifact Artifact `json:"artifact"`
+
+	Version ArtifactVersion `json:"version"`
+}
+
+// What an artifact is (epic #5713): its version's artifactType is application/vnd.agentloops.<kind>.v1.
+type ArtifactKind string
+
+const ArtifactKindArchive ArtifactKind = "archive"
+const ArtifactKindBinary ArtifactKind = "binary"
+const ArtifactKindBuild ArtifactKind = "build"
+const ArtifactKindDocument ArtifactKind = "document"
+const ArtifactKindImage ArtifactKind = "image"
+const ArtifactKindOther ArtifactKind = "other"
+const ArtifactKindPackage ArtifactKind = "package"
+
+// One file of a version: an OCI descriptor.
+type ArtifactLayer struct {
+	// The file's own type, as text/markdown or image/svg+xml.
+	MediaType string `json:"mediaType"`
+
+	// The blob's digest.
+	Digest string `json:"digest"`
+
+	Size int64 `json:"size"`
+
+	// The file's name (org.opencontainers.image.title).
+	Title *string `json:"title,omitzero"`
+
+	// The bytes, when artifacts/get was asked for content.
+	Data Data `json:"data,omitzero"`
+}
+
+// One file of a version to put.
+type ArtifactLayerPut struct {
+	MediaType string `json:"mediaType"`
+
+	// The file's name: no '/', at most 255 bytes.
+	Title string `json:"title"`
+
+	Data Data `json:"data"`
+}
+
+// artifacts/put: a new version of an artifact, or its first, which makes the record. At most 64 layers and 24 MiB in all.
+type ArtifactPut struct {
+	Topic string `json:"topic"`
+
+	ID string `json:"id"`
+
+	// Sets the name; the first version's default is the id.
+	Name *string `json:"name,omitzero"`
+
+	// Required for the first version; a later one keeps the record's.
+	Kind *ArtifactKind `json:"kind,omitzero"`
+
+	// Free labels, key to value: at most 32, a key at most 64 bytes and a value at most 256. A version carries them as dev.agentloops.label.<key> annotations.
+	Labels map[string]string `json:"labels,omitzero"`
+
+	// The head (or heads) the writer saw: none for the first version, two or more to settle a divergence. A parent that is no longer a head makes a second head, never an overwrite.
+	Parents []string `json:"parents,omitzero"`
+
+	// How the version was made (dev.agentloops.capture); manual when absent.
+	Capture *string `json:"capture,omitzero"`
+
+	// Delete: a version with no layers that marks the artifact deleted; its versions are kept.
+	Tombstone *bool `json:"tombstone,omitzero"`
+
+	Layers []ArtifactLayerPut `json:"layers"`
+}
+
+// artifacts/put's answer.
+type ArtifactPutResult struct {
+	Artifact Artifact `json:"artifact"`
+
+	Version ArtifactVersion `json:"version"`
+
+	// The parents were not every head, so the artifact now has two or more heads.
+	Diverged *bool `json:"diverged,omitzero"`
+}
+
+// One version: its manifest, as the record and the log say it.
+type ArtifactVersion struct {
+	// Its place in the artifact's log, from 1.
+	Number int64 `json:"number"`
+
+	// The manifest's digest: the version's id, immutable.
+	Digest string `json:"digest"`
+
+	// agents:artifact:<topic>#sha256:…: the immutable form.
+	Ref string `json:"ref"`
+
+	Parents []string `json:"parents,omitzero"`
+
+	Created string `json:"created"`
+
+	// Who made it, recorded, never guessed: person:<id>, session:<id> or unknown.
+	Author string `json:"author"`
+
+	Capture *string `json:"capture,omitzero"`
+
+	Tombstone *bool `json:"tombstone,omitzero"`
+
+	// Its files; absent in a listing.
+	Layers []ArtifactLayer `json:"layers,omitzero"`
+}
+
+// artifacts/versions's answer: newest first.
+type ArtifactVersionPage struct {
+	Versions []ArtifactVersion `json:"versions"`
+
+	// Pass as before for the next page; absent on the last.
+	Next *int64 `json:"next,omitzero"`
+}
+
+// artifacts/versions: an artifact's versions, newest first.
+type ArtifactVersionsAsk struct {
+	// The artifact's name ref, agents:artifact:<topic>#<id>.
+	Ref string `json:"ref"`
+
+	// Only versions numbered below this.
+	Before *int64 `json:"before,omitzero"`
+
+	// At most 100; 0 is 50.
+	Limit *int64 `json:"limit,omitzero"`
+}
+
 type ArtifactWriteRequest struct {
 	AgentID UUID `json:"agentID"`
 
