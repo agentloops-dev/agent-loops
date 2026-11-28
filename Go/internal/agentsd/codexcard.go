@@ -32,6 +32,9 @@ type signInCardState struct {
 	// signedOut are the runtimes whose own sign-in on this server ended (#7472): expired or
 	// revoked. Their card is Sign in again until a sign-in is made here.
 	signedOut map[string]bool
+	// held are the agents whose turn waits for a sign-in on this server (#7609): a new
+	// agent's first turn, kept in its queue until the card (or a key, or a lend) signs in.
+	held map[wire.UUID]string
 }
 
 type signInCard struct {
@@ -89,8 +92,9 @@ func (d *Daemon) raiseSignInCard(agent wire.UUID, runtimeID string) {
 	gone, out := d.signInCards.dismissed[runtimeID], d.signInCards.signedOut[runtimeID]
 	d.headlessMu.Unlock()
 	ends, endsSoon := d.claudeSignInEnds()
-	if runtimeID == "claude" && !out && !endsSoon && (d.relayFor("claude") == nil || d.storedClaudeSignIn() != "" || ownClaudeSignIn()) {
-		return // no lend to leave, or a sign-in of its own already (#7506)
+	if runtimeID == "claude" && !out && !endsSoon && (d.storedClaudeSignIn() != "" || ownClaudeSignIn() ||
+		d.relayFor("claude") == nil && d.needsSignIn("claude") == nil) {
+		return // a sign-in of its own already (#7506), or nothing wanted: no control plane, no lend
 	}
 	if gone {
 		return
@@ -183,6 +187,50 @@ func (d *Daemon) raiseSignInCard(agent wire.UUID, runtimeID string) {
 		Broadcast(d, wire.NotifyAgentElicitation, wire.ElicitationNotification{AgentID: agent, RequestID: req.ID, Request: &req})
 		d.raiseAgentEvent("agent.asked_form", agent, "is asking for "+runtimeByID(runtimeID).Name+" to be signed in on this server.", nil)
 	})
+}
+
+// holdsForSignIn says whether the agent's turn waits for a sign-in on this server (#7609).
+// A server with no sign-in of its own for Claude or Codex (and no lend) starts the agent
+// all the same: its words stay in its queue, the first sign-in card shows on every client,
+// and the turn goes once a sign-in is made (releaseSignInHolds). It is said once.
+func (d *Daemon) holdsForSignIn(id wire.UUID) bool {
+	a := d.Store.Agent(id)
+	if a == nil || a.AccountID != nil || d.needsSignIn(a.RuntimeID) == nil {
+		d.headlessMu.Lock()
+		delete(d.signInCards.held, id)
+		d.headlessMu.Unlock()
+		return false
+	}
+	d.headlessMu.Lock()
+	if d.signInCards.held == nil {
+		d.signInCards.held = map[wire.UUID]string{}
+	}
+	_, was := d.signInCards.held[id]
+	d.signInCards.held[id] = a.RuntimeID
+	d.headlessMu.Unlock()
+	if !was {
+		name := runtimeName(a.RuntimeID)
+		d.record(id, notice("info", name+" is not signed in on "+d.ownName(),
+			"What you sent is waiting. Sign "+name+" in on the card, and it will go."))
+	}
+	d.raiseSignInCard(id, a.RuntimeID)
+	return true
+}
+
+// releaseSignInHolds lets the turns go that waited for runtimeID's sign-in here (#7609).
+func (d *Daemon) releaseSignInHolds(runtimeID string) {
+	var ids []wire.UUID
+	d.headlessMu.Lock()
+	for id, rt := range d.signInCards.held {
+		if rt == runtimeID {
+			ids = append(ids, id)
+			delete(d.signInCards.held, id)
+		}
+	}
+	d.headlessMu.Unlock()
+	for _, id := range ids {
+		d.live(id).kick()
+	}
 }
 
 // signedOutTitle is the card's and the turn's words for a sign-in that ended (#7472).
