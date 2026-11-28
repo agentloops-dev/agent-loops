@@ -143,6 +143,11 @@ final class MeetingListener {
         note("meeting: ended, \(sentCount) segments sent, \(clerk.dropped) mic pieces the gate dropped")
     }
 
+    /// The loudest of the streams since the last read, 0 to 1: the capsule's level (#7585).
+    func takeLevel() -> Float {
+        streams.map { $0.feed.takeLevel() }.max() ?? 0
+    }
+
     // MARK: -
 
     private func isWalked(_ source: String) -> Bool {

@@ -9,6 +9,8 @@ enum MenuKeys {
     static let newWorktreeSession = KeyboardShortcut("n", modifiers: [.command, .option])
     /// New Session in Background (#5798): a window of its own, and the main window stays.
     static let newBackgroundSession = KeyboardShortcut("n", modifiers: [.command, .shift])
+    /// New Meeting (#7585): ⇧⌘M is New Machine…, so ⌃⌘M.
+    static let newMeeting = KeyboardShortcut("m", modifiers: [.command, .control])
     static let addFolder = KeyboardShortcut("o")
     static let cloneFolder = KeyboardShortcut("o", modifiers: [.command, .shift])
     /// New App… (#5132): Let's build your idea, again.

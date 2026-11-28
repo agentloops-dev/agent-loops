@@ -34,6 +34,8 @@ final class AppModel {
     @ObservationIgnored let workSavesStore = WorkSaves()
 
     var runtimes: [RuntimeStatus] = []
+    /// Meeting mode's meetings and the one this Mac listens to (#7585), behind the flag `meeting-mode`.
+    let meetings = MeetingDesk()
     /// The start-up sheet offering to install what is missing (048). Raised once per
     /// launch, and only for a runtime not already offered on this root.
     var isOfferingInstall = false
@@ -1418,10 +1420,12 @@ final class AppModel {
         // The window hears only this Mac's host, so a machine's notice is this Mac's.
         notifier.openMachine = { [weak self] in self?.machinePage = .mac }
         notifier.answer = { [weak self] token, quick, typed in await self?.answerFromBanner(token, quick, typed: typed) }
+        meetings.model = self
         #if DEBUG
         openFromLaunchArguments()
         WalkNotify.model = work
         WalkMeeting.client = { [weak self] in self?.macClient }
+        WalkMeeting.desk = meetings
         WalkNotify.also = { [weak self] method, params in
             guard method == DaemonAPI.Notification.moveChanged,
                   let change = try? params?.decode(DaemonAPI.MoveNotification.self) else { return false }
@@ -3743,6 +3747,11 @@ final class AppModel {
             guard let change = try? params?.decode(DaemonAPI.MoveNotification.self) else { return }
             moveChanged(change)
 
+        case DaemonAPI.Notification.meetingsChanged:
+            // Meeting mode (#7585): the meeting's state, and new words for an open transcript.
+            guard let change = try? params?.decode(DaemonAPI.MeetingChangedNotification.self) else { return }
+            meetings.changed(change)
+
         case DaemonAPI.Notification.sendChanged:
             guard let change = try? params?.decode(DaemonAPI.SendNotification.self) else { return }
             sendChanged(change)
@@ -4261,7 +4270,8 @@ final class AppModel {
         async let popped: Void = loadPoppedTranscripts()
         async let auto: Void = refreshAuto()
         async let dailyChecks: Void = refreshDailyChecksSettings()
-        _ = await (popped, runtimes, accounts, workflows, pinned, requests, permissions,
+        async let meetingsList: Void = meetings.refresh()
+        _ = await (meetingsList, popped, runtimes, accounts, workflows, pinned, requests, permissions,
                    elicitations, attention, resuming, cost, retention, clientPermissions, cloning, sending, bringing, moving, wake, leases, events, modes,
                    transcript, runtimeStates, sandbox, person, disk, capacity, storeNotes, hostedMCP, mcpHealth, achievements, multiplier,
                    display, auto, dailyChecks)
