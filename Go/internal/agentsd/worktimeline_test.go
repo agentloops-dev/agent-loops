@@ -72,7 +72,7 @@ func checkTimelineFirst(t *testing.T, c *conn, gh *fakeForgeGitHub, req wire.Wor
 		gh.mu.Lock()
 		defer gh.mu.Unlock()
 		if gh.timelines != reads || gh.timelineRests != rests || (tl.Partial != nil) != partial || len(tl.Epics) != 2 || len(tl.Releases) != 1 ||
-			(tl.Backtest == nil) != partial || (tl.Epics[0].Forecast == nil) != partial {
+			(tl.Backtest == nil) != partial || (tl.Epics[0].Forecast == nil) != partial || (tl.Schedule == nil) != partial {
 			t.Fatalf("first %v: %d reads, %d rests, %+v", first, gh.timelines, gh.timelineRests, tl)
 		}
 	}
@@ -155,6 +155,8 @@ func TestWorkTimelineForecastsTheOpenEpics(t *testing.T) {
 		epic(22, -24*60, child(-24*62, -24*61)),     // ended before the window
 		epic(24, -10, child(-24*62, -24*61)),        // closed in the window, but its work ended before it (#7058)
 		epic(23, 0, child(-48, -40), child(-20, 0))) // filed after the first line ended: a second line
+	// A started epic's blocker does not move it (#7525).
+	epics[len(epics)-1].BlockedBy = []githubmcp.TimelineBlocker{{Ref: githubmcp.Ref{Repo: "alexec/Agents", Number: 20, Open: true}, Labels: []string{"epic"}}}
 	gh.timeline = githubmcp.Timeline{Epics: epics, Releases: []githubmcp.Release{
 		{Tag: "v1", PublishedAt: stamp(-5), URL: "u1"}, {Tag: "v0", PublishedAt: stamp(-24 * 9)}}}
 	// A session worked on the first open child: it started then, though no PR closes it yet.
@@ -191,6 +193,7 @@ func TestWorkTimelineForecastsTheOpenEpics(t *testing.T) {
 	if tl.Backtest == nil || tl.Backtest.Cuts == 0 || tl.Backtest.Error < 1 {
 		t.Fatalf("backtest %+v", tl.Backtest)
 	}
+	checkTimelineSchedule(t, tl, got)
 	var again wire.WorkTimeline
 	mustUnmarshal(t, c.call(t, 2, "work/timeline", req), &again)
 	gh.mu.Lock()
@@ -202,6 +205,38 @@ func TestWorkTimelineForecastsTheOpenEpics(t *testing.T) {
 	}
 	if err := c.callError(t, 3, "work/timeline", wire.WorkTimelineRequest{Project: "p1", From: 10, To: 5}); err == nil {
 		t.Fatal("to before from is not refused")
+	}
+	if err := c.callError(t, 4, "work/timeline", wire.WorkTimelineRequest{Project: "p1", From: 5, To: 10, Places: new(int64(0))}); err == nil {
+		t.Fatal("no places is not refused")
+	}
+}
+
+// checkTimelineSchedule checks the schedule of TestWorkTimelineForecastsTheOpenEpics (#7525): the three open epics
+// that are read, the two started ones with their forecasts as finish, the one with no children undated.
+func checkTimelineSchedule(t *testing.T, tl wire.WorkTimeline, got map[int]wire.WorkTimelineEpic) {
+	t.Helper()
+	s := tl.Schedule
+	if s == nil || s.Places != schedulePlaces || s.Incomplete != nil || len(s.Rows) != 3 {
+		t.Fatalf("schedule %+v", s)
+	}
+	rows := map[int]wire.WorkTimelineScheduleRow{}
+	for _, r := range s.Rows {
+		rows[refNumber(r.Epic.Ref)] = r
+	}
+	for _, n := range []int{20, 23} {
+		r := rows[n]
+		if r.Reason != nil || r.StartedAt == nil || r.PlannedStart != nil || r.Finish == nil || r.Finish.Mid != got[n].Forecast.Mid {
+			t.Fatalf("#%d: %+v, forecast %+v", n, r, got[n].Forecast)
+		}
+	}
+	if r := rows[20]; *r.StartedAt != *got[20].Segments[0].StartedAt || r.StartSource == nil || *r.StartSource != startSession {
+		t.Fatalf("#20 started %+v", r)
+	}
+	if r := rows[23]; len(r.Blockers) != 1 || r.Blockers[0] != got[20].Item.Node {
+		t.Fatalf("#23 blockers %+v", r.Blockers)
+	}
+	if r := rows[21]; r.Reason == nil || *r.Reason != wire.WorkTimelineScheduleReasonNoIssues {
+		t.Fatalf("#21 %+v", r)
 	}
 }
 

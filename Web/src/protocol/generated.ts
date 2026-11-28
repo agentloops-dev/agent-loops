@@ -17406,6 +17406,7 @@ export interface WorkTimeline {
   backtest?: WorkTimelineBacktest;
   errors?: string[];
   partial?: boolean;
+  schedule?: WorkTimelineSchedule;
   /**
    * What was read (#7029): one entry per repo, as forge:name (github:example/shop). Two machines
    * with the same scopes give the same epics, so a client asks one of them. Absent when a repo
@@ -17502,6 +17503,65 @@ export interface WorkTimelineRequest {
   to: WireDate;
   first?: boolean;
   onHold?: boolean;
+  /** How many epics are worked at once in the schedule (#7525), 1 to 20: 3 when absent. */
+  places?: number;
+}
+
+/**
+ * work/timeline's schedule (#7525, epic #7067): when each open epic starts and finishes if places
+ * epics are worked at once. A started epic holds a place from its start to its predicted finish,
+ * whatever blocks it. The others take the free places in the order of forge/next (level: epic),
+ * each no earlier than now and the predicted finish of its last open epic blocker; places that free
+ * at the same time go to the next in that order. readAt is the time of the read. incomplete says a
+ * list was cut short (more than 100 open epics, a repo not read): no row is dated then. Rows: the
+ * started epics, then those planned, by planned start, then those with no date; ties in the order
+ * of forge/next. Absent from a partial answer and from an earlier daemon.
+ */
+export interface WorkTimelineSchedule {
+  places: number;
+  readAt: WireDate;
+  incomplete?: boolean;
+  rows: WorkTimelineScheduleRow[];
+}
+
+/**
+ * Why an open epic has no date in the schedule (#7525): onHold, it is on hold (shown only with
+ * onHold); noIssues, it has no sub-issues; blockerOnHold, an open blocker is on hold;
+ * blockerNotEpic, an open blocker is not an epic; blockerNotRead, an open blocker epic is not in
+ * the read (another project, or more than the read gives); cycle, its blockers lead back to it;
+ * blockerUndated, an open blocker epic has no date; noForecast, there is too little history to
+ * forecast it; noPlace, no place frees (every place is held by a started epic with no forecast);
+ * incomplete, a list was cut short.
+ */
+export type WorkTimelineScheduleReason =
+  | "onHold"
+  | "noIssues"
+  | "blockerOnHold"
+  | "blockerNotEpic"
+  | "blockerNotRead"
+  | "cycle"
+  | "blockerUndated"
+  | "noForecast"
+  | "noPlace"
+  | "incomplete";
+
+/**
+ * An open epic in the schedule (#7525). startedAt is its observed start, the earliest of its
+ * children's, and startSource where that came from: session (a session linked to the child in
+ * lineage), pullRequest (a pull request that closes the child opened) or closed (the child closed);
+ * both absent while it has not started. plannedStart is when a not-started epic takes a place.
+ * finish is its predicted finish: low to high the band, mid the P50; for a planned epic its
+ * forecast from its planned start. blockers are its open blockers, of every kind, for the arrows.
+ * reason says why it has no finish; absent when it has one.
+ */
+export interface WorkTimelineScheduleRow {
+  epic: LineageNode;
+  startedAt?: WireDate;
+  startSource?: "session" | "pullRequest" | "closed";
+  plannedStart?: WireDate;
+  finish?: WorkTimelineForecast;
+  blockers?: LineageNode[];
+  reason?: WorkTimelineScheduleReason;
 }
 
 /**
@@ -20344,13 +20404,15 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   WorkReport: { required: ["outcome", "message", "at"], optional: ["block"] },
   WorkSuggestLeads: { required: ["suggestions", "more"], optional: ["errors"] },
   WorkSuggestLeadsRequest: { required: [], optional: ["folder"] },
-  WorkTimeline: { required: ["epics", "releases"], optional: ["timeZone", "backtest", "errors", "partial", "scopes"] },
+  WorkTimeline: { required: ["epics", "releases"], optional: ["timeZone", "backtest", "errors", "partial", "schedule", "scopes"] },
   WorkTimelineBacktest: { required: ["error", "width", "cuts", "holds", "epics", "at"], optional: [] },
   WorkTimelineChild: { required: ["item", "createdAt"], optional: ["stateReason", "startedAt", "closedAt", "waitsForPerson"] },
   WorkTimelineEpic: { required: ["item", "createdAt", "children", "segments"], optional: ["stateReason", "closedAt", "forecast"] },
   WorkTimelineForecast: { required: ["low", "mid", "high"], optional: ["waits"] },
   WorkTimelineRelease: { required: ["tag", "at", "repo"], optional: ["url"] },
-  WorkTimelineRequest: { required: ["project", "from", "to"], optional: ["first", "onHold"] },
+  WorkTimelineRequest: { required: ["project", "from", "to"], optional: ["first", "onHold", "places"] },
+  WorkTimelineSchedule: { required: ["places", "readAt", "rows"], optional: ["incomplete"] },
+  WorkTimelineScheduleRow: { required: ["epic"], optional: ["startedAt", "startSource", "plannedStart", "finish", "blockers", "reason"] },
   WorkTimelineSegment: { required: [], optional: ["startedAt", "closedAt"] },
   Workflow: { required: ["workflowID", "folder", "name", "triggers", "mode", "prompt", "unknownFields", "settings"], optional: ["problem", "cooldown", "hours", "enabled", "archived", "whenDone", "continueWhenBack", "muted", "runsOn"] },
   WorkflowApproval: { required: ["digest", "isNew"], optional: ["note"] },
