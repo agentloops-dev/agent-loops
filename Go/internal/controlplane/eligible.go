@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/capacity"
+	"github.com/agentloops-dev/agent-loops/Go/internal/controllink"
 	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/records"
 	"github.com/agentloops-dev/agent-loops/Go/internal/controlsetup"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
@@ -337,9 +338,19 @@ func domainName(d string) bool {
 
 // publicAddress says clients elsewhere can dial addr. 100.64/10 stays in: a machine is seen
 // to come from it only inside a tailnet, which is a tunnel.
-func publicAddress(addr netip.Addr) bool {
-	addr = addr.Unmap()
-	return addr.IsGlobalUnicast() && !addr.IsPrivate()
+func publicAddress(addr netip.Addr) bool { return controllink.PublicAddress(addr) }
+
+// helloAnswer is the answer to host's machine/hello: this control plane's capabilities, and
+// the address the host's uplink comes from when it is public (#7493), so that an install of
+// the control role on a machine behind NAT can say where it is reached.
+func (m *Methods) helloAnswer(host string) wire.MachineHelloAnswer {
+	answer := wire.MachineHelloAnswer{Capabilities: capabilities()}
+	if from, ok := m.router.UplinkAddress(host); ok {
+		if addr, err := netip.ParseAddr(from); err == nil && publicAddress(addr) {
+			answer.Address = new(addr.Unmap().String())
+		}
+	}
+	return answer
 }
 
 func dialTCP(ctx context.Context, address string) error {

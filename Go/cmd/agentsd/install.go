@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/netip"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -146,7 +147,8 @@ func refuseInstall(home string, control, noAgents bool) string {
 // installControl runs the control role (#6610); with the agents role too, it returns the host
 // code the host joins with. The bool is false when it failed, having said why.
 func installControl(ctx context.Context, c controlsetup.Options, noAgents bool) (string, bool) {
-	deps := controlsetup.Deps{Systemd: controlsetup.SystemdUser, Run: controlsetup.RunCommand, Out: os.Stdout}
+	deps := controlsetup.Deps{Systemd: controlsetup.SystemdUser, Run: controlsetup.RunCommand, Out: os.Stdout,
+		Seen: func() netip.Addr { return controllink.SeenAddress(hostsetup.LayoutOf(c.Home).Root) }}
 	if err := controlsetup.Install(ctx, c, deps); err != nil {
 		fmt.Fprintln(os.Stderr, "The control plane is not set up:", err)
 		return "", false

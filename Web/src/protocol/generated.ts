@@ -9257,6 +9257,13 @@ export interface MachineHello {
 export interface MachineHelloAnswer {
   /** The control plane's capabilities (#1748), as control/status says them to a client. */
   capabilities?: string[];
+  /**
+   * The public IP address this machine's uplink comes from, as the control plane sees it (#7493):
+   * where a control plane that the machine's install puts behind NAT is reached, when the machine
+   * finds only a private address of its own. Absent when the uplink comes from a private or
+   * loopback address, and from an older control plane.
+   */
+  address?: string;
 }
 
 /**
@@ -20026,7 +20033,7 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   MachineForgeBoards: { required: ["machine", "machineName", "boards"], optional: [] },
   MachineForgeList: { required: ["machine", "machineName", "list"], optional: [] },
   MachineHello: { required: ["version", "platform", "machineID"], optional: ["host", "name", "implementation", "capabilities", "maturity", "control"] },
-  MachineHelloAnswer: { required: [], optional: ["capabilities"] },
+  MachineHelloAnswer: { required: [], optional: ["capabilities", "address"] },
   MachineInfo: { required: ["id", "name", "state"], optional: ["ssh", "addresses", "tunnel", "hostKeyRenews", "cost", "idleTimeoutMinutes", "host", "reason", "joining", "notJoined", "setup"] },
   MachineInstall: { required: ["destination"], optional: ["name", "key", "trust", "tunnel", "provider", "workspace"] },
   MachineJoinAsk: { required: ["name", "platform", "publicKey"], optional: ["version", "machineID", "person"] },

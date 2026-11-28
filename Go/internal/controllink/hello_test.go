@@ -15,12 +15,15 @@ func TestHelloKeepsTheControlPlanesCapabilities(t *testing.T) {
 	for _, tc := range []struct {
 		result string
 		want   []string
+		// address is what OnAddress is told (#7493), "" for nothing.
+		address string
 	}{
-		{`{"capabilities":["machine.accounts/1","user/3"]}`, []string{"machine.accounts/1", "user/3"}},
-		{`{}`, []string{}},
+		{`{"capabilities":["machine.accounts/1","user/3"],"address":"198.51.100.9"}`, []string{"machine.accounts/1", "user/3"}, "198.51.100.9"},
+		{`{}`, []string{}, ""},
 	} {
 		told := make(chan []string, 1)
-		u := &Uplink{OnCapabilities: func(list []string) { told <- list }}
+		addressed := make(chan string, 1)
+		u := &Uplink{OnCapabilities: func(list []string) { told <- list }, OnAddress: func(a string) { addressed <- a }}
 		u.out = &sender{out: make(chan string, 1), done: make(chan struct{})}
 		u.hello(context.Background(), MachineHello{Version: "1"})
 		if u.ControlCapabilities() != nil {
@@ -52,6 +55,16 @@ func TestHelloKeepsTheControlPlanesCapabilities(t *testing.T) {
 			}
 		case <-time.After(5 * time.Second):
 			t.Fatalf("%s: OnCapabilities not told", tc.result)
+		}
+		// OnAddress is told before the hello's goroutine ends, after OnCapabilities.
+		if tc.address == "" {
+			select {
+			case got := <-addressed:
+				t.Fatalf("%s: told an address %q", tc.result, got)
+			case <-time.After(50 * time.Millisecond):
+			}
+		} else if got := <-addressed; got != tc.address {
+			t.Fatalf("%s: told address %q", tc.result, got)
 		}
 	}
 }

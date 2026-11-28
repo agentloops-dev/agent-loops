@@ -72,6 +72,31 @@ func TestHelloIsAnsweredWithTheControlPlanesCapabilities(t *testing.T) {
 	}
 }
 
+// machine/hello's answer says the public address the host's uplink comes from (#7493), so an
+// install of the control role behind NAT can say where it is reached; a private one, none.
+func TestHelloIsAnsweredWithTheUplinksPublicAddress(t *testing.T) {
+	t.Parallel()
+	p := startPlane(t, store.NewMemory(), controllink.NewPrivateKey())
+	box := p.host("MACHINE-5")
+	params, _ := json.Marshal(wire.MachineHello{Version: "0.6.0", Platform: "linux aarch64", MachineID: "MACHINE-5"})
+	for _, c := range []struct{ from, want string }{
+		{"203.0.113.7", "203.0.113.7"},
+		{"::ffff:203.0.113.7", "203.0.113.7"},
+		{"10.128.0.5", ""},
+		{"127.0.0.1", ""},
+		{"", ""},
+	} {
+		p.s.router.mu.Lock()
+		p.s.router.hosts[box.member.Host].conn.(*Conn).Remote = c.from
+		p.s.router.mu.Unlock()
+		result, err := p.s.methods.HostSaid(box.member.Host, "machine/hello", params)
+		answer, ok := result.(wire.MachineHelloAnswer)
+		if err != nil || !ok || deref(answer.Address) != c.want {
+			t.Errorf("from %q: %#v, %v; want address %q", c.from, result, err, c.want)
+		}
+	}
+}
+
 // machines/list says the levels a host said in its last machine/hello (#6579), so a client
 // older than the host shows the host's; none once it says none, as a host older than that.
 func TestHostsSayTheLevelsTheirHostSaid(t *testing.T) {

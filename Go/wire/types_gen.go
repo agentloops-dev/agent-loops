@@ -9702,6 +9702,9 @@ type MachineHello struct {
 type MachineHelloAnswer struct {
 	// The control plane's capabilities (#1748), as control/status says them to a client.
 	Capabilities []string `json:"capabilities,omitzero"`
+
+	// The public IP address this machine's uplink comes from, as the control plane sees it (#7493): where a control plane that the machine's install puts behind NAT is reached, when the machine finds only a private address of its own. Absent when the uplink comes from a private or loopback address, and from an older control plane.
+	Address *string `json:"address,omitzero"`
 }
 
 // One workspace, as its provider last listed it. `state` is running, starting, stopping, stopped or unknown; or failed, for a make that failed, with the provider's `reason` (#3972). `joining` while New Machine waits for it to join the control plane, and `notJoined` once the control plane gave up waiting (#4610). `setup` while it is being made (#6073).
