@@ -66,7 +66,7 @@ func firstCardOnANewAgent(t *testing.T, runtimeID string) {
 		t.Fatal("not signed in on the server")
 	}
 	waitFor(t, "the first turn", func() bool { return len(d.Store.Agent(id).QueuedPrompts) == 0 })
-	for _, e := range noticesOf(d, id) {
+	for _, e := range transcriptOf(d, id) {
 		if n := e.Kind.Notice; n != nil && n.Value.Detail != nil && strings.Contains(*n.Value.Detail, "needs a key") {
 			t.Fatalf("refused: %+v", n.Value)
 		}
@@ -89,7 +89,7 @@ func signInFromTheCard(t *testing.T, d *Daemon, answer wire.RequestsAnswer) {
 // waitingNotes counts the agent's notes that say its turn waits for a sign-in.
 func waitingNotes(d *Daemon, id wire.UUID) int {
 	n := 0
-	for _, e := range noticesOf(d, id) {
+	for _, e := range transcriptOf(d, id) {
 		if v := e.Kind.Notice; v != nil && strings.Contains(v.Value.Title, "is not signed in on") {
 			n++
 		}
@@ -97,7 +97,7 @@ func waitingNotes(d *Daemon, id wire.UUID) int {
 	return n
 }
 
-func noticesOf(d *Daemon, id wire.UUID) []wire.TranscriptEntry {
+func transcriptOf(d *Daemon, id wire.UUID) []wire.TranscriptEntry {
 	entries, _, _ := d.Store.Transcript(id, 0)
 	return entries
 }

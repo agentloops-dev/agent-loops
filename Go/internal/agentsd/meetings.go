@@ -2,7 +2,6 @@ package agentsd
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
@@ -18,7 +17,7 @@ import (
 // meeting-mode. The records and their rules are store.MeetingStore's; these handlers check
 // the flag, make the session of meetings/start, and say each change (meetings/changed). The
 // gaps that send the words to the meeting's agent are in meetinggaps.go (#7582); the agent's
-// meeting_notes tool is a later child of the epic.
+// meeting_notes tool is in meetingnotes.go (#7583).
 
 // meetingFlag is the person's flag that turns meeting mode on, in the display settings.
 const meetingFlag = "flag:meeting-mode"
@@ -28,6 +27,9 @@ type meetingBook struct {
 	meetingStore store.MeetingStore
 	// meetingGapMu orders the appends, the state changes and the gaps of the meetings.
 	meetingGapMu sync.Mutex
+	// meetingStartMu is held while a meeting is started, so its session's brief and tools/list
+	// wait for the meeting to be kept (#7583).
+	meetingStartMu sync.RWMutex
 	// meetingQueue is each meeting's prompt of words still in its agent's queue (#7582).
 	meetingQueue map[wire.UUID]meetingQueued
 }
@@ -44,11 +46,7 @@ func (d *Daemon) meetings() store.MeetingStore {
 }
 
 // meetingModeOn says whether the person turned the flag meeting-mode on.
-func (d *Daemon) meetingModeOn() bool {
-	var on bool
-	v, ok := d.preferences()[meetingFlag]
-	return ok && json.Unmarshal(v, &on) == nil && on
-}
+func (d *Daemon) meetingModeOn() bool { return d.flagOn(meetingFlag) }
 
 var errMeetingModeOff = &Error{Code: CodeNotSupported, Message: "meeting mode is off: turn on the flag meeting-mode"}
 
@@ -197,6 +195,8 @@ func (d *Daemon) startMeeting(r wire.MeetingStartRequest, actor *wire.AuditActor
 		runtimeID = *r.RuntimeID
 	}
 	id := store.NewUUID()
+	d.meetingStartMu.Lock()
+	defer d.meetingStartMu.Unlock()
 	agentID, err := d.startAs(wire.StartRequest{RuntimeID: runtimeID, Cwd: r.Folder, Prompt: meetingStarter(id, title)}, actor)
 	if err != nil {
 		return wire.MeetingStarted{}, err
