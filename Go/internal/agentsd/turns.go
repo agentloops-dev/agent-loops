@@ -998,6 +998,14 @@ func (l *live) endFailedPrompt(ctx context.Context, a *wire.Agent, s *acp.Sessio
 			return false
 		}
 	}
+	// This server's own sign-in ended (#7472): said as that, with a Sign in again card.
+	l.mu.Lock()
+	failure := l.failure
+	l.mu.Unlock()
+	if code, _ := refusal(err); (code != nil && *code == authRequired || signInEnded(failure)) && d.ownSignInEnded(a) {
+		d.end(l, wire.AgentStateStopped, wire.EndedReasonSignInRefused)
+		return false
+	}
 	// An added account with no sign-in in its folder (#840): said as that, with where to fix it.
 	if code, _ := refusal(err); code != nil && *code == authRequired && a.AccountID != nil {
 		d.record(l.id, notice("error", d.credentialName(agentKey(a))+" is not signed in",
@@ -1062,6 +1070,11 @@ func (l *live) endAnsweredTurn(a *wire.Agent, r sdk.PromptResponse) bool {
 	// A warning is a retry the runtime is making: said, and the turn's own ending stands.
 	// An error is said too, and the turn failed whatever its stop reason.
 	failed := failure != nil && failure.isError()
+	// This server's own sign-in ended (#7472): said as that, not as a general error.
+	if signInEnded(failure) && d.ownSignInEnded(a) {
+		d.end(l, wire.AgentStateStopped, wire.EndedReasonSignInRefused)
+		return false
+	}
 	if failure != nil {
 		d.noteFailure(l.id, a.RuntimeID, failure)
 	}
@@ -2156,6 +2169,10 @@ func (l *live) openStartFailed(a *wire.Agent, rt *runtimeDef, account *wire.Acco
 	// A runtime with no sign-in refuses session/new with -32000 (#1430): it is not
 	// signed in, not crashed, and the Pool page says so.
 	if code, _ := refusal(err); code != nil && *code == authRequired {
+		// This server's own sign-in ended (#7472): a Sign in again card.
+		if account == nil && d.usesOwnSignIn(a) {
+			return stopped(wire.EndedReasonSignInRefused, func() { d.ownSignInEnded(a) })
+		}
 		// An added account's sign-in is its own (#840): the runtime's is not in question.
 		if account == nil {
 			d.markNeedsSignIn(a.RuntimeID)

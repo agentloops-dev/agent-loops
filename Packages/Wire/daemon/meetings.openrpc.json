@@ -1,0 +1,215 @@
+{
+  "openrpc": "1.3.2",
+  "info": {
+    "title": "agentsd: meetings",
+    "version": "0",
+    "description": "The host methods of the meetings group (#7581, epic #7327), behind the flag meeting-mode; see daemon.openrpc.json for the rest of the document."
+  },
+  "methods": [
+    {
+      "name": "meetings/append",
+      "description": "The listening client's final segments (#7581); a gap's new words go to the session as a prompt.",
+      "x-capability": "meetings/1",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "schema/meetings.schema.json#/definitions/MeetingAppendRequest"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema/meetings.schema.json#/definitions/MeetingAppended"
+        }
+      }
+    },
+    {
+      "name": "meetings/changed",
+      "description": "What changed in a meeting.",
+      "x-capability": "meetings/1",
+      "x-notification": true,
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "schema/meetings.schema.json#/definitions/MeetingChangedNotification"
+          }
+        }
+      ]
+    },
+    {
+      "name": "meetings/list",
+      "description": "This machine's meetings, newest first, a page of at most 50.",
+      "x-capability": "meetings/1",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "schema/meetings.schema.json#/definitions/MeetingListRequest"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema/meetings.schema.json#/definitions/MeetingPage"
+        }
+      }
+    },
+    {
+      "name": "meetings/read",
+      "description": "A meeting, its notes and its action items.",
+      "x-capability": "meetings/1",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "schema/meetings.schema.json#/definitions/MeetingRequest"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema/meetings.schema.json#/definitions/MeetingRead"
+        }
+      }
+    },
+    {
+      "name": "meetings/segments",
+      "description": "A meeting's segments after a seq, a page of at most 200.",
+      "x-capability": "meetings/1",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "schema/meetings.schema.json#/definitions/MeetingSegmentsRequest"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema/meetings.schema.json#/definitions/MeetingSegmentsPage"
+        }
+      }
+    },
+    {
+      "name": "meetings/setActionItem",
+      "description": "A person's new or changed action item.",
+      "x-capability": "meetings/1",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "schema/meetings.schema.json#/definitions/MeetingSetActionItemRequest"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema/meetings.schema.json#/definitions/MeetingActionItem"
+        }
+      }
+    },
+    {
+      "name": "meetings/setNotes",
+      "description": "A person's notes; refused when they moved past baseRevision.",
+      "x-capability": "meetings/1",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "schema/meetings.schema.json#/definitions/MeetingSetNotesRequest"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema/meetings.schema.json#/definitions/MeetingNotes"
+        }
+      }
+    },
+    {
+      "name": "meetings/setSpeaker",
+      "description": "A name for a voice of the meeting.",
+      "x-capability": "meetings/1",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "schema/meetings.schema.json#/definitions/MeetingSetSpeakerRequest"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema/meetings.schema.json#/definitions/Meeting"
+        }
+      }
+    },
+    {
+      "name": "meetings/setState",
+      "description": "Listen, pause or end a meeting.",
+      "x-capability": "meetings/1",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "schema/meetings.schema.json#/definitions/MeetingSetStateRequest"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema/meetings.schema.json#/definitions/Meeting"
+        }
+      }
+    },
+    {
+      "name": "meetings/start",
+      "description": "A new meeting in a folder, with a new session for its agent (#7581). Refused (notSupported) while the flag meeting-mode is off.",
+      "x-capability": "meetings/1",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "schema/meetings.schema.json#/definitions/MeetingStartRequest"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema/meetings.schema.json#/definitions/MeetingStarted"
+        }
+      }
+    }
+  ]
+}

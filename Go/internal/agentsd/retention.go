@@ -140,6 +140,7 @@ func (d *Daemon) sweepHourly() {
 	d.sweepAssessReports(nowFunc())
 	d.sweepOldSummaries(nowFunc())
 	d.sweepAssessments(nowFunc())
+	d.sweepMeetings(nowFunc())
 	d.sweepRequests(nowFunc())
 	d.sweepGoneRoots()
 	d.measureStores()
