@@ -384,7 +384,7 @@ func (d *Daemon) ensureCodexHome() (string, error) {
 	if err := os.MkdirAll(home, 0o700); err != nil {
 		return "", err
 	}
-	if err := os.Chmod(home, 0o700); err != nil {
+	if err := os.Chmod(home, 0o700); err != nil { //nolint:gosec // G302: a folder needs its x bit; 0700 is owner only
 		return "", err
 	}
 	return home, nil

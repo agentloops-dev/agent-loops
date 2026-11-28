@@ -123,6 +123,17 @@ func headlessRuntime(id string) (*runtimeDef, error) {
 	return rt, nil
 }
 
+// endHeadlessSignIn ends a sign-in when its time is up or it is stopped. Only the code's own
+// time gives a new card: a Codex that fails at once must not loop.
+func (d *Daemon) endHeadlessSignIn(life context.Context, s *headlessSignIn) {
+	<-life.Done()
+	s.end()
+	d.dropHeadless(s)
+	if life.Err() == context.DeadlineExceeded && s.runtimeID == "codex" {
+		d.replaceExpiredSignInCard(s.id)
+	}
+}
+
 func (d *Daemon) startHeadlessSignIn(ctx context.Context, runtimeID string) (wire.RuntimeSignInStep, error) {
 	rt, err := headlessRuntime(runtimeID)
 	if err != nil {
@@ -177,15 +188,7 @@ func (d *Daemon) startHeadlessSignIn(ctx context.Context, runtimeID string) (wir
 		s.waitErr = err
 		close(s.done)
 	})
-	d.goJob("runtime sign-in time", func() {
-		<-life.Done()
-		s.end()
-		d.dropHeadless(s)
-		// Only the code's own time gives a new card: a Codex that fails at once must not loop.
-		if life.Err() == context.DeadlineExceeded && runtimeID == "codex" {
-			d.replaceExpiredSignInCard(s.id)
-		}
-	})
+	d.goJob("runtime sign-in time", func() { d.endHeadlessSignIn(life, s) })
 	d.headlessMu.Lock()
 	if d.headless == nil {
 		d.headless = map[string]*headlessSignIn{}
