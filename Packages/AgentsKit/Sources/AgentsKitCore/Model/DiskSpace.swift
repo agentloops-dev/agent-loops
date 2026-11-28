@@ -62,6 +62,14 @@ public struct DiskThresholds: Codable, Hashable, Sendable {
 
     /// Bytes free below which a volume of `total` bytes is critical.
     public func criticalLine(total: Int64) -> Int64 { total / 100 * Int64(effectiveCriticalPercent) }
+
+    /// How far above the low line, in percentage points, free space must climb before a low
+    /// volume is ok again (Alex, 2026-11-23, #6953): 10% low is ok at 20%, 50% at 60%.
+    public static let okPoints = 10
+
+    /// Bytes free at which a low volume of `total` bytes is ok again: the low line plus
+    /// `okPoints`, at most the whole volume.
+    public func okLine(total: Int64) -> Int64 { total / 100 * Int64(min(effectiveLowPercent + Self.okPoints, 100)) }
 }
 
 /// How a volume stands. Worse is greater.
@@ -149,39 +157,34 @@ public struct DiskState: Codable, Hashable, Sendable {
 public enum DiskCrossing: Hashable, Sendable {
     /// Fell to `level`, below `threshold` bytes.
     case low(DiskLevel, threshold: Int64)
-    /// Climbed back above `threshold` plus the margin.
+    /// Climbed back to `threshold`, the ok line.
     case ok(threshold: Int64)
 }
 
 public enum DiskSpace {
     public static let gigabyte: Int64 = 1_000_000_000
 
-    /// How far above a line free space must climb before the level it marks is left,
-    /// so a volume hovering at the line doesn't flap: a tenth of the line, at least 1 GB.
-    public static func margin(above line: Int64) -> Int64 {
-        max(line / 10, gigabyte)
-    }
-
     /// Where a volume stands after `reading`, having stood at `before` (nil: never looked
-    /// at), and what to say about it. Worse is said at once; better only once free space
-    /// has climbed past the line plus the margin, and only `ok` is said: from critical to
-    /// low is not news.
+    /// at), and what to say about it. Worse is said at once; better only past a higher line
+    /// (#6953), so a volume hovering at a line doesn't flap: from critical to low at the low
+    /// line, from low to ok at the ok line. Only `ok` is said: from critical to low is not news.
     public static func next(from before: DiskLevel?, _ reading: DiskReading,
                             _ thresholds: DiskThresholds) -> (level: DiskLevel, crossing: DiskCrossing?) {
         let free = reading.freeBytes
         let low = thresholds.lowLine(total: reading.totalBytes)
         let critical = thresholds.criticalLine(total: reading.totalBytes)
+        let okLine = thresholds.okLine(total: reading.totalBytes)
         let raw: DiskLevel = free < critical ? .critical : free < low ? .low : .ok
         let was = before ?? .ok
         if raw > was {
             return (raw, .low(raw, threshold: raw == .critical ? critical : low))
         }
-        // Better: only past the margin of each line left behind.
+        // Better: only past the line above the one left behind.
         var level = was
-        if level == .critical, free >= critical + margin(above: critical) { level = .low }
-        if level == .low, free >= low + margin(above: low) { level = .ok }
+        if level == .critical, free >= low { level = .low }
+        if level == .low, free >= okLine { level = .ok }
         level = max(level, raw)
-        if level == .ok, was != .ok { return (.ok, .ok(threshold: low)) }
+        if level == .ok, was != .ok { return (.ok, .ok(threshold: okLine)) }
         return (level, nil)
     }
 

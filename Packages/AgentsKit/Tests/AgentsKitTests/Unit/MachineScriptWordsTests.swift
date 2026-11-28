@@ -131,6 +131,14 @@ struct MachineScriptWordsTests {
         #expect(MachineScriptWords.declaredSecrets(MachineScriptWords.exampleSetup) == ["GH_TOKEN"])
         #expect(MachineScriptWords.declaredSecrets(MachineScriptWords.exampleRoot).isEmpty)
     }
+
+    /// #7461: New root.sh and New setup.sh write the host's example, from the pinned dotagents,
+    /// when it has one, and the app's own copy when it has none.
+    @Test func theHostsExampleComesFirst() {
+        #expect(MachineScriptWords.example("root", readyMade: "#!/bin/bash\necho vended\n") == "#!/bin/bash\necho vended\n")
+        #expect(MachineScriptWords.example("root", readyMade: nil) == MachineScriptWords.exampleRoot)
+        #expect(MachineScriptWords.example("setup", readyMade: "") == MachineScriptWords.exampleSetup)
+    }
 }
 
 /// Send Set-up's tries while a machine is offline (#7547).

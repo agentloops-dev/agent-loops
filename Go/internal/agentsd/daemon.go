@@ -160,6 +160,7 @@ type Daemon struct {
 	idleBook
 	turnBook
 	summaryBook
+	meetingBook
 	findBook
 	optionBook
 	timeBook

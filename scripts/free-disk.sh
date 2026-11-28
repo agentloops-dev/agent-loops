@@ -30,8 +30,9 @@
 # None of them needs the app or its session list (#5722): each decides by what is on disk
 # and what runs, so a person or any agent can run it.
 #
-# status: the target is 20% of the disk (AGENTS_FREE_TARGET_PCT moves it; #4699), twice
-# the 10% line machine.disk_low fires at, so a run ends well past the line and not on it.
+# status: the target is 20% of the disk (AGENTS_FREE_TARGET_PCT moves it; #4699), the ok
+# line machine.disk_ok fires at: the 10% line machine.disk_low fires at, plus 10 points
+# (#6953), so a run ends well past the line and not on it.
 # It exits 0 when free space is at the target or over it, and 1 when it is under.
 #
 # worktrees: the worktrees under <main checkout>/.agents/worktrees that nobody has changed

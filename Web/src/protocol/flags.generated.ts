@@ -15,6 +15,7 @@ export const featureFlags: readonly FeatureFlagInfo[] = [
   { name: "dashboard", title: "Dashboard", about: "The Dashboard on the Mac: each work item with its sessions. The window opens to it.", issue: 6572 },
   { name: "docs", title: "Docs", about: "Docs in the sidebar, and the Docs section on a work item's page. On the Mac and the web page.", issue: 6572 },
   { name: "machine-scripts", title: "Machine scripts", about: "On the Mac: your root.sh and setup.sh set up each new machine. A failed Root set-up shows its last lines and what to do.", issue: 7151 },
+  { name: "meeting-mode", title: "Meeting mode", about: "On the Mac: the app listens to a meeting, and an agent keeps the notes and files the action items.", issue: 7327 },
   { name: "session-summary", title: "Session summary", about: "On the Mac: a session opens on its summary (what is going on, the goal and plan, the last turn and what waits for you), with the full chat one click away.", issue: 7318 },
   { name: "store-sizes", title: "Store sizes", about: "Reports ▸ Store sizes on the web page: how large each data store is, and how much of its limits it uses.", issue: 6907 },
   { name: "suggested", title: "Suggested", about: "New Session ▸ Suggested: the epics with no lead.", issue: 6572 },

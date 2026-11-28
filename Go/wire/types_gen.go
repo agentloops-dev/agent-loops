@@ -10447,6 +10447,311 @@ const MaturityLevelPilot MaturityLevel = "pilot"
 const MaturityLevelAlpha MaturityLevel = "alpha"
 const MaturityLevelBeta MaturityLevel = "beta"
 
+// A meeting (#7581, epic #7327): one per session, kept in the session's folder on the machine that runs it. Behind the flag meeting-mode.
+type Meeting struct {
+	ID UUID `json:"id"`
+
+	// The meeting's session.
+	AgentID UUID `json:"agentID"`
+
+	// The folder the session works in.
+	Folder URL `json:"folder"`
+
+	// At most 200 characters.
+	Title string `json:"title"`
+
+	State MeetingState `json:"state"`
+
+	StartedAt Date `json:"startedAt"`
+
+	// When it ended; absent while it listens or is paused.
+	EndedAt *Date `json:"endedAt,omitzero"`
+
+	// What it listens to: mic, and call:<bundle id> for a call app. At most 4.
+	Sources []string `json:"sources"`
+
+	// Each voice heard, by its stream and its slot there (#7580: one diarizer per stream). At most 64.
+	Speakers []MeetingSpeaker `json:"speakers"`
+
+	// The seq of the last segment kept; 0 before the first.
+	LastSeq int64 `json:"lastSeq"`
+
+	// The last seq sent to the session's agent as a prompt; 0 before the first.
+	SentThroughSeq int64 `json:"sentThroughSeq"`
+
+	// Its segments aged out (90 days): the notes and the action items stay.
+	SegmentsRemoved *bool `json:"segmentsRemoved,omitzero"`
+
+	UpdatedAt Date `json:"updatedAt"`
+}
+
+// An action item of a meeting (#7581). At most 100 a meeting, 2 KB each. Its quote is word for word in its segments, or the daemon refuses it.
+type MeetingActionItem struct {
+	ID UUID `json:"id"`
+
+	MeetingID UUID `json:"meetingID"`
+
+	// What is to be done; at most 500 characters.
+	Text string `json:"text"`
+
+	// Who does it, as spoken; at most 100 characters.
+	Owner *string `json:"owner,omitzero"`
+
+	// When, as spoken ("by Friday"); at most 100 characters.
+	Due *string `json:"due,omitzero"`
+
+	// The due date as YYYY-MM-DD, when known.
+	DueOn *string `json:"dueOn,omitzero"`
+
+	// The words of the meeting it comes from, word for word in the segments of segmentSeqs; at most 500 characters.
+	Quote string `json:"quote"`
+
+	// The segments the quote is in, at most 20.
+	SegmentSeqs []int64 `json:"segmentSeqs"`
+
+	State MeetingActionItemState `json:"state"`
+
+	Issue *MeetingActionItemIssue `json:"issue,omitzero"`
+
+	// The fields a person changed: the agent may not change them.
+	EditedByPerson []MeetingActionItemField `json:"editedByPerson,omitzero"`
+
+	UpdatedAt Date `json:"updatedAt"`
+}
+
+// A field of an action item that a person can change.
+type MeetingActionItemField string
+
+const MeetingActionItemFieldText MeetingActionItemField = "text"
+const MeetingActionItemFieldOwner MeetingActionItemField = "owner"
+const MeetingActionItemFieldDue MeetingActionItemField = "due"
+const MeetingActionItemFieldDueOn MeetingActionItemField = "dueOn"
+const MeetingActionItemFieldState MeetingActionItemField = "state"
+const MeetingActionItemFieldIssue MeetingActionItemField = "issue"
+
+// The issue an action item was filed as.
+type MeetingActionItemIssue struct {
+	// The forge, as github.
+	Forge string `json:"forge"`
+
+	// owner/name
+	Repo string `json:"repo"`
+
+	Number int64 `json:"number"`
+
+	URL URL `json:"url"`
+}
+
+type MeetingActionItemState string
+
+const MeetingActionItemStateProposed MeetingActionItemState = "proposed"
+const MeetingActionItemStateApproved MeetingActionItemState = "approved"
+const MeetingActionItemStateDismissed MeetingActionItemState = "dismissed"
+const MeetingActionItemStateFiled MeetingActionItemState = "filed"
+
+// meetings/append: the listening client's final segments. A segment with a seq after the last is new and must follow it with no gap; one with an earlier seq is a changed speaker of that segment (its text is not changed).
+type MeetingAppendRequest struct {
+	MeetingID UUID `json:"meetingID"`
+
+	// At most 200.
+	Segments []MeetingSegment `json:"segments"`
+}
+
+// What meetings/append kept.
+type MeetingAppended struct {
+	// The last seq kept.
+	LastSeq int64 `json:"lastSeq"`
+
+	// The last seq sent to the agent.
+	SentThroughSeq int64 `json:"sentThroughSeq"`
+}
+
+// Who wrote a change.
+type MeetingAuthor string
+
+const MeetingAuthorAgent MeetingAuthor = "agent"
+const MeetingAuthorPerson MeetingAuthor = "person"
+
+// meetings/changed: what changed in a meeting, sent to every client.
+type MeetingChangedNotification struct {
+	MeetingID UUID `json:"meetingID"`
+
+	Meeting *Meeting `json:"meeting,omitzero"`
+
+	Notes *MeetingNotes `json:"notes,omitzero"`
+
+	// The items that changed.
+	ActionItems []MeetingActionItem `json:"actionItems,omitzero"`
+
+	// The last seq kept: a client reads the segments after its own.
+	LastSeq int64 `json:"lastSeq"`
+}
+
+// meetings/list: a page of this machine's meetings, newest first.
+type MeetingListRequest struct {
+	// The cursor of the page before.
+	Cursor *string `json:"cursor,omitzero"`
+
+	// At most 50; 50 when absent.
+	Limit *int64 `json:"limit,omitzero"`
+}
+
+// A meeting's notes (#7581): Markdown, at most 64 KB. The last 20 revisions are kept.
+type MeetingNotes struct {
+	MeetingID UUID `json:"meetingID"`
+
+	Markdown string `json:"markdown"`
+
+	// 1 for the first write; each write adds 1.
+	Revision int64 `json:"revision"`
+
+	UpdatedAt Date `json:"updatedAt"`
+
+	UpdatedBy MeetingAuthor `json:"updatedBy"`
+}
+
+// A page of meetings, newest first.
+type MeetingPage struct {
+	Meetings []Meeting `json:"meetings"`
+
+	// Pass it as the next request's cursor; absent on the last page.
+	Cursor *string `json:"cursor,omitzero"`
+}
+
+// meetings/read: a meeting with its notes and its action items.
+type MeetingRead struct {
+	Meeting Meeting `json:"meeting"`
+
+	// Absent before the first write.
+	Notes *MeetingNotes `json:"notes,omitzero"`
+
+	ActionItems []MeetingActionItem `json:"actionItems"`
+}
+
+// A meeting, by its id.
+type MeetingRequest struct {
+	MeetingID UUID `json:"meetingID"`
+}
+
+// A final piece of a meeting's words, from one stream (#7581). At most 6,000 a meeting (a 4-hour cap), 1,500 characters of text each. Audio is never kept.
+type MeetingSegment struct {
+	// 1 for the first segment of the meeting; each next one adds 1.
+	Seq int64 `json:"seq"`
+
+	// The stream it was heard on: mic, or call:<bundle id>.
+	Source string `json:"source"`
+
+	// Seconds from the meeting's start.
+	AudioStart float64 `json:"audioStart"`
+
+	// Seconds from the meeting's start.
+	AudioEnd float64 `json:"audioEnd"`
+
+	Text string `json:"text"`
+
+	// The diarizer's slot in this segment's own stream: the speaker is (source, speakerIndex), so a slot of mic and one of call never collide (#7580).
+	SpeakerIndex *int64 `json:"speakerIndex,omitzero"`
+
+	// The diarizer will not change the speaker any more.
+	SpeakerSettled bool `json:"speakerSettled"`
+}
+
+// A page of segments, oldest first.
+type MeetingSegmentsPage struct {
+	Segments []MeetingSegment `json:"segments"`
+
+	// There are segments after the last of this page.
+	More bool `json:"more"`
+}
+
+// meetings/segments: the segments after a seq.
+type MeetingSegmentsRequest struct {
+	MeetingID UUID `json:"meetingID"`
+
+	// 0 for the first.
+	AfterSeq int64 `json:"afterSeq"`
+
+	// At most 200; 200 when absent.
+	Limit *int64 `json:"limit,omitzero"`
+}
+
+// meetings/setActionItem: a person's new or changed action item. Each field it changes is then the person's (editedByPerson).
+type MeetingSetActionItemRequest struct {
+	MeetingID UUID `json:"meetingID"`
+
+	Item MeetingActionItem `json:"item"`
+
+	// The updatedAt of the item the change was made to; absent for a new item. Refused (changedElsewhere) when the item changed since.
+	BaseUpdatedAt *Date `json:"baseUpdatedAt,omitzero"`
+}
+
+// meetings/setNotes: a person's notes. Refused (changedElsewhere) when the notes moved past baseRevision.
+type MeetingSetNotesRequest struct {
+	MeetingID UUID `json:"meetingID"`
+
+	Markdown string `json:"markdown"`
+
+	// The revision the change was made to; 0 before the first write.
+	BaseRevision int64 `json:"baseRevision"`
+}
+
+// meetings/setSpeaker: a name for a voice, for the whole meeting.
+type MeetingSetSpeakerRequest struct {
+	MeetingID UUID `json:"meetingID"`
+
+	// The voice's stream.
+	Source string `json:"source"`
+
+	// Its slot in that stream.
+	Index int64 `json:"index"`
+
+	// At most 100 characters; empty takes the name off.
+	Name string `json:"name"`
+}
+
+// meetings/setState: listen, pause or end. An ended meeting does not start again.
+type MeetingSetStateRequest struct {
+	MeetingID UUID `json:"meetingID"`
+
+	State MeetingState `json:"state"`
+}
+
+// A voice of a meeting: its stream and its slot there, and its name once the agent or a person gives one. Shown as Speaker <n> with no name.
+type MeetingSpeaker struct {
+	Source string `json:"source"`
+
+	Index int64 `json:"index"`
+
+	Name *string `json:"name,omitzero"`
+}
+
+// meetings/start: a new meeting, with a new session in the folder for its agent.
+type MeetingStartRequest struct {
+	Folder URL `json:"folder"`
+
+	// At most 200 characters; "Meeting" and the time when absent.
+	Title *string `json:"title,omitzero"`
+
+	// mic, and call:<bundle id> for a call app. 1 to 4.
+	Sources []string `json:"sources"`
+
+	// The session's runtime; auto when absent.
+	RuntimeID *string `json:"runtimeID,omitzero"`
+}
+
+// The meeting meetings/start made, and its session.
+type MeetingStarted struct {
+	Meeting Meeting `json:"meeting"`
+
+	AgentID UUID `json:"agentID"`
+}
+
+type MeetingState string
+
+const MeetingStateListening MeetingState = "listening"
+const MeetingStatePaused MeetingState = "paused"
+const MeetingStateEnded MeetingState = "ended"
+
 // The kernel's memory pressure (#4578): macOS kern.memorystatus_vm_pressure_level, or Linux PSI memory (warn when some avg10 is 10% or more, critical when full avg10 is 10% or more).
 type MemoryPressure string
 
@@ -15709,7 +16014,7 @@ type SetupRootLog struct {
 	Cut bool `json:"cut"`
 }
 
-// One set-up script on this machine (#7167): root (root.sh) or setup (setup.sh) in ~/.agents/machine-setup/. present: the file is there. text, hash and size are the file as it is now (hash: SHA-256 in lower-case hexadecimal); problem says why they are absent from a file that is there (over its limit, or unreadable). approvedText and approvedHash are the text a client approved last, and approvals the records in force for it, one a scope. changed: the file is not the approved text, so it is not used until a client approves it. nextSeq is the number to sign the next approval with.
+// One set-up script on this machine (#7167): root (root.sh) or setup (setup.sh) in ~/.agents/machine-setup/. present: the file is there. text, hash and size are the file as it is now (hash: SHA-256 in lower-case hexadecimal); problem says why they are absent from a file that is there (over its limit, or unreadable). approvedText and approvedHash are the text a client approved last, and approvals the records in force for it, one a scope. changed: the file is not the approved text, so it is not used until a client approves it. nextSeq is the number to sign the next approval with. example is the ready-made example of this script, from the pinned agentloops-dev/dotagents (scripts/<name>.sh, #7461): what New root.sh and New setup.sh write; left out when this machine has no copy of the pinned tag yet.
 type SetupScript struct {
 	Name string `json:"name"`
 
@@ -15722,6 +16027,8 @@ type SetupScript struct {
 	Size *int64 `json:"size,omitzero"`
 
 	Problem *string `json:"problem,omitzero"`
+
+	Example *string `json:"example,omitzero"`
 
 	ApprovedText *string `json:"approvedText,omitzero"`
 
@@ -18305,6 +18612,8 @@ type WorkTimeline struct {
 
 	Partial *bool `json:"partial,omitzero"`
 
+	Schedule *WorkTimelineSchedule `json:"schedule,omitzero"`
+
 	// What was read (#7029): one entry per repo, as forge:name (github:example/shop). Two machines with the same scopes give the same epics, so a client asks one of them. Absent when a repo could not be read, and from an earlier daemon.
 	Scopes []string `json:"scopes,omitzero"`
 }
@@ -18389,6 +18698,51 @@ type WorkTimelineRequest struct {
 	First *bool `json:"first,omitzero"`
 
 	OnHold *bool `json:"onHold,omitzero"`
+
+	// How many epics are worked at once in the schedule (#7525), 1 to 20: 3 when absent.
+	Places *int64 `json:"places,omitzero"`
+}
+
+// work/timeline's schedule (#7525, epic #7067): when each open epic starts and finishes if places epics are worked at once. A started epic holds a place from its start to its predicted finish, whatever blocks it. The others take the free places in the order of forge/next (level: epic), each no earlier than now and the predicted finish of its last open epic blocker; places that free at the same time go to the next in that order. readAt is the time of the read. incomplete says a list was cut short (more than 100 open epics, a repo not read): no row is dated then. Rows: the started epics, then those planned, by planned start, then those with no date; ties in the order of forge/next. Absent from a partial answer and from an earlier daemon.
+type WorkTimelineSchedule struct {
+	Places int64 `json:"places"`
+
+	ReadAt Date `json:"readAt"`
+
+	Incomplete *bool `json:"incomplete,omitzero"`
+
+	Rows []WorkTimelineScheduleRow `json:"rows"`
+}
+
+// Why an open epic has no date in the schedule (#7525): onHold, it is on hold (shown only with onHold); noIssues, it has no sub-issues; blockerOnHold, an open blocker is on hold; blockerNotEpic, an open blocker is not an epic; blockerNotRead, an open blocker epic is not in the read (another project, or more than the read gives); cycle, its blockers lead back to it; blockerUndated, an open blocker epic has no date; noForecast, there is too little history to forecast it; noPlace, no place frees (every place is held by a started epic with no forecast); incomplete, a list was cut short.
+type WorkTimelineScheduleReason string
+
+const WorkTimelineScheduleReasonOnHold WorkTimelineScheduleReason = "onHold"
+const WorkTimelineScheduleReasonNoIssues WorkTimelineScheduleReason = "noIssues"
+const WorkTimelineScheduleReasonBlockerOnHold WorkTimelineScheduleReason = "blockerOnHold"
+const WorkTimelineScheduleReasonBlockerNotEpic WorkTimelineScheduleReason = "blockerNotEpic"
+const WorkTimelineScheduleReasonBlockerNotRead WorkTimelineScheduleReason = "blockerNotRead"
+const WorkTimelineScheduleReasonCycle WorkTimelineScheduleReason = "cycle"
+const WorkTimelineScheduleReasonBlockerUndated WorkTimelineScheduleReason = "blockerUndated"
+const WorkTimelineScheduleReasonNoForecast WorkTimelineScheduleReason = "noForecast"
+const WorkTimelineScheduleReasonNoPlace WorkTimelineScheduleReason = "noPlace"
+const WorkTimelineScheduleReasonIncomplete WorkTimelineScheduleReason = "incomplete"
+
+// An open epic in the schedule (#7525). startedAt is its observed start, the earliest of its children's, and startSource where that came from: session (a session linked to the child in lineage), pullRequest (a pull request that closes the child opened) or closed (the child closed); both absent while it has not started. plannedStart is when a not-started epic takes a place. finish is its predicted finish: low to high the band, mid the P50; for a planned epic its forecast from its planned start. blockers are its open blockers, of every kind, for the arrows. reason says why it has no finish; absent when it has one.
+type WorkTimelineScheduleRow struct {
+	Epic LineageNode `json:"epic"`
+
+	StartedAt *Date `json:"startedAt,omitzero"`
+
+	StartSource *string `json:"startSource,omitzero"`
+
+	PlannedStart *Date `json:"plannedStart,omitzero"`
+
+	Finish *WorkTimelineForecast `json:"finish,omitzero"`
+
+	Blockers []LineageNode `json:"blockers,omitzero"`
+
+	Reason *WorkTimelineScheduleReason `json:"reason,omitzero"`
 }
 
 // A line of an epic in work/timeline (#4172): from its first child's start to its last child's close.

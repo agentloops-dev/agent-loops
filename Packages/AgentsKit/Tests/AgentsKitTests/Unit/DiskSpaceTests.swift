@@ -23,6 +23,10 @@ struct DiskSpaceTests {
         #expect(DiskThresholds().criticalLine(total: 1000 * gb) == 10 * gb)
         #expect(DiskThresholds().criticalLine(total: 200 * gb) == 2 * gb)
         #expect(DiskThresholds(lowPercent: 20).lowLine(total: 1000 * gb) == 200 * gb)
+        #expect(DiskThresholds().okLine(total: 1000 * gb) == 200 * gb, "ok again at 20%: the low line plus 10 points (#6953)")
+        #expect(DiskThresholds(lowPercent: 5).okLine(total: 1000 * gb) == 150 * gb)
+        #expect(DiskThresholds(lowPercent: 50).okLine(total: 1000 * gb) == 600 * gb)
+        #expect(DiskThresholds(lowPercent: 95).okLine(total: 1000 * gb) == 1000 * gb)
     }
 
     @Test func aFirstLookSaysOnlyWhatIsWrong() {
@@ -46,18 +50,18 @@ struct DiskSpaceTests {
         #expect(level == .critical)
     }
 
-    /// Climbing back must pass the line by a margin — a tenth of it, at least 1 GB — so a
+    /// Climbing back must reach the ok line, ten points above the low line (#6953), so a
     /// volume hovering at the line does not say low, ok, low, ok.
-    @Test func climbingBackNeedsTheMargin() {
+    @Test func climbingBackNeedsTheOKLine() {
         let thresholds = lines
-        // Low is below 200 GB; ok again only from 220 GB.
+        // Low is below 200 GB (20%); ok again only from 300 GB (30%).
         #expect(DiskSpace.next(from: .low, reading(201), thresholds) == (.low, nil))
-        #expect(DiskSpace.next(from: .low, reading(219.9), thresholds) == (.low, nil))
-        #expect(DiskSpace.next(from: .low, reading(220), thresholds) == (.ok, .ok(threshold: 200 * gb)))
-        // Hovering at the line: one low, then quiet.
+        #expect(DiskSpace.next(from: .low, reading(299.9), thresholds) == (.low, nil))
+        #expect(DiskSpace.next(from: .low, reading(300), thresholds) == (.ok, .ok(threshold: 300 * gb)))
+        // Swinging around the line: one low, then quiet.
         var level: DiskLevel? = .ok
         var said = 0
-        for free in [200.5, 199.5, 200.5, 199.5, 200.5, 199.8] as [Double] {
+        for free in [210, 190, 250, 199, 290, 150, 299] as [Double] {
             let next = DiskSpace.next(from: level, reading(free), thresholds)
             level = next.level
             if next.crossing != nil { said += 1 }
@@ -68,12 +72,13 @@ struct DiskSpaceTests {
 
     @Test func fromCriticalBackToLowIsNotNewsButCriticalAgainIs() {
         let thresholds = lines
-        // Critical is below 10 GB; left only from 11 GB.
-        #expect(DiskSpace.next(from: .critical, reading(10.5), thresholds) == (.critical, nil))
-        #expect(DiskSpace.next(from: .critical, reading(50), thresholds) == (.low, nil))
+        // Critical is below 10 GB; left for low only at the low line, 200 GB (#6953).
+        #expect(DiskSpace.next(from: .critical, reading(50), thresholds) == (.critical, nil))
+        #expect(DiskSpace.next(from: .critical, reading(199), thresholds) == (.critical, nil))
+        #expect(DiskSpace.next(from: .critical, reading(200), thresholds) == (.low, nil))
         #expect(DiskSpace.next(from: .low, reading(5), thresholds).crossing == .low(.critical, threshold: 10 * gb))
         // Straight from critical to plenty is ok.
-        #expect(DiskSpace.next(from: .critical, reading(400), thresholds) == (.ok, .ok(threshold: 200 * gb)))
+        #expect(DiskSpace.next(from: .critical, reading(400), thresholds) == (.ok, .ok(threshold: 300 * gb)))
     }
 
     @Test func theStrictestOfSeveralFoldersWins() {

@@ -357,6 +357,17 @@ func (t diskThresholds) criticalLine(total int64) int64 {
 	return int64(float64(total) / 100 * t.criticalPercent)
 }
 
+// diskOKPoints is how far above the low line, in percentage points of the volume, free space
+// must climb before the volume is ok again (Alex, 2026-11-23, #6953): 10% low is ok at 20%,
+// 50% at 60%. A wide gap, so a volume that hovers at the low line does not flap.
+const diskOKPoints = 10
+
+// okLine is the line a low volume must climb to before it is ok: the low line plus
+// diskOKPoints, at most the whole volume.
+func (t diskThresholds) okLine(total int64) int64 {
+	return int64(float64(total) / 100 * min(t.lowPercent+diskOKPoints, 100))
+}
+
 // folderThresholds is a folder's .agents/folder.json "diskSpace", where it says one.
 func folderThresholds(folder string) (diskThresholds, bool) {
 	if !ownFolders(folder, ".agents") {
@@ -385,10 +396,9 @@ func folderThresholds(folder string) (diskThresholds, bool) {
 	return t, true
 }
 
-func diskMargin(line int64) int64 { return max(line/10, gigabyte) }
-
-// nextDiskLevel is DiskSpace.next: worse at once, better only past the line and a margin.
-func nextDiskLevel(was wire.DiskLevel, free, low, critical int64) wire.DiskLevel {
+// nextDiskLevel is DiskSpace.next: worse at once, better only past a higher line (#6953):
+// from critical to low at the low line, and from low to ok at the ok line.
+func nextDiskLevel(was wire.DiskLevel, free, low, critical, ok int64) wire.DiskLevel {
 	rank := map[wire.DiskLevel]int{wire.DiskLevelOk: 0, wire.DiskLevelLow: 1, wire.DiskLevelCritical: 2}
 	raw := wire.DiskLevelOk
 	if free < critical {
@@ -403,10 +413,10 @@ func nextDiskLevel(was wire.DiskLevel, free, low, critical int64) wire.DiskLevel
 		return raw
 	}
 	level := was
-	if level == wire.DiskLevelCritical && free >= critical+diskMargin(critical) {
+	if level == wire.DiskLevelCritical && free >= low {
 		level = wire.DiskLevelLow
 	}
-	if level == wire.DiskLevelLow && free >= low+diskMargin(low) {
+	if level == wire.DiskLevelLow && free >= ok {
 		level = wire.DiskLevelOk
 	}
 	if rank[raw] > rank[level] {
@@ -441,8 +451,9 @@ func (d *Daemon) checkDisk() {
 	for _, key := range keys {
 		m := mounts[key]
 		low, critical := m.t.lowLine(m.reading.TotalBytes), m.t.criticalLine(m.reading.TotalBytes)
+		ok := m.t.okLine(m.reading.TotalBytes)
 		was := d.diskLevels[key]
-		level := nextDiskLevel(was, m.reading.FreeBytes, low, critical)
+		level := nextDiskLevel(was, m.reading.FreeBytes, low, critical, ok)
 		d.diskLevels[key] = level
 		threshold := low
 		if level == wire.DiskLevelCritical {
@@ -457,7 +468,7 @@ func (d *Daemon) checkDisk() {
 		case rank[level] > rank[was]:
 			crossedLow = append(crossedLow, alarm)
 		case level == wire.DiskLevelOk && rank[was] > 0:
-			crossedBack = append(crossedBack, crossedOK{m.reading, low})
+			crossedBack = append(crossedBack, crossedOK{m.reading, ok})
 		}
 	}
 	levels := map[string]string{}
