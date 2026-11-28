@@ -51,7 +51,7 @@ public enum DisplayPreference {
     public static let moved = [personasMarketplace, reviewDiffLayout]
 
     /// The ones kept as a plain value in a client's defaults, and the kind of each: each
-    /// feature flag in work too (`FeatureFlag.key`, #6254), and each Early Features toggle
+    /// feature flag in work too (`FeatureFlag.key`, #6254), and each toggle in Features
     /// (`EarlyFeature.key`, #6052).
     public enum Kind: Sendable { case bool, string, int }
     public static let mirrored: [String: Kind] = Dictionary(uniqueKeysWithValues: FeatureFlag.allCases.map { ($0.key, Kind.bool) })

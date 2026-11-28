@@ -1475,7 +1475,7 @@ final class AppModel {
     /// `control/status.maturity` (#6579): the levels of the control plane's capabilities that are
     /// not GA. Nil from one older than that, or before its status arrives.
     var controlPlaneMaturity: [String: String]?
-    /// What each part says of its levels, for Early Features (#6579): the control plane's and each
+    /// What each part says of its levels, for Features (#6579): the control plane's and each
     /// host's. None without a control plane, and the window reads its own list.
     var partsMaturity: [[String: String]?] {
         guard let hosts = controlPlaneHosts else { return [] }
