@@ -128,7 +128,8 @@ struct MachineScriptsSettingsView: View {
     private func newButton(_ name: String, folder: String?) -> some View {
         if let folder {
             Button("New \(name).sh") {
-                problem = AppModel.writeExampleScript(name, folder: folder)
+                problem = AppModel.writeExampleScript(name, folder: folder,
+                                                         readyMade: scripts?.script(name)?.example)
                 if problem == nil { Self.open(URL(fileURLWithPath: folder).appendingPathComponent(name + ".sh")) }
                 Task { await read() }
             }

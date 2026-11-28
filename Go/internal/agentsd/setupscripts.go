@@ -237,8 +237,14 @@ func (d *Daemon) setupScripts() (wire.SetupScripts, error) {
 	if folder := d.setupScriptsFolder(); folder != "" {
 		out.Folder = &folder
 	}
+	readyMade := loadReadyMade(d.personalHome())
 	for _, s := range setupScriptFiles {
-		out.Scripts = append(out.Scripts, scriptState(s.name, d.readSetupScript(s.file, s.most), approved, state))
+		script := scriptState(s.name, d.readSetupScript(s.file, s.most), approved, state)
+		// The example New root.sh and New setup.sh write, from the pinned dotagents (#7461).
+		if example := readyMade.script(s.name); example != "" {
+			script.Example = &example
+		}
+		out.Scripts = append(out.Scripts, script)
 	}
 	return out, nil
 }

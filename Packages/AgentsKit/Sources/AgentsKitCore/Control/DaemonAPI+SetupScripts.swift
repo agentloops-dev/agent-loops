@@ -32,10 +32,14 @@ public extension DaemonAPI {
         public var changed: Bool
         /// The number to sign the next approval with.
         public var nextSeq: Int64
+        /// The ready-made example from the pinned dotagents (#7461): what New root.sh and New
+        /// setup.sh write. Nil when the machine has no copy of the pinned tag yet.
+        public var example: String?
 
         public init(name: String, present: Bool, text: String? = nil, hash: String? = nil, size: Int64? = nil,
                     problem: String? = nil, approvedText: String? = nil, approvedHash: String? = nil,
-                    approvals: [LockRecord] = [], changed: Bool = false, nextSeq: Int64 = 1) {
+                    approvals: [LockRecord] = [], changed: Bool = false, nextSeq: Int64 = 1,
+                    example: String? = nil) {
             self.name = name
             self.present = present
             self.text = text
@@ -47,6 +51,7 @@ public extension DaemonAPI {
             self.approvals = approvals
             self.changed = changed
             self.nextSeq = nextSeq
+            self.example = example
         }
 
         public var id: String { name }

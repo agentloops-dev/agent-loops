@@ -1,5 +1,6 @@
 #!/bin/sh
-# The ready-made workflows and skills (#5091) are in agentloops-dev/dotagents, not in agentsd.
+# The ready-made workflows and skills (#5091), and the examples of the machine scripts (#7461), are
+# in agentloops-dev/dotagents, not in agentsd.
 # Each release pins one tag of it and that tag's commit (readyMadeTag and readyMadeCommit in
 # Go/internal/agentsd/dotagents.go), and keeps a copy of that tag in
 # Go/internal/agentsd/testdata/dotagents for the tests, which never use the network.
@@ -16,6 +17,12 @@ root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 go_file="$root/Go/internal/agentsd/dotagents.go"
 copy="$root/Go/internal/agentsd/testdata/dotagents"
 url=${DOTAGENTS_URL:-https://github.com/agentloops-dev/dotagents.git}
+
+# copy <from> <to>: the files of a tag that agentsd reads: workflows/, skills/ and scripts/.
+copy() {
+	cp -R "$1/workflows" "$1/skills" "$2/"
+	if [ -d "$1/scripts" ]; then cp -R "$1/scripts" "$2/"; fi
+}
 
 pinned() { sed -n "s/^[[:space:]]*$1[[:space:]]*= \"\(.*\)\"$/\1/p" "$go_file"; }
 
@@ -34,7 +41,7 @@ pin)
 	commit=$(fetch "$tag" "$tmp/d")
 	rm -rf "$copy"
 	mkdir -p "$copy"
-	cp -R "$tmp/d/workflows" "$tmp/d/skills" "$copy/"
+	copy "$tmp/d" "$copy"
 	sed -i.bak \
 		-e "s/^\([[:space:]]*readyMadeTag[[:space:]]*= \)\".*\"$/\1\"$tag\"/" \
 		-e "s/^\([[:space:]]*readyMadeCommit[[:space:]]*= \)\".*\"$/\1\"$commit\"/" "$go_file"
@@ -54,7 +61,7 @@ check)
 		exit 1
 	fi
 	mkdir -p "$tmp/want"
-	cp -R "$tmp/d/workflows" "$tmp/d/skills" "$tmp/want/"
+	copy "$tmp/d" "$tmp/want"
 	if ! diff -r "$tmp/want" "$copy"; then
 		echo "dotagents: the copy is not $tag: run scripts/dotagents.sh pin $tag" >&2
 		exit 1
