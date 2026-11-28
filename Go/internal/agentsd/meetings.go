@@ -201,6 +201,11 @@ func (d *Daemon) startMeeting(r wire.MeetingStartRequest, actor *wire.AuditActor
 	if err != nil {
 		return wire.MeetingStarted{}, err
 	}
+	// The session is named by the meeting's title (#7585), as the person's name, so its
+	// runtime does not name it by the starter prompt.
+	if _, err := d.rename(wire.RenameRequest{AgentID: agentID, Title: title}); err != nil {
+		log.Printf("meetings: naming session %s: %v", agentID, err)
+	}
 	m := wire.Meeting{ID: id, AgentID: agentID, Folder: r.Folder, Title: title, State: wire.MeetingStateListening,
 		StartedAt: wire.DateOf(at), Sources: r.Sources, Speakers: []wire.MeetingSpeaker{}, UpdatedAt: wire.DateOf(at)}
 	m, err = d.meetings().Create(m)

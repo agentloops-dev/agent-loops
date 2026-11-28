@@ -54,7 +54,7 @@ struct MeetingLinesTests {
         #expect(MeetingLines.rowLine(Self.meeting(state: .ended, endedAt: 20), now: now) == "Ended · less than a minute")
     }
 
-    @Test func rowsNameASpeakerOnlyWhereItChanges() {
+    @Test func rowsNameASpeakerOnlyWhereItChanges() throws {
         let m = Self.meeting(speakers: [.init(source: "mic", index: 0, name: "Priya"), .init(source: Self.zoom, index: 0)])
         let segments = [
             Self.segment(1, "mic", 0, at: 2, "Okay, it's listening."),
@@ -67,6 +67,7 @@ struct MeetingLinesTests {
         let rows = MeetingLines.rows(segments, meeting: m, gaps: [gap])
         #expect(rows.map { $0.speaker?.label } == ["Priya", nil, "Speaker 2", MeetingLines.unknownSpeaker, MeetingLines.unknownSpeaker])
         #expect(rows.map(\.time) == ["0:02", "0:09", "0:17", "0:20", "0:22"])
+        try #require(rows.count == 5)
         #expect(rows[1].gapAfter == gap)
         #expect(rows[1].voice.label == "Priya")
         #expect(rows.compactMap(\.gapAfter).count == 1)

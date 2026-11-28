@@ -34,7 +34,7 @@ func TestMeetingsMethodsEndToEnd(t *testing.T) {
 		t.Fatalf("%+v", started)
 	}
 	a := d.Store.Agent(started.AgentID)
-	if a == nil || store.FolderPath(a.Cwd) != store.FolderPath(store.FolderURL(folder)) {
+	if a == nil || store.FolderPath(a.Cwd) != store.FolderPath(store.FolderURL(folder)) || a.Title == nil || *a.Title != "Planning" {
 		t.Fatalf("%+v", a)
 	}
 	c.until(t, "the starter prompt", func(string, json.RawMessage) bool {

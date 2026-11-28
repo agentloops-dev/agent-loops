@@ -17,12 +17,14 @@ struct MeetingTranscriptPage: View {
     var body: some View {
         let current = current
         let segments = desk.segments[current.id] ?? []
-        ZStack(alignment: .top) {
+        Group {
             if segments.isEmpty, desk.liveLine(current) == nil {
                 empty
             } else {
                 lines(current, segments)
             }
+        }
+        .overlay(alignment: .top) {
             MeetingCapsule(meeting: current)
                 .padding(.top, 12)
         }
@@ -79,10 +81,13 @@ struct MeetingTranscriptPage: View {
             }
             .chatColumn()
             .padding(.horizontal, 28)
-            .padding(.top, 64)
+            .padding(.top, 8)
             .padding(.bottom, bottomInset + 12)
         }
         .defaultScrollAnchor(.bottom)
+        // The lines start under the capsule and never scroll beneath it: selectable text
+        // draws in AppKit's layer, over any SwiftUI view, the capsule too.
+        .padding(.top, 56)
     }
 }
 
@@ -108,16 +113,35 @@ private struct MeetingLineRow: View {
                     .foregroundStyle(Paper.tertiary)
             }
             .frame(width: 96, alignment: .trailing)
+            // Italic on the Text, before the step's font, which would replace it.
             Text(text)
-                .appText(.reading)
                 .italic(isLive)
+                .appText(.reading)
                 .foregroundStyle(isLive ? Paper.tertiary : Paper.ink)
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .fixedSize(horizontal: false, vertical: true)
-                .accessibilityLabel(isLive ? "Being heard: \(text)" : text)
+            // No label of its own: selectable text is an AppKit view, and a label on it
+            // recursed until AppKit's accessibility ran out of stack (#71).
         }
         .padding(.vertical, 5)
+        .modifier(LiveLineElement(isLive: isLive, text: text))
+    }
+}
+
+/// The live line is one element, "Being heard: …"; it has no speaker button to keep apart.
+private struct LiveLineElement: ViewModifier {
+    let isLive: Bool
+    let text: String
+
+    func body(content: Content) -> some View {
+        if isLive {
+            content
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel("Being heard: \(text)")
+        } else {
+            content
+        }
     }
 }
 
@@ -154,9 +178,9 @@ private struct SpeakerName: View {
 
     private var label: some View {
         Text(speaker.label)
-            .appText(.supporting)
-            .fontWeight(speaker.isNamed ? .semibold : .medium)
             .italic(!speaker.isNamed)
+            .fontWeight(speaker.isNamed ? .semibold : .medium)
+            .appText(.supporting)
             .foregroundStyle(speaker.isNamed ? Paper.secondary : Paper.tertiary)
             .lineLimit(1)
     }

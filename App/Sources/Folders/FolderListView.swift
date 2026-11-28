@@ -1240,7 +1240,8 @@ private struct NewItemsMenu: View {
             Label("New", toolbarIcon: "plus")
         }
         .menuIndicator(.hidden)
-        .help("New Session, Add Folder…, Clone Folder from Git URL…, New App… or New Machine…")
+        .help(meetingModeOn ? "New Session, New Meeting…, Add Folder…, Clone Folder from Git URL…, New App… or New Machine…"
+                            : "New Session, Add Folder…, Clone Folder from Git URL…, New App… or New Machine…")
         .accessibilityLabel("New")
         .task { await model.loadMachineProviders() }
     }
