@@ -56,9 +56,13 @@ public enum CommitTrailerWords {
         }
     }
 
-    /// Every trailer, in the order of a commit's block (the daemon's `trailerBlockOrder`).
+    /// Every trailer, in the order of a commit's block (the daemon's `trailerBlockOrder`). There
+    /// is no Co-authored-by: it is the runtime's own line, which the app never adds, changes or
+    /// removes (#7174), so it has no switch.
     public static let trailers: [Trailer] = [
-        Trailer(key: "Made-by", kind: .record, isOnByDefault: true, example: "claude-code:claude-opus-5-5"),
+        Trailer(key: "Managed-by", kind: .record, isOnByDefault: true, example: "Agent Loops <noreply@agentloops.dev>"),
+        Trailer(key: "Runtime", kind: .record, isOnByDefault: true, example: "claude-code"),
+        Trailer(key: "Model", kind: .record, isOnByDefault: true, example: "opus-5-5"),
         Trailer(key: "Session", kind: .record, isOnByDefault: true, example: "4f2c9a1e-…"),
         Trailer(key: "Fixes", kind: .record, isOnByDefault: true, example: "#6334"),
         Trailer(key: "Epic", kind: .record, isOnByDefault: true, example: "#5627"),
@@ -67,7 +71,6 @@ public enum CommitTrailerWords {
         Trailer(key: "Cost", kind: .spend, isOnByDefault: false, example: "$1.84"),
         Trailer(key: "Tokens", kind: .spend, isOnByDefault: true, example: "in=412.0k out=38.0k"),
         Trailer(key: "Duration", kind: .spend, isOnByDefault: true, example: "47m"),
-        Trailer(key: "Co-authored-by", kind: .record, isOnByDefault: true, example: "Claude Opus 5.5 <noreply@anthropic.com>"),
     ]
 
     public static func trailers(_ kind: Kind) -> [Trailer] { trailers.filter { $0.kind == kind } }

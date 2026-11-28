@@ -1,5 +1,5 @@
 // Features show their maturity (#6052): a capability Packages/Wire/maturity.json does not list is GA; one it lists has
-// a badge, and a switch in Early Features, on by default and kept with the feature flags (#6254). The words are the
+// a badge, and a switch in Features, on by default and kept with the feature flags (#6254). The words are the
 // window's and the Remote's.
 import { test } from "node:test";
 import assert from "node:assert/strict";

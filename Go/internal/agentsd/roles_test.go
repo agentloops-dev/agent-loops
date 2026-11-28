@@ -51,7 +51,7 @@ func TestRoleAllows(t *testing.T) {
 		{RoleHostApp, "agents/list", true},
 		{RoleHostApp, "agents/prompt", false},
 		{RoleStranger, "daemon/status", true},
-		{RoleStranger, "git/credential", true},
+		{RoleStranger, "git/credential", false},
 		{RoleStranger, "agents/list", false},
 		{RoleStranger, "approvals/answer", false},
 	} {

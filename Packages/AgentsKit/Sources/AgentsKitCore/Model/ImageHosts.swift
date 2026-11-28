@@ -6,7 +6,6 @@ public enum ImageHostsWords {
     public static let symbol = "photo.slash"
     public static let show = "Show image"
     public static let showShort = "Show"
-    public static let more = "More"
     public static let reading = "Reading…"
     public static let tryAgain = "Try Again"
     public static let remove = "Remove"
@@ -28,6 +27,8 @@ public enum ImageHostsWords {
     public static func allow(_ host: String) -> String { "Always allow \(short(host))" }
     /// The button's whole words, for its tooltip and VoiceOver.
     public static func allowFull(_ host: String) -> String { "Always allow \(host)" }
+    /// The inline row's menu, which holds Always allow: its name says the host (#7275).
+    public static func more(_ host: String) -> String { "More for \(host)" }
 
     public static func blocked(_ blocked: DaemonAPI.ImageBlocked) -> String {
         blocked.from.map { "Image blocked: \($0) redirects to \(blocked.host)" } ?? "Image blocked: \(blocked.host)"

@@ -143,7 +143,7 @@ func hostedConfig(where string, st store.Store, logf func(string)) (hosted.Confi
 		AppleKeyID: os.Getenv("AGENTS_HOSTED_APPLE_KEY_ID"), AppleKey: []byte(os.Getenv("AGENTS_HOSTED_APPLE_KEY")),
 		GoogleClientID: os.Getenv("AGENTS_HOSTED_GOOGLE_CLIENT_ID"), GoogleSecret: os.Getenv("AGENTS_HOSTED_GOOGLE_SECRET"),
 		ViewsDomain: os.Getenv("AGENTS_HOSTED_VIEWS_DOMAIN"), TrustedProxies: trusted, Log: logf,
-		SignUp:    strings.ToLower(os.Getenv("AGENTS_HOSTED_SIGNUP")),
+		SignUp: strings.ToLower(os.Getenv("AGENTS_HOSTED_SIGNUP")), IdleAccounts: strings.ToLower(os.Getenv("AGENTS_HOSTED_IDLE_ACCOUNTS")),
 		StripeKey: os.Getenv("AGENTS_HOSTED_STRIPE_KEY"), StripePrice: os.Getenv("AGENTS_HOSTED_STRIPE_PRICE"),
 		StripeWebhookSecret: os.Getenv("AGENTS_HOSTED_STRIPE_WEBHOOK_SECRET"),
 		TurnstileSiteKey:    os.Getenv("AGENTS_HOSTED_TURNSTILE_SITE_KEY"), TurnstileSecret: os.Getenv("AGENTS_HOSTED_TURNSTILE_SECRET")}

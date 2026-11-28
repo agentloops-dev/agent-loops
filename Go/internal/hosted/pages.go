@@ -260,6 +260,10 @@ func (s *Service) callback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	made := false
+	if acc != nil {
+		// A use, which lifts an idle pause (#6785).
+		acc = s.signedIn(ctx, acc)
+	}
 	if acc == nil {
 		// A new person: who may sign up (#2152).
 		invite := ""
@@ -379,10 +383,9 @@ func (s *Service) deleteAccount(w http.ResponseWriter, r *http.Request, account 
 		s.accountPage(w, r, account, "The account could not be read. Try again in a moment.")
 		return
 	}
-	s.stopCopy(account)
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Minute)
 	defer cancel()
-	if err := s.accounts.remove(ctx, acc); err != nil {
+	if err := s.removeAccount(ctx, acc, goneDeleted); err != nil {
 		s.log(account + ": delete: " + err.Error())
 		s.accountPage(w, r, account, "Not everything could be deleted. Delete the account again.")
 		return

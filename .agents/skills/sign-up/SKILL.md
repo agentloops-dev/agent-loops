@@ -73,7 +73,9 @@ registry, #3909), call `manage_accounts` with action `import` once, then rename 
 
 In one form, ask Alex to approve the account (and its plan and monthly cost, where it bills)
 and for what the forms need beyond the mailbox address: the name and, where a service
-bills, the phone and the billing address. Keep the phone and the address out of the tracker,
+bills, the phone. The billing name and address are in the card secret (`PRIVACY_CARD`, #5569):
+fill each line with `fill_secret` and its `part` (`name`, `line1`, `line2`, `city`, `state`, `zip`,
+`country`). When the card has no address, ask Alex to add it with Replace… in Settings ▸ Secrets. Keep the phone and the address out of the tracker,
 the repo and issues. When other sign-up sessions run alongside, pass the answers to them with
 `message_session` so that Alex answers once.
 

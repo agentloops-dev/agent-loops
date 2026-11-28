@@ -3858,6 +3858,9 @@
         "partial": {
           "type": "boolean"
         },
+        "schedule": {
+          "$ref": "#/definitions/WorkTimelineSchedule"
+        },
         "scopes": {
           "type": "array",
           "description": "What was read (#7029): one entry per repo, as forge:name (github:example/shop). Two machines with the same scopes give the same epics, so a client asks one of them. Absent when a repo could not be read, and from an earlier daemon.",
@@ -4024,7 +4027,7 @@
     },
     "WorkTimelineRequest": {
       "type": "object",
-      "description": "work/timeline (#4172): the epics of a project (its id, from a folder's .agents/folder.json) that overlap from to to. With first, the answer can be partial (#7027): ask again without it for all of it.",
+      "description": "work/timeline (#4172): the epics of a project (its id, from a folder's .agents/folder.json) that overlap from to to. With first, the answer can be partial (#7027): ask again without it for all of it. With onHold (#7335), the open epics on hold come too, each with its children and with no forecast, after the others in the order of forge/next; with none, an epic on hold is left out and its children are not read. Either way they are not in the forecast's history.",
       "properties": {
         "project": {
           "type": "string"
@@ -4037,12 +4040,101 @@
         },
         "first": {
           "type": "boolean"
+        },
+        "onHold": {
+          "type": "boolean"
+        },
+        "places": {
+          "type": "integer",
+          "description": "How many epics are worked at once in the schedule (#7525), 1 to 20: 3 when absent."
         }
       },
       "required": [
         "project",
         "from",
         "to"
+      ],
+      "additionalProperties": false
+    },
+    "WorkTimelineSchedule": {
+      "type": "object",
+      "description": "work/timeline's schedule (#7525, epic #7067): when each open epic starts and finishes if places epics are worked at once. A started epic holds a place from its start to its predicted finish, whatever blocks it. The others take the free places in the order of forge/next (level: epic), each no earlier than now and the predicted finish of its last open epic blocker; places that free at the same time go to the next in that order. readAt is the time of the read. incomplete says a list was cut short (more than 100 open epics, a repo not read): no row is dated then. Rows: the started epics, then those planned, by planned start, then those with no date; ties in the order of forge/next. Absent from a partial answer and from an earlier daemon.",
+      "properties": {
+        "places": {
+          "type": "integer"
+        },
+        "readAt": {
+          "$ref": "core.schema.json#/definitions/WireDate"
+        },
+        "incomplete": {
+          "type": "boolean"
+        },
+        "rows": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/WorkTimelineScheduleRow"
+          }
+        }
+      },
+      "required": [
+        "places",
+        "readAt",
+        "rows"
+      ],
+      "additionalProperties": false
+    },
+    "WorkTimelineScheduleReason": {
+      "type": "string",
+      "description": "Why an open epic has no date in the schedule (#7525): onHold, it is on hold (shown only with onHold); noIssues, it has no sub-issues; blockerOnHold, an open blocker is on hold; blockerNotEpic, an open blocker is not an epic; blockerNotRead, an open blocker epic is not in the read (another project, or more than the read gives); cycle, its blockers lead back to it; blockerUndated, an open blocker epic has no date; noForecast, there is too little history to forecast it; noPlace, no place frees (every place is held by a started epic with no forecast); incomplete, a list was cut short.",
+      "enum": [
+        "onHold",
+        "noIssues",
+        "blockerOnHold",
+        "blockerNotEpic",
+        "blockerNotRead",
+        "cycle",
+        "blockerUndated",
+        "noForecast",
+        "noPlace",
+        "incomplete"
+      ]
+    },
+    "WorkTimelineScheduleRow": {
+      "type": "object",
+      "description": "An open epic in the schedule (#7525). startedAt is its observed start, the earliest of its children's, and startSource where that came from: session (a session linked to the child in lineage), pullRequest (a pull request that closes the child opened) or closed (the child closed); both absent while it has not started. plannedStart is when a not-started epic takes a place. finish is its predicted finish: low to high the band, mid the P50; for a planned epic its forecast from its planned start. blockers are its open blockers, of every kind, for the arrows. reason says why it has no finish; absent when it has one.",
+      "properties": {
+        "epic": {
+          "$ref": "lineage.schema.json#/definitions/LineageNode"
+        },
+        "startedAt": {
+          "$ref": "core.schema.json#/definitions/WireDate"
+        },
+        "startSource": {
+          "type": "string",
+          "enum": [
+            "session",
+            "pullRequest",
+            "closed"
+          ]
+        },
+        "plannedStart": {
+          "$ref": "core.schema.json#/definitions/WireDate"
+        },
+        "finish": {
+          "$ref": "#/definitions/WorkTimelineForecast"
+        },
+        "blockers": {
+          "type": "array",
+          "items": {
+            "$ref": "lineage.schema.json#/definitions/LineageNode"
+          }
+        },
+        "reason": {
+          "$ref": "#/definitions/WorkTimelineScheduleReason"
+        }
+      },
+      "required": [
+        "epic"
       ],
       "additionalProperties": false
     },

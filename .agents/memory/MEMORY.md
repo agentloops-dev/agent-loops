@@ -96,3 +96,5 @@ What agents learnt about this repo: its code, tools, process and decisions. One 
 - [Fix main asks the bug lane for root-cause lanes](fix-main-asks-the-bug-lane-for-root-cause-lanes.md) — the #4207 lead takes each new bug itself; Fix main messages it, starts no lane (2026-11-21 duplicates on #6603, #6619)
 - [No changed HOME for agentsd on a Mac](no-changed-home-for-agentsd-on-a-mac.md) — #6890: "Keychain Not Found" dialogs that stay; a pool-machine walk needs Linux
 - [Scratch server host on the Mac](scratch-server-host-on-the-mac.md) — a second agentsd as a server by a Go overlay; a fake HOME alone raises a Keychain dialog
+- [autopilot-lead-restart](autopilot-lead-restart.md) — Autopilot replaces a stalled lead; cancelled = person's stop, never restarted
+- [Second scratch host by a second root](second-scratch-host-by-a-second-root.md) — an online second machine for a walk: agentsd on its own root, real HOME, --control-code + --host-name; set-up records are store files (#7558)

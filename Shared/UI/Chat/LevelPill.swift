@@ -8,20 +8,61 @@ import SwiftUI
 /// on Claude"). The runtime's own choices stay behind **⋯ <runtime>'s own**, which is not
 /// there on Auto: Auto has no runtime yet. Bypass Permissions asks once more before it is
 /// set, as Always Approve does (#2892): it lets the agent change things outside its folder.
-struct LevelPill: View {
+///
+/// The pill is a value, read once when it is made, and `Equatable` (#6897): its menu is an
+/// NSMenu that SwiftUI makes again each time the pill's body runs, and that closes an open
+/// submenu (**⋯ <runtime>'s own**, Model) under the pointer, which opens it again, over and
+/// over. With closures in it, SwiftUI could never tell the pill was the same, so every
+/// change to the prompt bar ran its body again. Call sites add `.equatable()`.
+struct LevelPill: View, Equatable {
     let field: AutoField
     /// The value in force, by its wire name; nil is Custom.
     let chosen: String?
     /// The runtime it maps to, by name, for each value's line; nil while Auto has none.
     let runtimeName: String?
+    /// Whose pill this is (an agent's id, the draft's, Auto's): two sessions can show the
+    /// same values, and a pill must not keep the other one's `choose`.
+    let owner: String
+    /// The runtime's own options behind ⋯ own.
+    let own: [ConfigOption]
     /// Each value's cell on that runtime, for its words and whether it can be had.
-    let cell: (String) -> AutoMapping?
-    /// The runtime's own options behind ⋯ own, with what each is set to.
-    var own: [ConfigOption] = []
-    var binding: ((ConfigOption) -> Binding<JSONValue?>)?
-    let choose: (String) -> Void
+    private let cells: [String: AutoMapping]
+    /// What each of the runtime's own options is set to, by its id.
+    private let values: [String: JSONValue]
+    /// Whether ⋯ own can be shown: it needs the binding to set an option.
+    private let hasOwn: Bool
+    private let binding: ((ConfigOption) -> Binding<JSONValue?>)?
+    private let choose: (String) -> Void
 
     @State private var isConfirming = false
+
+    init(field: AutoField, chosen: String?, runtimeName: String?, owner: String,
+         cell: (String) -> AutoMapping?, own: [ConfigOption] = [],
+         binding: ((ConfigOption) -> Binding<JSONValue?>)? = nil, choose: @escaping (String) -> Void) {
+        self.field = field
+        self.chosen = chosen
+        self.runtimeName = runtimeName
+        self.owner = owner
+        self.own = own
+        var cells: [String: AutoMapping] = [:]
+        for level in LevelWords.levels(field) { cells[level] = cell(level) }
+        self.cells = cells
+        var values: [String: JSONValue] = [:]
+        if let binding {
+            for option in own { values[option.id] = binding(option).wrappedValue ?? option.currentValue }
+        }
+        self.values = values
+        self.hasOwn = binding != nil
+        self.binding = binding
+        self.choose = choose
+    }
+
+    /// The same values make the same menu; the closures are not compared.
+    nonisolated static func == (lhs: LevelPill, rhs: LevelPill) -> Bool {
+        lhs.field == rhs.field && lhs.chosen == rhs.chosen && lhs.runtimeName == rhs.runtimeName
+            && lhs.owner == rhs.owner && lhs.own == rhs.own && lhs.cells == rhs.cells
+            && lhs.values == rhs.values && lhs.hasOwn == rhs.hasOwn
+    }
 
     private var title: String {
         guard let chosen else { return LevelWords.custom }
@@ -32,7 +73,7 @@ struct LevelPill: View {
         Menu {
             Section(LevelWords.field(field)) {
                 ForEach(LevelWords.levels(field), id: \.self) { level in
-                    let c = cell(level)
+                    let c = cells[level]
                     let possible = c.map { $0.mark != .notPossible && $0.mark != .dropped } ?? true
                     Button {
                         if LevelWords.asksFirst(field, level), level != chosen {
@@ -56,7 +97,7 @@ struct LevelPill: View {
                     ForEach(own) { option in
                         if option.isBoolean {
                             Toggle(option.name, isOn: Binding(
-                                get: { (binding(option).wrappedValue ?? option.currentValue)?.boolValue ?? false },
+                                get: { values[option.id]?.boolValue ?? false },
                                 set: { binding(option).wrappedValue = .bool($0) }))
                         } else if own.count == 1 {
                             choices(of: option, binding(option))
@@ -120,7 +161,7 @@ struct LevelPill: View {
                         OrgPolicyMenuItem(name: choice.name, mark: mark)
                     } else {
                         Toggle(choice.name, isOn: Binding(
-                            get: { (chosen.wrappedValue ?? option.currentValue) == choice.value },
+                            get: { values[option.id] == choice.value },
                             set: { if $0 { chosen.wrappedValue = choice.value } }))
                     }
                 }

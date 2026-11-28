@@ -79,11 +79,26 @@ func (w Workspace) SSH() *string {
 	return &line
 }
 
+// Addresses are its public addresses, IPv4 then IPv6, as its listing gave them (#7466):
+// the ip and ip6 values.
+func (w Workspace) Addresses() []any {
+	var out []any
+	for _, key := range []string{"ip", "ip6"} {
+		if v := strings.TrimSpace(w.Values[key]); v != "" {
+			out = append(out, v)
+		}
+	}
+	return out
+}
+
 // JSON is the workspace as the contract gives it.
 func (w Workspace) JSON() map[string]any {
 	o := map[string]any{"id": w.ID, "name": w.Name, "state": string(w.State), "tunnel": w.Commands.Tunnel}
 	if ssh := w.SSH(); ssh != nil {
 		o["ssh"] = *ssh
+	}
+	if a := w.Addresses(); len(a) > 0 {
+		o["addresses"] = a
 	}
 	if w.Commands.HostKeyRenews {
 		o["hostKeyRenews"] = true
@@ -467,6 +482,11 @@ func (p *Provider) CreateRooted(name string, options map[string]any, firstBoot, 
 		}
 	}
 	values := map[string]string{"name": name, "firstBoot": firstBoot, "rootBoot": rootBoot}
+	removeRootBoot, err := putRootBootFile(making, values)
+	if err != nil {
+		return Workspace{}, nil, err
+	}
+	defer removeRootBoot()
 	// A choice left out takes the form's default, as the form showed it: the account's
 	// choices where the preset reads them (#6686), else the plain form.
 	chosen := map[string]any{}

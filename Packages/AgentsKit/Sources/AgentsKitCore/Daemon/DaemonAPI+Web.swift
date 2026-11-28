@@ -391,6 +391,9 @@ public extension DaemonAPI {
                 // Continue in a new session (#5919): a chat whose allowance ran out.
                 Row(Method.agentsContinueInNewSession, params: ContinueInNewSessionRequest.self, result: UUID.self,
                     kind: .hostRequest),
+                // Continue on another account (#7459): a chat whose allowance ran out.
+                Row(Method.agentsContinueOnAccount, params: ContinueOnAccountRequest.self, result: UUID.self,
+                    kind: .hostRequest),
                 Row(Method.agentsRecreateWorktree, params: AgentRequest.self, result: Agent.self, kind: .hostRequest),
                 Row(Method.agentsContinueWhenBack, params: AgentRequest.self, result: Agent.self, kind: .hostRequest),
                 Row(Method.agentsCancelContinue, params: AgentRequest.self, result: Agent.self, kind: .hostRequest),
@@ -493,6 +496,10 @@ public extension DaemonAPI {
                 // Cost on Pull Requests… on a folder's menu (#2352), as the window's Folder Settings has it.
                 Row(Method.foldersSetPRCostComment, params: SetPRCostCommentRequest.self, result: FolderSummary.self,
                     kind: .hostRequest),
+                // Autopilot in Project Settings (#5904), as the window's has it.
+                Row(Method.autopilotSet, params: AutopilotSetRequest.self, result: AutopilotStatus.self, kind: .hostRequest),
+                Row(Method.autopilotStatus, params: AutopilotRequest.self, result: AutopilotStatus.self, kind: .hostRequest),
+                Row(Method.autopilotResume, params: AutopilotResumeRequest.self, result: AutopilotStatus.self, kind: .hostRequest),
                 // Working hours in Project Settings ▸ General (#4821), as the window's has them.
                 Row(Method.foldersSetWorkingHours, params: SetWorkingHoursRequest.self, result: FolderSummary.self,
                     kind: .hostRequest),
@@ -546,8 +553,6 @@ public extension DaemonAPI {
                 // Web Push to this browser (#1486): the control plane's key, and the page's subscription.
                 Row(Method.clientsWebPushKey, params: Empty.self, result: JSONValue.self, kind: .controlRequest),
                 Row(Method.clientsSetWebPush, params: JSONValue.self, result: Empty.self, kind: .controlRequest),
-                // A host using a Mac's git access (#1122): Approve, Deny and Revoke.
-                Row(Method.hostsLendGit, params: LendGit.self, result: Empty.self, kind: .controlRequest),
                 // A linked host's workspace (#691): Start on the offline strip.
                 Row(Method.hostsStart, params: MachineRequest.self, result: ControlMachine.self, kind: .controlRequest),
                 Row(Method.hostsStop, params: MachineStop.self, result: ControlMachine.self, kind: .controlRequest),

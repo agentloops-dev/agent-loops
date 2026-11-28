@@ -1,0 +1,691 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Session parents: wireframes (#7537, epic #7535)</title>
+<!-- The tokens of design/tokens.json, as the web page reads them (#4602). -->
+<link rel="stylesheet" href="../../../Web/src/theme/tokens.css">
+<style>
+:root{color-scheme:light}
+*{box-sizing:border-box}
+body{margin:0;background:var(--paper-wash);color:var(--paper-ink);font:13px/1.45 var(--font-text)}
+header.doc{max-width:1320px;margin:auto;padding:28px 32px 4px}
+header.doc h1{font-size:var(--type-title);margin:0 0 6px}
+header.doc p{margin:4px 0;max-width:920px;color:var(--paper-secondary)}
+main{max-width:1320px;margin:auto;padding:0 32px 60px}
+section.part{margin-top:30px}
+section.part>h2{font-size:17px;margin:0 0 4px}
+section.part>p.intro{margin:0 0 14px;color:var(--paper-secondary);max-width:920px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(600px,1fr));gap:18px}
+.grid.three{grid-template-columns:repeat(auto-fill,minmax(400px,1fr))}
+.frame{background:var(--paper-ground);border:1px solid var(--paper-rule);border-radius:12px;overflow:hidden;display:flex;flex-direction:column}
+.frame .stage{padding:18px;flex:1;display:flex;justify-content:center;align-items:flex-start;background:var(--paper-wash)}
+.frame .cap{border-top:1px solid var(--paper-rule);padding:10px 14px;background:var(--paper-raised)}
+.cap .name{font-weight:600}
+.cap .n{display:inline-block;min-width:24px;padding:0 5px;height:20px;line-height:20px;text-align:center;border-radius:6px;background:var(--paper-ink);color:var(--paper-on-fill);font-size:11px;margin-right:6px}
+.cap ul{margin:6px 0 0;padding-left:18px;color:var(--paper-secondary)}
+.cap li{margin:2px 0}
+.client{font-size:10.5px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;border:1px solid var(--paper-rule);border-radius:var(--radius-pill);padding:1px 7px;margin-left:6px;color:var(--paper-secondary);background:var(--paper-well)}
+
+/* ---- Mac window ---- */
+.win{width:560px;background:var(--paper-ground);border:1px solid var(--paper-rule);border-radius:10px;overflow:hidden;box-shadow:var(--shadow-floating);position:relative}
+.win.narrow{width:360px}
+.tbar{height:30px;display:flex;align-items:center;gap:6px;padding:0 10px;border-bottom:1px solid var(--paper-rule);background:var(--paper-sidebar)}
+.tbar i{width:10px;height:10px;border-radius:50%;background:var(--paper-rule);display:inline-block}
+.tbar .t{margin-left:10px;font-size:11.5px;color:var(--paper-secondary)}
+.body{display:flex;min-height:320px}
+.side{width:300px;background:var(--paper-sidebar);border-right:1px solid var(--paper-rule);padding:8px 6px;position:relative}
+.win.narrow .side{width:100%;border-right:0}
+.pane{flex:1;padding:12px;display:flex;flex-direction:column;justify-content:flex-end;gap:8px}
+.folder{font-size:11px;font-weight:600;color:var(--paper-secondary);padding:6px 8px 4px;display:flex;align-items:center;gap:6px}
+.folder .sp{flex:1}
+.row{position:relative;display:flex;align-items:center;gap:6px;height:28px;padding:0 8px;border-radius:6px;white-space:nowrap}
+.row .tt{overflow:hidden;text-overflow:ellipsis;flex:1}
+.row.sel{background:var(--paper-selection);box-shadow:inset 3px 0 0 var(--accent)}
+.row .dot{width:7px;height:7px;border-radius:50%;border:1.5px solid var(--paper-tertiary);flex:none}
+.row .dot.run{background:var(--paper-tertiary);border-color:var(--paper-tertiary)}
+.row .dot.ask{background:var(--tint-attention);border-color:var(--tint-attention)}
+.row .tw{width:10px;color:var(--paper-tertiary);font-size:9px;flex:none;text-align:center}
+.lbl{font-size:10.5px;color:var(--paper-tertiary)}
+.lbl.lead{color:var(--paper-secondary);border:1px solid var(--paper-rule);border-radius:var(--radius-pill);padding:0 6px;line-height:15px}
+.lbl.issue{color:var(--label-issue)}
+.lbl.pull{color:var(--label-pull)}
+.cnt{font-size:10.5px;color:var(--paper-tertiary)}
+.i1{margin-left:14px}.i2{margin-left:28px}.i3{margin-left:42px}
+.guide{position:absolute;top:0;bottom:0;width:1px;background:var(--paper-rule)}
+.ask-t{color:var(--tint-attention)}
+.dim{opacity:.38}
+.target{background:var(--paper-raised);box-shadow:inset 0 0 0 2px var(--accent)}
+.ghost{position:absolute;z-index:3;background:var(--paper-raised);border:1px solid var(--paper-rule);border-radius:8px;box-shadow:var(--shadow-floating);padding:5px 10px;font-size:12.5px;max-width:250px;white-space:normal}
+.ghost .gr{display:flex;align-items:center;gap:6px;white-space:nowrap}
+.ghost .gl{font-size:11.5px;color:var(--paper-secondary);margin-top:3px;padding-top:3px;border-top:1px solid var(--paper-rule)}
+.ghost.bad{box-shadow:var(--shadow-floating),inset 3px 0 0 var(--tint-failure)}
+.gap{height:66px}
+.ghost .plus{font-size:10.5px;color:var(--paper-secondary);border:1px solid var(--paper-rule);border-radius:var(--radius-pill);padding:0 6px}
+.dropline{height:2px;background:var(--accent);border-radius:2px;margin:2px 8px;position:relative}
+.dropline:before{content:"";position:absolute;left:-4px;top:-3px;width:8px;height:8px;border-radius:50%;border:2px solid var(--accent);background:var(--paper-sidebar)}
+.tip{position:absolute;z-index:4;background:var(--paper-raised);border:1px solid var(--paper-rule);border-radius:var(--radius-control);box-shadow:var(--shadow-floating);padding:5px 9px;font-size:11.5px;max-width:260px;white-space:normal}
+.tip.bad{box-shadow:var(--shadow-floating),inset 3px 0 0 var(--tint-failure)}
+.no{display:inline-block;width:13px;height:13px;border-radius:50%;border:2px solid var(--tint-failure);position:relative;vertical-align:-2px;margin-right:4px}
+.no:after{content:"";position:absolute;left:4px;top:-1px;width:2px;height:11px;background:var(--tint-failure);transform:rotate(45deg)}
+.cursor{position:absolute;z-index:5;width:0;height:0;border-left:7px solid transparent;border-right:7px solid transparent;border-bottom:14px solid var(--paper-ink);transform:rotate(-30deg)}
+
+/* ---- prompt bar, chips, popovers, menus, sheets ---- */
+.prompt{background:var(--paper-raised);border:1px solid var(--paper-rule);border-radius:12px;box-shadow:var(--shadow-floating);padding:8px 10px;display:flex;flex-direction:column;gap:8px}
+.prompt .ph{color:var(--paper-tertiary);padding:2px 2px 8px}
+.chips{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.chip{font-size:var(--type-fine);border:1px solid var(--paper-rule);border-radius:var(--radius-pill);padding:2px 10px;background:var(--paper-raised);white-space:nowrap}
+.chip.on{border-color:var(--line-accent);box-shadow:0 0 0 2px var(--paper-ground),0 0 0 4px var(--accent)}
+.chip .ch{color:var(--paper-tertiary);margin-left:4px}
+.pop{position:absolute;z-index:5;background:var(--paper-raised);border:1px solid var(--paper-rule);border-radius:var(--radius-card);box-shadow:var(--shadow-floating);padding:6px;width:300px}
+.pop .search{border:1px solid var(--paper-edge);border-radius:var(--radius-control);padding:4px 8px;color:var(--paper-tertiary);margin:2px 2px 6px;font-size:12px}
+.choice{display:flex;gap:8px;padding:5px 8px;border-radius:6px;align-items:flex-start}
+.choice .ck{width:12px;color:var(--accent);flex:none}
+.choice .ti{font-weight:500}
+.choice .de{font-size:11px;color:var(--paper-secondary)}
+.choice.hi{background:var(--paper-wash)}
+.choice.off .ti,.choice.off .de{color:var(--paper-tertiary)}
+.sep{height:1px;background:var(--paper-rule);margin:5px 2px}
+.ph2{font-size:11px;color:var(--paper-secondary);padding:2px 8px 4px}
+.menu{position:absolute;z-index:5;background:var(--paper-raised);border:1px solid var(--paper-rule);border-radius:8px;box-shadow:var(--shadow-floating);padding:4px;width:230px;font-size:12.5px}
+.menu .mi{padding:3px 10px;border-radius:5px;display:flex}
+.menu .mi .k{margin-left:auto;color:var(--paper-tertiary)}
+.menu .mi.hi{background:var(--accent);color:var(--paper-on-fill)}
+.menu .mi.hi .k{color:var(--paper-on-fill)}
+.menu .mi.new:after{content:"new";margin-left:8px;font-size:9.5px;border:1px solid var(--line-accent);border-radius:var(--radius-pill);padding:0 5px;color:var(--accent);background:var(--paper-raised)}
+.menu .mi.hi.new:after{border-color:var(--paper-on-fill)}
+.menu .sep{margin:4px 6px}
+.scrim{position:absolute;inset:30px 0 0 0;background:rgb(0 0 0 / 14%);z-index:4}
+.sheet{position:absolute;z-index:6;left:50%;top:44px;transform:translateX(-50%);width:400px;background:var(--paper-raised);border:1px solid var(--paper-rule);border-radius:var(--radius-floating);box-shadow:var(--shadow-sheet);padding:14px}
+.sheet h3{margin:0 0 2px;font-size:14px}
+.sheet .sub{color:var(--paper-secondary);font-size:12px;margin-bottom:8px}
+.btns{display:flex;gap:8px;justify-content:flex-end;margin-top:10px}
+.btn{border:1px solid var(--paper-rule);border-radius:var(--radius-control);background:var(--paper-raised);padding:3px 12px;font-size:12.5px}
+.btn.pri{background:var(--accent);color:var(--paper-on-fill);border-color:var(--accent)}
+.toast{position:absolute;z-index:6;left:50%;transform:translateX(-50%);bottom:14px;background:var(--paper-raised);border:1px solid var(--paper-rule);border-radius:var(--radius-card);box-shadow:var(--shadow-floating);padding:8px 12px;display:flex;gap:10px;align-items:center;font-size:12.5px;width:430px}
+.toast .ic{color:var(--tint-failure);font-weight:700}
+.toast .ic.ok{color:var(--paper-secondary)}
+.note{font-size:11.5px;color:var(--paper-secondary);margin-top:3px}
+.rownote{font-size:11px;color:var(--paper-secondary);padding:0 8px 4px 34px}
+.runtime-note{font-size:11.5px;color:var(--paper-secondary);border-top:1px solid var(--paper-rule);border-bottom:1px solid var(--paper-rule);padding:5px 0;text-align:center}
+.msg{background:var(--paper-well);border-radius:var(--radius-card);padding:8px 10px;font-size:12.5px;align-self:flex-end;max-width:85%}
+.ann{font-family:var(--font-mono);font-size:11px;background:var(--paper-raised);border:1px dashed var(--paper-edge);border-radius:var(--radius-card);padding:10px 12px;width:100%;white-space:pre-wrap;line-height:1.5}
+
+/* ---- iPhone ---- */
+.phone{width:300px;height:600px;border:1px solid var(--paper-rule);border-radius:36px;background:var(--paper-ground);overflow:hidden;position:relative;box-shadow:var(--shadow-floating)}
+.phone .status{height:34px;display:flex;justify-content:space-between;padding:10px 24px 0;font-size:11.5px;font-weight:600}
+.phone .nav{padding:4px 16px 8px;display:flex;align-items:baseline;gap:8px}
+.phone .nav h4{margin:0;font-size:22px}
+.phone .nav .a{color:var(--accent);font-size:14px}
+.phone .list{padding:0 8px}
+.phone .row{height:40px;font-size:14px}
+.phone .i1{margin-left:16px}.phone .i2{margin-left:32px}
+.isheet{position:absolute;left:0;right:0;bottom:0;top:70px;background:var(--paper-raised);border-radius:14px 14px 0 0;box-shadow:var(--shadow-sheet);z-index:6;padding:10px 14px}
+.isheet .grab{width:36px;height:5px;border-radius:3px;background:var(--paper-rule);margin:0 auto 10px}
+.isheet .hd{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px}
+.isheet .hd b{font-size:15px}
+.isheet .hd span{color:var(--accent);font-size:14px}
+.cell{display:flex;align-items:center;gap:8px;padding:9px 4px;border-bottom:1px solid var(--paper-rule);font-size:14px}
+.cell .de{font-size:11.5px;color:var(--paper-secondary)}
+.cell .ck{margin-left:auto;color:var(--accent)}
+.cell.off{color:var(--paper-tertiary)}
+.cell.off .de{color:var(--paper-tertiary)}
+.cmenu{position:absolute;z-index:6;background:var(--paper-raised);border:1px solid var(--paper-rule);border-radius:12px;box-shadow:var(--shadow-sheet);width:220px;font-size:14px;overflow:hidden}
+.cmenu .mi{padding:9px 14px;border-bottom:1px solid var(--paper-rule);display:flex}
+.cmenu .mi:last-child{border-bottom:0}
+.cmenu .mi .ic{margin-left:auto;color:var(--paper-secondary)}
+.cmenu .mi.new{font-weight:600}
+.lifted{position:absolute;z-index:6;left:14px;right:14px;background:var(--paper-raised);border-radius:12px;box-shadow:var(--shadow-sheet);height:44px;display:flex;align-items:center;gap:8px;padding:0 12px;font-size:14px}
+.blur{filter:blur(1.5px);opacity:.55}
+
+/* ---- web ---- */
+.browser{width:600px;border:1px solid var(--paper-rule);border-radius:10px;overflow:hidden;background:var(--paper-ground);box-shadow:var(--shadow-floating);position:relative}
+.browser .url{height:30px;display:flex;align-items:center;gap:8px;padding:0 10px;background:var(--paper-sidebar);border-bottom:1px solid var(--paper-rule);font-size:11.5px;color:var(--paper-tertiary)}
+.browser .url .bar{flex:1;background:var(--paper-raised);border:1px solid var(--paper-rule);border-radius:6px;padding:1px 8px}
+.kebab{color:var(--paper-secondary);font-weight:700;letter-spacing:1px;padding:0 4px;border-radius:4px}
+.kebab.on{background:var(--paper-wash);box-shadow:0 0 0 2px var(--accent)}
+.field{display:flex;flex-direction:column;gap:3px;margin-bottom:8px}
+.field label{font-size:11.5px;color:var(--paper-secondary)}
+.select{border:1px solid var(--paper-edge);border-radius:var(--radius-control);padding:4px 8px;background:var(--paper-raised);display:flex;justify-content:space-between}
+table.words{border-collapse:collapse;width:100%;font-size:12.5px;background:var(--paper-raised);border:1px solid var(--paper-rule);border-radius:10px;overflow:hidden}
+table.words th,table.words td{border-bottom:1px solid var(--paper-rule);padding:6px 10px;text-align:left;vertical-align:top}
+table.words th{background:var(--paper-well);font-weight:600}
+code{font-family:var(--font-mono);font-size:.92em;background:var(--paper-well);border-radius:var(--radius-code);padding:0 4px}
+body.one header.doc,body.one section.part:not(.shown),body.one section.part.shown>h2,body.one section.part.shown>p.intro{display:none}
+body.one main{padding:12px}
+body.one section.part{margin:0}
+</style>
+</head>
+<body>
+<header class="doc">
+  <h1>Session parents: wireframes</h1>
+  <p>#7537, a spike of epic #7535. The data model (approved 2026-11-27) is in <code>../spec.md</code>. A session can have one parent: a live session on the same host with the label <code>lead</code>. A director is a lead whose children include leads. Each frame shows a Mac (the MVP, #7539) or the Remote and the web page (the port, #7540). All of it is behind the flag <code>session-parents</code>: with it off, no frame here shows, and the tree follows the starter as today.</p>
+  <p>All names are scratch data. The words follow ASD-STE100. The colours, radii and type are the tokens of <code>design/tokens.json</code>.</p>
+</header>
+<main>
+
+<!-- ============================================================ 1. Create -->
+<section class="part" id="create">
+<h2>1. Choose a lead when you start a session</h2>
+<p class="intro">The Mac starts a session from the prompt bar of a new chat, with chips for the runtime and the worktree. A new chip, <b>Lead</b>, opens a list of the live sessions on this host that have the label <code>lead</code>. The default is no lead: the session goes where it goes today.</p>
+<div class="grid">
+
+<div class="frame"><div class="stage">
+  <div class="win" style="height:400px">
+    <div class="tbar"><i></i><i></i><i></i><span class="t">New Session — shop-demo</span></div>
+    <div class="body" style="min-height:370px">
+      <div class="side" style="width:170px">
+        <div class="folder">shop-demo</div>
+        <div class="row"><span class="tw">▾</span><span class="dot run"></span><span class="tt">Plan the spring release</span></div>
+        <div class="row i1"><span class="tw">▾</span><span class="dot run"></span><span class="tt">Billing page</span></div>
+        <div class="row i1"><span class="tw">▸</span><span class="dot"></span><span class="tt">Docs refresh</span></div>
+        <div class="row sel"><span class="tw"></span><span class="dot"></span><span class="tt">New Session</span></div>
+      </div>
+      <div class="pane" style="position:relative">
+        <div class="prompt">
+          <div class="ph">What do you want done?</div>
+          <div class="chips">
+            <span class="chip">Claude · Opus<span class="ch">⌄</span></span>
+            <span class="chip">New worktree<span class="ch">⌄</span></span>
+            <span class="chip on">No lead<span class="ch">⌄</span></span>
+          </div>
+        </div>
+        <div class="pop" style="right:4px;bottom:92px;width:310px">
+          <div class="search">Search leads</div>
+          <div class="choice hi"><span class="ck">✓</span><div><div class="ti">No lead</div><div class="de">Under the session that starts it, or at the top</div></div></div>
+          <div class="sep"></div>
+          <div class="ph2">Leads on this Mac</div>
+          <div class="choice"><span class="ck"></span><div><div class="ti">Plan the spring release</div><div class="de">shop-demo · 2 under it · director</div></div></div>
+          <div class="choice"><span class="ck"></span><div><div class="ti">Billing page</div><div class="de">shop-demo · 3 under it</div></div></div>
+          <div class="choice"><span class="ck"></span><div><div class="ti">Docs refresh</div><div class="de">shop-demo · 1 under it</div></div></div>
+          <div class="choice off"><span class="ck"></span><div><div class="ti">Load tests</div><div class="de">api-demo · Full: 100 sessions under it</div></div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div><div class="cap"><span class="n">1a</span><span class="name">The Lead chip and its list</span><span class="client">Mac</span>
+<ul>
+<li>One choice list, as the worktree chip has (<code>SelectChoice</code>). The search field shows when there are more than 8 leads.</li>
+<li>Each lead: its title, then its folder, how many sessions are under it, and "director" when a lead is under it.</li>
+<li>A lead that has 100 live sessions under it is in the list, dimmed, with the reason. A lead deeper than 5 levels says "Too deep: 6 levels" in the same way.</li>
+<li>Leads from every folder of this Mac, this folder's first. Not the sessions of another machine (the port adds them).</li>
+</ul></div></div>
+
+<div class="frame"><div class="stage">
+  <div class="win" style="height:400px">
+    <div class="tbar"><i></i><i></i><i></i><span class="t">Fix invoice totals — shop-demo</span></div>
+    <div class="body" style="min-height:370px">
+      <div class="side" style="width:200px">
+        <div class="folder">shop-demo</div>
+        <div class="row"><span class="tw">▾</span><span class="dot run"></span><span class="tt">Plan the spring release</span></div>
+        <div class="row i1"><span class="tw">▾</span><span class="dot run"></span><span class="tt">Billing page</span></div>
+        <div class="row i2"><span class="tw"></span><span class="dot"></span><span class="tt">Add the refund button</span></div>
+        <div class="row i2 sel"><span class="tw"></span><span class="dot run"></span><span class="tt">Fix invoice totals</span></div>
+        <div class="row i1"><span class="tw">▸</span><span class="dot"></span><span class="tt">Docs refresh</span></div>
+      </div>
+      <div class="pane">
+        <div class="msg">Fix the totals on the invoice page.</div>
+        <div class="runtime-note">Under Billing page</div>
+        <div class="prompt">
+          <div class="ph">Reply…</div>
+          <div class="chips"><span class="chip">Claude · Opus</span><span class="chip">fix-invoice-totals</span><span class="chip">Under Billing page</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div><div class="cap"><span class="n">1b</span><span class="name">After the start: under the lead</span><span class="client">Mac</span>
+<ul>
+<li>Before the start the chip says <b>Under Billing page</b>. After the start it is a said label, as the runtime is: the parent changes in the sidebar, not here.</li>
+<li>The new session is in the sidebar under its lead at once. A runtime note in the chat says "Under Billing page".</li>
+<li>The new session learns its lead from its brief. The lead gets a notice with its next turn; its chat shows "Fix invoice totals now works under you".</li>
+</ul></div></div>
+
+</div>
+</section>
+
+<!-- ============================================================ 2. Sidebar tree -->
+<section class="part" id="tree">
+<h2>2. The nested sidebar and moves by drag</h2>
+<p class="intro">The tree puts a session under its parent when it has one, else under its starter (#835). A lead shows its label as today and gets no new mark. A drag of a row onto a lead sets or changes its parent; a drag to the top of the folder takes it out from under its starter. The row moves at once, and the daemon can refuse (5 below).</p>
+<div class="grid three">
+
+<div class="frame"><div class="stage">
+  <div class="win narrow">
+    <div class="tbar"><i></i><i></i><i></i></div>
+    <div class="side" style="position:relative;min-height:340px">
+      <div class="folder">shop-demo<span class="sp"></span><span class="cnt">7</span></div>
+      <div class="row"><span class="tw">▾</span><span class="dot run"></span><span class="tt">Plan the spring release</span><span class="lbl lead">lead</span></div>
+      <div class="row i1"><span class="tw">▾</span><span class="dot run"></span><span class="tt">Billing page</span><span class="lbl lead">lead</span><span class="lbl issue">#101</span></div>
+      <div class="row i2"><span class="tw"></span><span class="dot ask"></span><span class="tt ask-t">Add the refund button</span><span class="lbl pull">P#140</span></div>
+      <div class="row i2"><span class="tw"></span><span class="dot run"></span><span class="tt">Fix invoice totals</span><span class="lbl issue">#104</span></div>
+      <div class="row i2"><span class="tw"></span><span class="dot"></span><span class="tt">Tax line on receipts</span></div>
+      <div class="row i1"><span class="tw">▾</span><span class="dot"></span><span class="tt">Docs refresh</span><span class="lbl lead">lead</span></div>
+      <div class="row i2"><span class="tw"></span><span class="dot run"></span><span class="tt">Write the setup guide</span></div>
+      <div class="row"><span class="tw"></span><span class="dot"></span><span class="tt">Try a new logo</span></div>
+      <div class="tip" style="left:60px;top:270px">Fix invoice totals<br><span class="note" style="margin:0">Under Billing page · started by Plan the spring release</span></div>
+    </div>
+  </div>
+</div><div class="cap"><span class="n">2a</span><span class="name">The tree with a director and two leads</span><span class="client">Mac</span>
+<ul>
+<li>The row looks as today. Only the nesting changes: the parent, else the starter.</li>
+<li>The row's help (hover) says the parent and the starter when they are not the same session.</li>
+<li>Past 3 indents (<code>maxIndent</code>) a row keeps the third indent; its help says its parent.</li>
+</ul></div></div>
+
+<div class="frame"><div class="stage">
+  <div class="win narrow">
+    <div class="tbar"><i></i><i></i><i></i></div>
+    <div class="side" style="position:relative;min-height:340px">
+      <div class="folder">shop-demo</div>
+      <div class="row dim"><span class="tw">▾</span><span class="dot run"></span><span class="tt">Plan the spring release</span><span class="lbl lead">lead</span></div>
+      <div class="row i1"><span class="tw">▾</span><span class="dot run"></span><span class="tt">Billing page</span><span class="lbl lead">lead</span></div>
+      <div class="row i2 dim"><span class="tw"></span><span class="dot ask"></span><span class="tt">Add the refund button</span></div>
+      <div class="row i2 dim"><span class="tw"></span><span class="dot run"></span><span class="tt">Fix invoice totals</span></div>
+      <div class="row i1 target"><span class="tw">▾</span><span class="dot"></span><span class="tt">Docs refresh</span><span class="lbl lead">lead</span></div>
+      <div class="row i2 dim"><span class="tw"></span><span class="dot run"></span><span class="tt">Write the setup guide</span></div>
+      <div class="row dim" style="opacity:.2"><span class="tw"></span><span class="dot"></span><span class="tt">Tax line on receipts</span></div>
+      <div class="ghost" style="left:110px;top:186px"><div class="gr"><span class="dot"></span>Tax line on receipts</div><div class="gl">Move under Docs refresh</div></div>
+    </div>
+  </div>
+</div><div class="cap"><span class="n">2b</span><span class="name">Drag onto a lead</span><span class="client">Mac</span>
+<ul>
+<li>While a row is dragged, the rows that are not leads dim: only a lead can take it.</li>
+<li>The lead under the pointer gets the accent ring and a label: "Move under Docs refresh".</li>
+<li>On drop, the row moves under the lead at once. A hover of 1 s on a closed lead opens it.</li>
+<li>A drag between two rows of the same lead does nothing: the order in a lead stays by state and time.</li>
+</ul></div></div>
+
+<div class="frame"><div class="stage">
+  <div class="win narrow">
+    <div class="tbar"><i></i><i></i><i></i></div>
+    <div class="side" style="position:relative;min-height:340px">
+      <div class="folder">shop-demo</div>
+      <div class="dropline"></div>
+      <div class="gap"></div>
+      <div class="row"><span class="tw">▾</span><span class="dot run"></span><span class="tt">Plan the spring release</span><span class="lbl lead">lead</span></div>
+      <div class="row i1"><span class="tw">▾</span><span class="dot run"></span><span class="tt">Billing page</span><span class="lbl lead">lead</span></div>
+      <div class="row i2"><span class="tw"></span><span class="dot ask"></span><span class="tt">Add the refund button</span></div>
+      <div class="row i2" style="opacity:.2"><span class="tw"></span><span class="dot run"></span><span class="tt">Fix invoice totals</span></div>
+      <div class="row i1"><span class="tw">▾</span><span class="dot"></span><span class="tt">Docs refresh</span><span class="lbl lead">lead</span></div>
+      <div class="ghost" style="left:30px;top:42px"><div class="gr"><span class="dot run"></span>Fix invoice totals</div><div class="gl">Move to the top of shop-demo</div></div>
+    </div>
+  </div>
+</div><div class="cap"><span class="n">2c</span><span class="name">Drag to the top</span><span class="client">Mac</span>
+<ul>
+<li>A drop on the folder's name, or above its first row, puts the session at the top: no parent, and its starter is ignored in the tree (<code>parent: {}</code>).</li>
+<li>The accent line shows where the row goes. The words say the folder.</li>
+<li>A drop on another folder does not move the session there: that is not a drop target.</li>
+</ul></div></div>
+
+<div class="frame"><div class="stage">
+  <div class="win narrow">
+    <div class="tbar"><i></i><i></i><i></i></div>
+    <div class="side" style="position:relative;min-height:340px">
+      <div class="folder">shop-demo</div>
+      <div class="row target"><span class="tw">▾</span><span class="dot run"></span><span class="tt">Plan the spring release</span><span class="lbl lead">lead</span></div>
+      <div class="row i1" style="opacity:.2"><span class="tw">▾</span><span class="dot"></span><span class="tt">Docs refresh</span></div>
+      <div class="row i2" style="opacity:.2"><span class="tw"></span><span class="dot run"></span><span class="tt">Write the setup guide</span></div>
+      <div class="row i2" style="opacity:.2"><span class="tw"></span><span class="dot"></span><span class="tt">Check the links</span></div>
+      <div class="row"><span class="tw">▾</span><span class="dot run"></span><span class="tt">Plan the summer sale</span><span class="lbl lead">lead</span></div>
+      <div class="row i1"><span class="tw"></span><span class="dot"></span><span class="tt">Price the bundles</span></div>
+      <div class="ghost" style="left:120px;top:80px"><div class="gr"><span class="dot"></span>Docs refresh<span class="plus">+2</span></div><div class="gl">Move Docs refresh and the 2 sessions under it under Plan the spring release</div></div>
+    </div>
+  </div>
+</div><div class="cap"><span class="n">2d</span><span class="name">A lead moves with its subtree</span><span class="client">Mac</span>
+<ul>
+<li>The dragged lead's own rows go with it: the ghost says "+2", and they fade in place.</li>
+<li>On drop, the whole subtree is under the new lead. Only one record changes (the lead's parent).</li>
+<li>Only the lead and its old and new parents get a notice; the sessions under it keep their parent.</li>
+</ul></div></div>
+
+<div class="frame"><div class="stage">
+  <div class="win narrow">
+    <div class="tbar"><i></i><i></i><i></i></div>
+    <div class="side" style="position:relative;min-height:340px">
+      <div class="folder">shop-demo</div>
+      <div class="row"><span class="tw">▾</span><span class="dot run"></span><span class="tt">Plan the spring release</span><span class="lbl lead">lead</span></div>
+      <div class="row i1"><span class="tw">▾</span><span class="dot"></span><span class="tt">Docs refresh</span><span class="lbl lead">lead</span></div>
+      <div class="row i2"><span class="tw"></span><span class="dot"></span><span class="tt">Tax line on receipts</span></div>
+      <div class="row i1"><span class="tw">▾</span><span class="dot run"></span><span class="tt">Billing page</span><span class="lbl lead">lead</span></div>
+      <div class="row i2"><span class="tw"></span><span class="dot ask"></span><span class="tt">Add the refund button</span></div>
+      <div class="toast" style="width:300px;bottom:12px"><span class="ic ok">↳</span><span>Moved under Docs refresh</span><span style="flex:1"></span><span class="btn">Undo</span></div>
+    </div>
+  </div>
+</div><div class="cap"><span class="n">2e</span><span class="name">After a move: Undo</span><span class="client">Mac</span>
+<ul>
+<li>A toast says where the session went, with <b>Undo</b>; ⌘Z does the same while it shows (as the other session changes do, #4793).</li>
+<li>Undo puts the old placement back: the old lead, the starter or the top.</li>
+<li>A move and its Undo before the next turn tell the agents nothing (the notices cancel).</li>
+</ul></div></div>
+
+</div>
+</section>
+
+<!-- ============================================================ 3. Refused -->
+<section class="part" id="refused">
+<h2>3. A move that is refused</h2>
+<p class="intro">The Mac refuses what its cache can see before the drop: the pointer shows the refusal and why, and a drop there does nothing. The daemon can still refuse a drop that the cache let through (an old cache, a lead that lost its label); then the row goes back and a toast says why.</p>
+<div class="grid three">
+
+<div class="frame"><div class="stage">
+  <div class="win narrow">
+    <div class="tbar"><i></i><i></i><i></i></div>
+    <div class="side" style="position:relative;min-height:300px">
+      <div class="folder">shop-demo</div>
+      <div class="row" style="opacity:.2"><span class="tw">▾</span><span class="dot run"></span><span class="tt">Plan the spring release</span><span class="lbl lead">lead</span></div>
+      <div class="row i1" style="opacity:.2"><span class="tw">▾</span><span class="dot run"></span><span class="tt">Billing page</span><span class="lbl lead">lead</span></div>
+      <div class="row i2" style="opacity:.2"><span class="tw"></span><span class="dot ask"></span><span class="tt">Add the refund button</span></div>
+      <div class="row i1" style="opacity:.2;box-shadow:inset 0 0 0 2px var(--tint-failure)"><span class="tw">▾</span><span class="dot"></span><span class="tt">Docs refresh</span><span class="lbl lead">lead</span></div>
+      <div class="row"><span class="tw"></span><span class="dot"></span><span class="tt">Try a new logo</span></div>
+      <div class="ghost bad" style="left:90px;top:196px"><div class="gr"><span class="no"></span><span class="dot run"></span>Plan the spring release<span class="plus">+4</span></div><div class="gl">Docs refresh is under Plan the spring release. A session cannot go under its own subtree.</div></div>
+    </div>
+  </div>
+</div><div class="cap"><span class="n">3a</span><span class="name">A cycle</span><span class="client">Mac</span>
+<ul>
+<li>The rows of the dragged lead's own subtree are not targets. The pointer shows "not allowed", and the label says why.</li>
+<li>The same for a drop of a session onto itself.</li>
+</ul></div></div>
+
+<div class="frame"><div class="stage">
+  <div class="win narrow">
+    <div class="tbar"><i></i><i></i><i></i></div>
+    <div class="side" style="position:relative;min-height:300px">
+      <div class="folder">shop-demo</div>
+      <div class="row"><span class="tw">▾</span><span class="dot run"></span><span class="tt">Plan the year</span><span class="lbl lead">lead</span></div>
+      <div class="row i1"><span class="tw">▾</span><span class="dot run"></span><span class="tt">Plan the spring release</span><span class="lbl lead">lead</span></div>
+      <div class="row i2"><span class="tw">▾</span><span class="dot run"></span><span class="tt">Billing page</span><span class="lbl lead">lead</span></div>
+      <div class="row i3" style="box-shadow:inset 0 0 0 2px var(--tint-failure)"><span class="tw">▾</span><span class="dot"></span><span class="tt">Refunds</span><span class="lbl lead">lead</span></div>
+      <div class="ghost bad" style="left:90px;top:186px"><div class="gr"><span class="no"></span><span class="dot"></span>Docs refresh<span class="plus">+2</span></div><div class="gl">Too deep. Sessions can go 6 levels down; this move makes 7.</div></div>
+    </div>
+  </div>
+</div><div class="cap"><span class="n">3b</span><span class="name">Too deep</span><span class="client">Mac</span>
+<ul>
+<li>The depth counts the dragged subtree too: a lead with sessions under it fits in fewer places than a single session.</li>
+</ul></div></div>
+
+<div class="frame"><div class="stage">
+  <div class="win narrow">
+    <div class="tbar"><i></i><i></i><i></i></div>
+    <div class="side" style="position:relative;min-height:300px">
+      <div class="folder">api-demo</div>
+      <div class="row" style="box-shadow:inset 0 0 0 2px var(--tint-failure)"><span class="tw">▸</span><span class="dot run"></span><span class="tt">Load tests</span><span class="lbl lead">lead</span><span class="cnt">100</span></div>
+      <div class="row" style="opacity:.2"><span class="tw"></span><span class="dot"></span><span class="tt">Check the rate limits</span></div>
+      <div class="ghost bad" style="left:70px;top:100px"><div class="gr"><span class="no"></span><span class="dot"></span>Check the rate limits</div><div class="gl">Load tests has 100 sessions under it, the most it can have.</div></div>
+    </div>
+  </div>
+</div><div class="cap"><span class="n">3c</span><span class="name">A full lead</span><span class="client">Mac</span>
+<ul>
+<li>100 live sessions under one lead is the limit. Archived ones do not count.</li>
+</ul></div></div>
+
+<div class="frame"><div class="stage">
+  <div class="win narrow">
+    <div class="tbar"><i></i><i></i><i></i></div>
+    <div class="side" style="position:relative;min-height:300px">
+      <div class="folder">shop-demo</div>
+      <div class="row"><span class="tw">▾</span><span class="dot run"></span><span class="tt">Plan the spring release</span><span class="lbl lead">lead</span></div>
+      <div class="row i1"><span class="tw">▾</span><span class="dot run"></span><span class="tt">Billing page</span><span class="lbl lead">lead</span></div>
+      <div class="row i2"><span class="tw"></span><span class="dot run"></span><span class="tt">Fix invoice totals</span></div>
+      <div class="row i1"><span class="tw"></span><span class="dot"></span><span class="tt">Docs refresh</span></div>
+      <div class="toast" style="width:310px;bottom:12px;align-items:flex-start"><span class="ic">!</span><span>Could not move Fix invoice totals. Docs refresh is not a lead now.</span></div>
+    </div>
+  </div>
+</div><div class="cap"><span class="n">3d</span><span class="name">The daemon refuses after the drop</span><span class="client">Mac</span>
+<ul>
+<li>The row goes back to where it was, and a toast says why (the failure's message from the daemon).</li>
+<li>No Try Again: the cause is in the tree, and the person can see it. On <code>FailureStale</code> the Mac reads the list again and tries once more by itself.</li>
+<li>A host that is offline: no drag starts, as a rename does not.</li>
+</ul></div></div>
+
+</div>
+</section>
+
+<!-- ============================================================ 4. Keyboard and VoiceOver -->
+<section class="part" id="keyboard">
+<h2>4. Without a drag: the menu, the keyboard and VoiceOver</h2>
+<p class="intro">Every move a drag makes is also one command, <b>Move Under Lead…</b>, in the row's menu and in the menu bar's Session menu. It opens a sheet with the same list as the Lead chip, plus "At the top" and "Under its starter". VoiceOver has it as a custom action of the row.</p>
+<div class="grid three">
+
+<div class="frame"><div class="stage">
+  <div class="win narrow" style="height:440px">
+    <div class="tbar"><i></i><i></i><i></i></div>
+    <div class="side" style="position:relative;min-height:410px">
+      <div class="folder">shop-demo</div>
+      <div class="row"><span class="tw">▾</span><span class="dot run"></span><span class="tt">Plan the spring release</span><span class="lbl lead">lead</span></div>
+      <div class="row i1"><span class="tw">▾</span><span class="dot run"></span><span class="tt">Billing page</span><span class="lbl lead">lead</span></div>
+      <div class="row i2 sel"><span class="tw"></span><span class="dot run"></span><span class="tt">Fix invoice totals</span></div>
+      <div class="menu" style="left:120px;top:96px">
+        <div class="mi">Mute</div>
+        <div class="mi">Priority<span class="k">▸</span></div>
+        <div class="mi">Rename…<span class="k">↩</span></div>
+        <div class="mi">Pin</div>
+        <div class="mi">Branch</div>
+        <div class="mi hi new">Move Under Lead…</div>
+        <div class="mi">Move to Machine…</div>
+        <div class="mi">Archive<span class="k">⌫</span></div>
+        <div class="sep"></div>
+        <div class="mi">Export…</div>
+        <div class="mi">Show in Finder</div>
+      </div>
+    </div>
+  </div>
+</div><div class="cap"><span class="n">4a</span><span class="name">The row's menu</span><span class="client">Mac</span>
+<ul>
+<li><b>Move Under Lead…</b> goes before Move to Machine…, with the other moves.</li>
+<li>The same item is in the menu bar's Session menu, for the selected session. No new shortcut: ⌃F2 and the Session menu reach it.</li>
+<li>Not shown for an archived session, or when the host does not say <code>agents.parent/1</code>.</li>
+</ul></div></div>
+
+<div class="frame"><div class="stage">
+  <div class="win narrow" style="height:500px;width:440px">
+    <div class="tbar"><i></i><i></i><i></i></div>
+    <div class="side" style="min-height:470px"></div>
+    <div class="scrim"></div>
+    <div class="sheet" style="width:380px">
+      <h3>Move Fix invoice totals</h3>
+      <div class="sub">Now under Billing page. Started by Plan the spring release.</div>
+      <div class="search" style="border:1px solid var(--paper-edge);border-radius:var(--radius-control);padding:4px 8px;color:var(--paper-tertiary);margin-bottom:6px;font-size:12px">Search leads</div>
+      <div class="choice"><span class="ck"></span><div><div class="ti">At the top of shop-demo</div><div class="de">Under no session</div></div></div>
+      <div class="choice"><span class="ck"></span><div><div class="ti">Under its starter</div><div class="de">Plan the spring release</div></div></div>
+      <div class="sep"></div>
+      <div class="ph2">Leads on this Mac</div>
+      <div class="choice"><span class="ck">✓</span><div><div class="ti">Billing page</div><div class="de">shop-demo · 3 under it</div></div></div>
+      <div class="choice hi" style="box-shadow:0 0 0 2px var(--accent)"><span class="ck"></span><div><div class="ti">Docs refresh</div><div class="de">shop-demo · 1 under it</div></div></div>
+      <div class="choice off"><span class="ck"></span><div><div class="ti">Load tests</div><div class="de">api-demo · Full: 100 sessions under it</div></div></div>
+      <div class="btns"><span class="btn">Cancel</span><span class="btn pri">Move</span></div>
+    </div>
+  </div>
+</div><div class="cap"><span class="n">4b</span><span class="name">The Move sheet</span><span class="client">Mac</span>
+<ul>
+<li>The ↑ and ↓ keys go through the list, Return moves, Escape closes. Typing goes to the search field.</li>
+<li>A choice that the Mac would refuse (its own subtree, too deep, full) is dimmed with the reason, so a keyboard user gets the same reasons as a drag.</li>
+<li>"Under its starter" shows only when the session has a starter in the list and is not under it now.</li>
+</ul></div></div>
+
+<div class="frame"><div class="stage" style="flex-direction:column;gap:10px">
+  <div class="ann">VoiceOver on the row
+  "Fix invoice totals, working,
+   under Billing page, level 3"
+
+Actions (rotor ▸ Actions)
+  Move Under Lead…      opens the sheet (4b)
+  Move to Top           no sheet; at once
+  Rename, Pin, Archive  as today
+
+On a move it says
+  "Moved under Docs refresh."
+On a refusal it says the toast's words.
+
+The tree is an outline. A lead row says
+  "Billing page, lead,
+   3 sessions under it, expanded"
+← and → close and open it.</div>
+</div><div class="cap"><span class="n">4c</span><span class="name">VoiceOver</span><span class="client">Mac</span><span class="client">Remote</span><span class="client">web</span>
+<ul>
+<li>The same words on all three clients. On the web, the row is a <code>treeitem</code> with <code>aria-level</code>, and its menu has the item.</li>
+<li>"Move to Top" is a quick action that needs no list; the sheet has every placement.</li>
+</ul></div></div>
+
+</div>
+</section>
+
+<!-- ============================================================ 5. Remote -->
+<section class="part" id="remote">
+<h2>5. The Remote (the port, #7540)</h2>
+<p class="intro">The same tree, the same words and the same list. On an iPhone, touch has no drag in the list: a long press opens the row's menu, which has <b>Move Under Lead…</b>. On an iPad, a long press and then a drag moves a row as on the Mac, and the menu is there too.</p>
+<div class="grid three">
+
+<div class="frame"><div class="stage">
+  <div class="phone">
+    <div class="status"><span>9:41</span><span>●●●</span></div>
+    <div class="nav"><h4>shop-demo</h4></div>
+    <div class="list blur">
+      <div class="row"><span class="tw">▾</span><span class="dot run"></span><span class="tt">Plan the spring release</span></div>
+      <div class="row i1"><span class="tw">▾</span><span class="dot run"></span><span class="tt">Billing page</span></div>
+      <div class="row i2"><span class="dot ask"></span><span class="tt">Add the refund button</span></div>
+    </div>
+    <div class="lifted" style="top:190px"><span class="dot run"></span>Fix invoice totals</div>
+    <div class="cmenu" style="left:40px;top:244px">
+      <div class="mi">Rename<span class="ic">✎</span></div>
+      <div class="mi">Pin<span class="ic">⌃</span></div>
+      <div class="mi new">Move Under Lead…<span class="ic">↳</span></div>
+      <div class="mi">Move to Top<span class="ic">⇤</span></div>
+      <div class="mi">Archive<span class="ic">▭</span></div>
+    </div>
+  </div>
+</div><div class="cap"><span class="n">5a</span><span class="name">Long press on a row</span><span class="client">Remote</span>
+<ul>
+<li>The tree nests as on the Mac, with 16 pt for each level, at most 2 levels of indent on an iPhone.</li>
+<li>Move to Top shows only when the session is under a lead or a starter.</li>
+</ul></div></div>
+
+<div class="frame"><div class="stage">
+  <div class="phone">
+    <div class="status"><span>9:41</span><span>●●●</span></div>
+    <div class="nav blur"><h4>shop-demo</h4></div>
+    <div class="isheet">
+      <div class="grab"></div>
+      <div class="hd"><span>Cancel</span><b>Move Under Lead</b><span style="opacity:.45">Move</span></div>
+      <div class="cell" style="color:var(--paper-tertiary);border:1px solid var(--paper-rule);border-radius:10px;padding:6px 10px;margin-bottom:6px">Search leads</div>
+      <div class="cell"><div>At the top of shop-demo<div class="de">Under no session</div></div></div>
+      <div class="cell"><div>Under its starter<div class="de">Plan the spring release</div></div></div>
+      <div class="cell"><div>Billing page<div class="de">shop-demo · 3 under it</div></div><span class="ck">✓</span></div>
+      <div class="cell"><div>Docs refresh<div class="de">shop-demo · 1 under it</div></div></div>
+      <div class="cell off"><div>Load tests<div class="de">api-demo · Full: 100 sessions under it</div></div></div>
+    </div>
+  </div>
+</div><div class="cap"><span class="n">5b</span><span class="name">The Move sheet</span><span class="client">Remote</span>
+<ul>
+<li>The same list as the Mac sheet, in a sheet; Move is on when the choice is not the current one.</li>
+<li>A move needs the host online. With the host offline, the item is in the menu, dimmed, with "The machine is offline".</li>
+</ul></div></div>
+
+<div class="frame"><div class="stage">
+  <div class="phone">
+    <div class="status"><span>9:41</span><span>●●●</span></div>
+    <div class="nav"><span class="a">Cancel</span><h4 style="font-size:16px;flex:1;text-align:center">New Session</h4><span class="a">Start</span></div>
+    <div style="padding:0 16px">
+      <div class="cell"><span>Folder</span><span class="de" style="margin-left:auto">shop-demo ›</span></div>
+      <div class="cell"><span>Runtime</span><span class="de" style="margin-left:auto">Claude · Opus ›</span></div>
+      <div class="cell"><span>Worktree</span><span class="de" style="margin-left:auto">New ›</span></div>
+      <div class="cell"><span>Lead</span><span class="de" style="margin-left:auto">Billing page ›</span></div>
+      <div style="margin-top:12px;border:1px solid var(--paper-rule);border-radius:12px;padding:10px;color:var(--paper-tertiary);height:120px">What do you want done?</div>
+    </div>
+  </div>
+</div><div class="cap"><span class="n">5c</span><span class="name">Lead in New Session</span><span class="client">Remote</span>
+<ul>
+<li>A row <b>Lead</b> after Worktree; it opens the same list as 5b, with "No lead" first.</li>
+<li>The row shows only when the folder's host says <code>agents.parent/1</code> and the flag is on.</li>
+</ul></div></div>
+
+</div>
+</section>
+
+<!-- ============================================================ 6. Web -->
+<section class="part" id="web">
+<h2>6. The web page (the port, #7540)</h2>
+<p class="intro">The web page is a full client: drag and drop in the tree as on the Mac (with a pointer), the row's ⋯ menu with <b>Move under lead…</b>, which opens the page's own dialog, and a Lead field in New Session.</p>
+<div class="grid">
+
+<div class="frame"><div class="stage">
+  <div class="browser" style="height:380px">
+    <div class="url"><span>‹ ›</span><span class="bar">agentloops.example/#/h/mac/p/shop-demo</span></div>
+    <div class="body" style="min-height:350px">
+      <div class="side" style="position:relative;width:290px">
+        <div class="folder">shop-demo</div>
+        <div class="row"><span class="tw">▾</span><span class="dot run"></span><span class="tt">Plan the spring release</span><span class="lbl lead">lead</span></div>
+        <div class="row i1"><span class="tw">▾</span><span class="dot run"></span><span class="tt">Billing page</span><span class="lbl lead">lead</span></div>
+        <div class="row i2"><span class="tw"></span><span class="dot ask"></span><span class="tt">Add the refund button</span></div>
+        <div class="row i1"><span class="tw">▾</span><span class="dot"></span><span class="tt">Docs refresh</span><span class="lbl lead">lead</span></div>
+        <div class="row i2 sel"><span class="tw"></span><span class="dot run"></span><span class="tt">Write the setup guide</span><span class="kebab on">⋯</span></div>
+        <div class="row"><span class="tw"></span><span class="dot"></span><span class="tt">Try a new logo</span></div>
+        <div class="menu" style="left:150px;top:166px;width:190px">
+          <div class="mi">Rename…</div>
+          <div class="mi">Pin</div>
+          <div class="mi hi new">Move under lead…</div>
+          <div class="mi">Move to top</div>
+          <div class="mi">Archive</div>
+        </div>
+      </div>
+      <div class="pane"></div>
+    </div>
+  </div>
+</div><div class="cap"><span class="n">6a</span><span class="name">The tree, a drop target and the row's menu</span><span class="client">web</span>
+<ul>
+<li>A drag with a pointer shows the same ring, card and refusals as 2b to 3d. <code>nest</code> in <code>Web/src/model/tree.ts</code> takes the effective parent.</li>
+<li>The ⋯ button (and the context menu, and Shift+F10) opens the row's menu with the move items. Web menus use sentence case, as the web page does today.</li>
+</ul></div></div>
+
+<div class="frame"><div class="stage">
+  <div class="browser" style="height:380px">
+    <div class="url"><span>‹ ›</span><span class="bar">agentloops.example/#/h/mac/p/shop-demo/new</span></div>
+    <div class="body" style="min-height:350px">
+      <div class="side" style="width:180px"><div class="folder">shop-demo</div></div>
+      <div class="pane" style="justify-content:flex-start;padding:18px">
+        <h3 style="margin:0 0 10px;font-size:15px">New session</h3>
+        <div class="field"><label>Runtime</label><div class="select"><span>Claude · Opus</span><span>⌄</span></div></div>
+        <div class="field"><label>Worktree</label><div class="select"><span>New worktree</span><span>⌄</span></div></div>
+        <div class="field"><label>Lead</label><div class="select" style="box-shadow:0 0 0 2px var(--accent)"><span>Billing page</span><span>⌄</span></div><div class="note">The session works under this lead. Leads are sessions with the label lead.</div></div>
+        <div style="border:1px solid var(--paper-rule);border-radius:12px;padding:10px;color:var(--paper-tertiary);height:70px;background:var(--paper-raised)">What do you want done?</div>
+      </div>
+    </div>
+  </div>
+</div><div class="cap"><span class="n">6b</span><span class="name">Lead in New Session</span><span class="client">web</span>
+<ul>
+<li>A field after Worktree, "No lead" by default. Its list is 1a's list, with search.</li>
+<li>The Move dialog is the Mac's 4b sheet, in the page's own <code>&lt;dialog&gt;</code>.</li>
+</ul></div></div>
+
+</div>
+</section>
+
+<!-- ============================================================ 7. Words -->
+<section class="part" id="words">
+<h2>7. The words, on every client</h2>
+<p class="intro">One set of words in <code>Shared</code> (Mac and Remote) and in the web's words module. The Mac uses title case in menus; the web uses sentence case, as each does today.</p>
+<table class="words">
+<tr><th>Where</th><th>Words</th></tr>
+<tr><td>Chip / field, none</td><td>No lead</td></tr>
+<tr><td>Chip, chosen</td><td>Under &lt;lead&gt;</td></tr>
+<tr><td>A lead in a list</td><td>&lt;title&gt; — &lt;folder&gt; · &lt;n&gt; under it [· director]</td></tr>
+<tr><td>Menu item</td><td>Move Under Lead… · Move to Top</td></tr>
+<tr><td>Drop label</td><td>Move under &lt;lead&gt; · Move to the top of &lt;folder&gt; · Move &lt;lead&gt; and the &lt;n&gt; sessions under it under &lt;lead&gt;</td></tr>
+<tr><td>Done (toast)</td><td>Moved under &lt;lead&gt; · Moved to the top · Moved under its starter — [Undo]</td></tr>
+<tr><td>Cycle</td><td>&lt;lead&gt; is under &lt;session&gt;. A session cannot go under its own subtree.</td></tr>
+<tr><td>Depth</td><td>Too deep. Sessions can go 6 levels down; this move makes &lt;n&gt;.</td></tr>
+<tr><td>Full</td><td>&lt;lead&gt; has 100 sessions under it, the most it can have.</td></tr>
+<tr><td>Not a lead</td><td>Could not move &lt;session&gt;. &lt;target&gt; is not a lead now.</td></tr>
+<tr><td>Offline</td><td>The machine is offline.</td></tr>
+<tr><td>Chat note (child)</td><td>Under &lt;lead&gt; · No lead now</td></tr>
+<tr><td>Chat note (lead)</td><td>&lt;session&gt; now works under you · &lt;session&gt; no longer works under you</td></tr>
+</table>
+</section>
+
+</main>
+<script>
+// ?only=<section id> shows one section alone, for the screenshots.
+const only = new URLSearchParams(location.search).get("only");
+if (only) { document.body.classList.add("one"); document.getElementById(only)?.classList.add("shown"); }
+</script>
+</body>
+</html>

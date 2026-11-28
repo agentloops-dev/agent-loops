@@ -6,7 +6,7 @@
 import { useSignal } from "@preact/signals";
 import { useEffect } from "preact/hooks";
 import type { Store } from "../model/store";
-import type { FolderSummary, HelperLimits, NotCommittedResponse, PRCostComment, Project, WorkflowHours } from "../protocol/generated";
+import type { AutopilotStatus, FolderSummary, HelperLimits, NotCommittedResponse, PRCostComment, Project, WorkflowHours } from "../protocol/generated";
 import { Capability } from "../protocol/capabilities.generated";
 import { describe } from "../model/errors";
 import { go } from "../route";
@@ -18,6 +18,8 @@ import {
   diskChoices, diskDefaults, folderPanes, folderPathOf, helperDefaults, projectPanes, projectSettingsWords, helpersNow, helpersNote,
   removeQuestion, withDiskLine, withLimit, writtenIn, type FolderPane, type ProjectPane,
 } from "../model/projectSettings";
+import { autopilotModes, autopilotWords, lastRunLine, limitsLine, needsConfirm } from "../model/autopilotSettings";
+import { LastUpdate } from "./LastUpdate";
 import { Modal } from "./Modal";
 import { ProjectModal } from "./ProjectPicker";
 import { ProjectAgentConfigModal } from "./AgentConfigEditor";
@@ -206,7 +208,11 @@ export function ProjectSettingsModal({ store, host, folder, summary, down, close
     <div class="sheet-actions start"><button type="button" disabled={down} onClick={() => (config.value = true)}>Edit Files…</button></div>
   </>;
 
-  const panes = { general, tools, workAtOnce, sessions, policy, agentConfiguration };
+  const autopilot = <AutopilotPane store={store} host={host} folder={folder} summary={summary} off={off}
+    save={save} openLimits={() => (pane.value = "workAtOnce")}
+    seeWhatWaits={() => { close(); go({ nav: "work", section: "next" }); }} />;
+
+  const panes = { general, tools, workAtOnce, sessions, autopilot, policy, agentConfiguration };
   return (
     <Modal label={projectSettingsWords.title} close={close}>
       <div class="sheet-body settings-sheet">
@@ -225,6 +231,53 @@ export function ProjectSettingsModal({ store, host, folder, summary, down, close
       {config.value && <ProjectAgentConfigModal store={store} host={host} folder={folder} down={down}
         close={() => { config.value = false; }} />}
     </Modal>
+  );
+}
+
+/** Project Settings ▸ Autopilot (#5904): Off, Only high priority or On, and what Autopilot did last. */
+function AutopilotPane({ store, host, folder, summary, off, save, openLimits, seeWhatWaits }: {
+  store: Store; host: string; folder: string; summary: FolderSummary; off: boolean;
+  save: (change: () => Promise<void>) => Promise<void>; openLimits: () => void; seeWhatWaits: () => void;
+}) {
+  const status = useSignal<AutopilotStatus | undefined>(undefined);
+  // When the status was read: the pane's "Last update" (#5139).
+  const readAt = useSignal<number | undefined>(undefined);
+  const problem = useSignal<string | null>(null);
+  const supported = store.has(host, Capability.autopilot1);
+  useEffect(() => {
+    if (!supported) return;
+    void store.autopilotStatus(host, folder)
+      .then((got) => { status.value = got; readAt.value = Date.now(); problem.value = null; })
+      .catch((error) => { problem.value = describe(error); });
+  }, [host, folder, supported]);
+  if (!supported) return <p class="sheet-note">This machine's agents are too old to run Autopilot. Update them first.</p>;
+  const mode = status.value?.mode ?? "off";
+  const choose = (next: typeof mode) => save(async () => {
+    if (next === mode) return;
+    if (needsConfirm(mode, next) && !await ask(`${autopilotWords.askTitle}\n\n${autopilotWords.askDetail}`)) return;
+    status.value = await store.setAutopilot(host, folder, next);
+    readAt.value = Date.now();
+  });
+  return (
+    <dl class="settings-grid">
+      <dt>Autopilot</dt>
+      <dd>
+        <div role="radiogroup" aria-label={autopilotWords.title} class="autopilot-modes">
+          {autopilotModes.map((m) => (
+            <label key={m.mode} class="switch-row">
+              <input type="radio" name="autopilot" checked={mode === m.mode} disabled={off || status.value === undefined}
+                onChange={() => void choose(m.mode)} />
+              {m.title}
+            </label>
+          ))}
+        </div>
+        <p class="sheet-note">{limitsLine(helpersNow(summary.folder.helperLimits))} · <button type="button" class="link" onClick={openLimits}>{autopilotWords.changeLimits}</button></p>
+        {problem.value ? <p class="sheet-note failure" role="alert">{problem.value}</p>
+          : status.value && <p class="sheet-note">{mode === "off" ? autopilotWords.off : lastRunLine(status.value)}
+            {mode !== "off" && <> · <button type="button" class="link" onClick={seeWhatWaits}>{autopilotWords.seeWhatWaits} ▸</button></>}</p>}
+        {readAt.value !== undefined && <p class="sheet-note"><LastUpdate at={readAt.value} /></p>}
+      </dd>
+    </dl>
   );
 }
 

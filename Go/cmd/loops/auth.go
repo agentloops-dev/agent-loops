@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -23,15 +24,18 @@ func init() {
 			},
 		}
 		auth.AddCommand(&cobra.Command{
-			Use:   "login '<code>'",
-			Short: "pair this terminal with a control plane",
+			Use:   "login ['<code>']",
+			Short: "pair this terminal with a control plane; with no code, through Agent Loops on this Mac",
 			Args: func(cmd *cobra.Command, args []string) error {
-				if len(args) != 1 {
+				if len(args) > 1 {
 					return &exit{code: exitError, msg: "loops auth login '<code>'"}
 				}
 				return nil
 			},
 			RunE: func(cmd *cobra.Command, args []string) error {
+				if len(args) == 0 {
+					return authLoginFromApp(a.ctx, os.Stderr)
+				}
 				return authLogin(a.ctx, os.Stderr, args[0])
 			},
 		})
@@ -55,6 +59,16 @@ func init() {
 	})
 }
 
+// authLoginFromApp is loops auth login with no code: through Agent Loops on this Mac (#6875).
+func authLoginFromApp(ctx context.Context, say io.Writer) error {
+	err := pairFromApp(ctx, say)
+	if errors.Is(err, errNoApp) {
+		return &exit{code: exitError, msg: "Agent Loops is not running on this Mac, so it cannot pair this terminal.\n" +
+			"Open it and run this again, or get a code in Settings ▸ Devices, then: loops auth login '<code>'"}
+	}
+	return err
+}
+
 func authLogin(ctx context.Context, say io.Writer, text string) error {
 	code, err := controllink.ParseCode(text)
 	if err != nil {
@@ -75,6 +89,12 @@ func authLogin(ctx context.Context, say io.Writer, text string) error {
 	if err != nil {
 		return &exit{code: exitError, msg: fmt.Sprintf("Could not pair with %s (%s).", hostOf(code.URL), reason(err)) + debugLine(err)}
 	}
+	return keepPairing(ctx, say, h, m, code)
+}
+
+// keepPairing keeps a new pairing in hosts.json, makes it the default, and joins the machine
+// lock when the lock does not name its key yet (#6563).
+func keepPairing(ctx context.Context, say io.Writer, h *hosts, m *controllink.ClientMembership, code *controllink.Code) error {
 	if err := fits(m); err != nil {
 		_ = controllink.ForgetSelf(ctx, m) // best effort: its Devices list shows one that stays
 		return &exit{code: exitError, msg: fmt.Sprintf("The pairing with %s is not kept: %v.", hostOf(code.URL), err)}

@@ -1,7 +1,7 @@
 // Features show their maturity (#6052, epic #6552): the level of each capability that is not GA, from
 // Packages/Wire/maturity.json (protocol/maturity.generated.ts), as the window's and the Remote's (Maturity.swift).
 // A capability the list does not name is GA. Each one listed has a badge, and a switch in Settings ▸ This app ▸
-// Early Features, on by default and kept with the feature flags (./featureFlags.ts, #6254), so it is the same on
+// Features, on by default and kept with the feature flags (./featureFlags.ts, #6254), so it is the same on
 // every client of the person's.
 import { flagOn, setFlag } from "./featureFlags";
 import { earlyFeatures, type EarlyFeatureInfo, type EarlyLevel } from "../protocol/maturity.generated";
@@ -46,13 +46,13 @@ export function lowestMaturity(capability: string, parts: readonly SaidMaturity[
   return parts.map((p) => saidMaturity(capability, p, list)).reduce((a, b) => known.indexOf(a) <= known.indexOf(b) ? a : b);
 }
 
-/** What each part says of its levels, for Early Features: the control plane's and each host's. None before the control
+/** What each part says of its levels, for Features: the control plane's and each host's. None before the control
  *  plane's status arrives, and the page reads its own list. */
 export function partsMaturity(plane: { maturity?: SaidMaturity } | null, hosts: readonly { maturity?: SaidMaturity }[]): SaidMaturity[] {
   return plane ? [plane.maturity, ...hosts.map((h) => h.maturity)] : [];
 }
 
-/** The rows of Early Features on the page: each capability that is not GA and that the web page shows, at the lowest
+/** The rows of Features on the page: each capability that is not GA and that the web page shows, at the lowest
  *  level the parts say (#6579). One that every part says is GA leaves the list; one the page's list does not name has
  *  no title here, so it has no row. */
 export function earlyRows(list: readonly EarlyFeatureInfo[] = earlyFeatures, parts: readonly SaidMaturity[] = []): readonly EarlyFeatureInfo[] {

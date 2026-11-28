@@ -9,7 +9,11 @@ import type { ElicitationRequest } from "../protocol/generated";
  * ElicitationRequest.title and message).
  */
 export function askHead(request: ElicitationRequest): { title: string; message?: string } {
-  if (!("form" in request.mode)) return { title: "The agent wants you to open a page" };
+  // A page to open keeps its message: a device code to type there is in it (#7639).
+  if (!("form" in request.mode)) {
+    const title = "The agent wants you to open a page";
+    return request.message ? { title, message: request.message } : { title };
+  }
   const schema = request.mode.form._0;
   const formTitle = schema.title ?? request.message ?? "The agent needs something";
   const only = schema.properties.length === 1 ? schema.properties[0] : undefined;

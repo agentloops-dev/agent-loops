@@ -12,6 +12,15 @@ struct WarmPoolsSection: View {
 
     @State private var editing: PoolEdit?
     @State private var deleting: DaemonAPI.WarmPool?
+    /// A pool that waits for root.sh (#7157): the review up, and why it could not be read.
+    @State private var reviewing: PoolReview?
+    @State private var reviewProblem: [String: String] = [:]
+
+    struct PoolReview: Identifiable {
+        let id = UUID()
+        var pool: DaemonAPI.WarmPool
+        var scripts: [DaemonAPI.SetupScript]
+    }
 
     /// The form up: a new pool, or the one to change.
     struct PoolEdit: Identifiable {
@@ -42,6 +51,14 @@ struct WarmPoolsSection: View {
         .sheet(item: $editing) { edit in
             WarmPoolSheet(control: control, provider: provider, pool: edit.pool, projects: model.newMachineChoices.projects)
                 .paperSheet()
+        }
+        .sheet(item: $reviewing) { review in
+            SetupScriptReviewSheet(scripts: review.scripts, sender: model.hosts.label(.mac), action: "Approve",
+                                   approve: { await model.approveSetupScripts($0) }) {
+                reviewing = nil
+                Task { await resume(review.pool) }
+            }
+            .paperSheet()
         }
         .confirmationDialog(deleting.map { "Delete \($0.name)?" } ?? "",
                             isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }),
@@ -82,7 +99,9 @@ struct WarmPoolsSection: View {
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
-            if let why = WarmPoolWords.stateLine(pool) {
+            if pool.review == "root" {
+                reviewBox(pool)
+            } else if let why = WarmPoolWords.stateLine(pool) {
                 Text(why)
                     .appText(.supporting)
                     .foregroundStyle((pool.state == .stopped ? StateTint.failure : StateTint.none).style(or: .secondary))
@@ -107,6 +126,53 @@ struct WarmPoolsSection: View {
                 }
             }
         }
+    }
+
+    /// *root.sh changed* (#7157, gate 2 board *pool waits*): the pool makes no machines until the
+    /// person reviews it; after a yes it replaces its unclaimed machines.
+    private func reviewBox(_ pool: DaemonAPI.WarmPool) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(WarmPoolWords.reviewLine).foregroundStyle(StateTint.attention.style(or: .primary))
+            Text(WarmPoolWords.reviewAfter(pool)).appText(.fine).foregroundStyle(.secondary)
+            if let why = reviewProblem[pool.id] {
+                Text(why).appText(.fine).foregroundStyle(StateTint.failure.style(or: .secondary))
+            }
+            if model.carriedHere(provider) {
+                Button("Review root.sh") { Task { await review(pool) } }
+                    .buttonStyle(.borderedProminent)
+                    .help("Look at what changed in root.sh, and approve it for new machines")
+            } else {
+                Text("Review it in Agent Loops on \(provider.machineName ?? "the machine that carries \(provider.name)").")
+                    .appText(.fine).foregroundStyle(.secondary)
+            }
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .overlay(RoundedRectangle(cornerRadius: 8).stroke(StateTint.attention.color?.opacity(0.4) ?? .secondary))
+        .padding(.horizontal, 16)
+        .padding(.bottom, 10)
+    }
+
+    /// Reads root.sh live: one approved already (on New Machine) only starts the pool again.
+    private func review(_ pool: DaemonAPI.WarmPool) async {
+        reviewProblem[pool.id] = nil
+        do {
+            let root = try await model.readSetupScripts().scripts.filter { $0.name == "root" && $0.needsApprovalForMade }
+            if root.isEmpty {
+                await resume(pool)
+            } else {
+                reviewing = PoolReview(pool: pool, scripts: root)
+            }
+        } catch let error as JSONRPCError {
+            reviewProblem[pool.id] = error.message
+        } catch {
+            reviewProblem[pool.id] = "\(model.hosts.label(.mac))’s root.sh can’t be read now."
+        }
+    }
+
+    /// After the yes: the pool makes again, and replaces its machines from before.
+    private func resume(_ pool: DaemonAPI.WarmPool) async {
+        if let refused = await control.setPool(WarmPoolWords.reviewed(pool)) { reviewProblem[pool.id] = refused }
     }
 
     private func figure(_ title: String, value: Int, words: String?) -> some View {

@@ -197,7 +197,7 @@ each record's bytes as they are, by design (#7251, `docs/explanation/data-stores
 |---|---|---|---|
 | `v1/control.json` | Owner, endpoints, epoch, control key public parts, audit days | 1, 64 KiB (#6771) | on write |
 | `v1/clients/<UUID>.json` | Name, kind, public key, last seen, APNs token, ≤16 Live Activity tokens (12 h each), Web Push subscription | 16 KiB a record, 1 MiB in all (#6757; hosted: 5/50 clients too). Key life 90 days (`keylife.go:18`). | Tombstone 7 days. A client whose key expired is forgotten by the hourly sweep (#6757). |
-| `v1/machines/<id>.json` | Name, key, platform, version, owner, workspace | 32 KiB a record, 1 MiB in all (#6758; hosted: 2/20 machines too) | Tombstone 7 days. A machine with no workspace whose key expired is removed by the hourly sweep (#6758); a linked one stays until removed. |
+| `v1/machines/<id>.json` | Name, key, platform, version, owner, workspace | 32 KiB a record, 1 MiB in all (#6758; hosted: 2/20 machines too) | Tombstone 7 days. No git lends: the control plane deletes a record's `gitFrom` at its first start after #7286 (`records.DropGitLends`). A machine with no workspace whose key expired is removed by the hourly sweep (#6758); a linked one stays until removed. |
 | `v1/people/<id>.json` | Name, role, sign-ins (email, login), SCIM part, old names (90 days) | 16 KiB a record, 1 MiB in all, removed people 1 MiB more (#7019) | A removed person goes after 14 days, or 90 when they have a sign-in (#6756) |
 | `v1/groups/<id>.json` | Name, members | 1,000, 256 KiB each (`records/groups.go`, #7248) | tombstone 7 days |
 | `v1/projects/<id>.json` | Name, owner, slots, ≤20 boards | 500 per person, 64 KiB each (`records/projects.go`, #7248) | tombstone 7 days |
@@ -260,14 +260,16 @@ each record's bytes as they are, by design (#7251, `docs/explanation/data-stores
 
 | Key | Holds | Bound | Swept |
 |---|---|---|---|
-| `hosted/v1/accounts/<id>.json` | Sign-in provider and subject, login, plan, suspension, certificate time, **Stripe customer and subscription IDs** | 100 accounts (`hosted/signup.go:40`) | Delete Account |
-| `hosted/v1/{github,apple,google}/<subject>.json` | Sign-in → account | 1 per account | Delete Account |
+| `hosted/v1/accounts/<id>.json` | Sign-in provider and subject, login, plan, suspension or idle pause, certificate time, last use (a day), **Stripe customer and subscription IDs** | 100 accounts (`hosted/signup.go:40`); a free one paused 90 days idle, deleted 90 days later; a paid one while paid (#6785) | hourly (`hosted/idleaccounts.go`); Delete Account |
+| `hosted/v1/{github,apple,google}/<subject>.json` | Sign-in → account | 1 per account | with the account |
+| `hosted/v1/gone/<id>.json` | A deleted account's day and why, for 410 gone | 1,000 of 128 B; 90 days (#6785) | hourly |
 | `hosted/v1/invites/<code>.json` | Expiry and **who used it** | 1,000 of 4 KiB, else refused; 14-day life, 90 at most (#6782) | hourly, at expiry; Delete Account of who used it |
 | `hosted/v1/waiting/`, `waitlist/` | Waitlist | 10,000 of 4 KiB, else refused; 90 days (#6786) | hourly; on sign-up or a block |
 | `hosted/v1/allow/` | Operator's allow list | 10,000 of 4 KiB, else refused; 90 days from the last allow (#6783) | hourly; operator |
 | `hosted/v1/blocked/`, `blocked/email/` | Operator's block lists | 10,000 each of 4 KiB, else refused; no age (#6784) | operator |
 | `hosted/v1/stripe/<evt>.json` | Stripe events seen | 30 days, 10,000 of 1 KiB (#7251) | daily |
 | `hosted/v1/usage/<id>.json` | Account byte count | 1 per account | with the account |
+| `hosted/v1/emails/<mark>.json` | Email mark → account | 1 per account | with the account |
 | `accounts/<id>/v1/…` | That account's whole control-plane store (section 4) | Plan: storage 1 / 20 GB, machines 2 / 20, clients 5 / 50, events 7 / 90 days (`hosted/plans.go:37-40`) | Delete Account |
 | `<dir>/<date>/<account>/…` (operator's disk) | Per-account backups | **none unless `--keep N`** (`cmd/agents-hosted/admin.go:162-191`) | — |
 
@@ -439,10 +441,12 @@ newer than a row above for the same store.
 | `<root>/lock-pin.json` | key-value | The machine lock's trust pin | One, 4 KiB. Stays in the data root: a trust source (Alex, 2026-11-24) | `Go/internal/agentsd/lock.go` (`TakeLock`) | #6754 |
 | `<root>/lock-records.json` | key-value | The number last taken of each signed record (an approval of a set-up script) | 2,000 counters, 1 MiB, else refused; no age. Stays in the data root: a trust source | `Go/internal/agentsd/lockrecords.go` (`keepRecordCounters`) | #7167 |
 | `<root>/machine-setup-approved.json` | key-value | The approved text of each set-up script and its approvals, on the sender | 2 scripts, 512 KiB, else refused; no age. Stays in the data root: a trust source | `Go/internal/agentsd/setupscripts.go` (`keepApprovedSetup`) | #7167 |
+| `<root>/machine-setup.json` | document | The setup.sh this machine was sent last, its approval, and how its last run went, on the target | 1, 512 KiB, else refused; no age: the copy in force. In the data root, not `~/.agents/machine-setup/` | `Go/internal/agentsd/setupuser.go` (`keepUserSetup`) | #7155 |
+| `<root>/logs/user-setup.log` | log | The output of the last run of the person's setup.sh | 1 run, 1 MiB (the rest is not kept); 90 days | `Go/internal/hostsetup/script.go` (`OpenUserScriptLog`) | #7155 |
 | `v1/events/<day>/` (audit) | log | Audit events | 90 days by default; an admin sets 1 to 3,650; no count or size limit a day | `Go/internal/controlplane/audit/audit.go:31,241` | #6755 |
 | `v1/people/` tombstones | document | A removed person who had a sign-in | 90 days, swept hourly; then a cutoff for each provider (`v1/signin/cutoffs/`) refuses an account nobody has (#6756) | `Go/internal/controlplane/signin_cutoff.go` | #6756 |
 | `v1/clients/` | document | Paired clients | 16 KiB a record, 1 MiB in all; forgotten when its key expires, at most 90 days unused; tombstone 7 days | `Go/internal/controlplane/keylife.go:18,139,145-177` | #6757 |
-| `v1/machines/` | document | Machines | 32 KiB a record, 1 MiB in all; removed when its key expires, at most 90 days unused, or by a person when linked to a workspace; tombstone 7 days | `Go/internal/controlplane/keylife.go`, `records/machinebounds.go` | #6758 |
+| `v1/machines/` | document | Machines | 32 KiB a record, 1 MiB in all; removed when its key expires, at most 90 days unused, or by a person when linked to a workspace; tombstone 7 days; the git lends of #1122 (`gitFrom`) deleted at start (#7286) | `Go/internal/controlplane/keylife.go`, `records/machinebounds.go`, `records/records.go` (`DropGitLends`) | #6758, #7286 |
 | `v1/machine-names/<person>.json` | key-value | A person's machine-N counter and last provider options | 64 KiB a person; until the person is removed (no age before, on purpose: a number is never used twice) | `Go/internal/controlplane/providers/defaults.go:20-63`, `Go/internal/controlplane/sweep.go` (`sweepMachineNames`) | #6759 |
 | `v1/machine-setup-times.json` | time series | Set-up durations | 90 days, 50 a step, 32 KiB; on write and hourly; no roll-up | `Go/internal/controlplane/machinesetuptimes.go` | #6760 |
 | `v1/warm-pools/<id>.json` | document | Warm pools and their claims | 10 pools a provider and 256 KiB a pool, else refused; claims 7 days and 500 a pool; the pool until deleted or its person is removed. Its config stays in the control plane's store (Alex, 2026-11-24) | `Go/internal/controlplane/warmpool.go` (`mostPoolsAProvider`, `warmPoolMost`, `forget`) | #6761 |
@@ -469,7 +473,8 @@ newer than a row above for the same store.
 | hosted `v1/invites/` | document | Invite links | 1,000 of 4 KiB, else refused; until it expires, 90 days at most | `Go/internal/hosted/recordbounds.go` (`sweepInvites`) | #6782 |
 | hosted `v1/allow/` | key-value | The operator's allow list | 10,000 of 4 KiB, else refused; 90 days from the last allow | `Go/internal/hosted/recordbounds.go` (`sweepAllowed`) | #6783 |
 | hosted `v1/blocked/`, `v1/blocked/email/` | key-value | The operator's block lists | 10,000 each of 4 KiB, else refused; no age, until unblocked (Alex, 2026-11-24: a blocked person must not come back) | `Go/internal/hosted/recordbounds.go` (`putBlock`, `putEmailBlock`) | #6784 |
-| hosted `v1/accounts/`, sign-in links, `v1/emails/`, `v1/usage/` | document | Accounts | 100 accounts of 8 KiB, links and usage 128 bytes; until Delete Account: an exception to the 90-day rule until epic #7092 (Alex, 2026-11-24) | `Go/internal/hosted/signup.go` (`MaxAccounts`), `accounts.go` (`accountRecordMost`, `remove`) | #6785, #7094 |
+| hosted `v1/accounts/`, sign-in links, `v1/emails/`, `v1/usage/` | document | Accounts | 100 accounts of 8 KiB, links and usage 128 bytes; a free account is paused after 90 days with no use and deleted 90 days later, hourly; a paid one stays while it is paid, the exception of #7094 | `Go/internal/hosted/signup.go` (`MaxAccounts`), `accounts.go` (`accountRecordMost`, `remove`), `idleaccounts.go` | #6785, #7094 |
+| hosted `v1/gone/` | key-value | Deleted accounts' tombstones | 1,000 of 128 bytes, 90 days, hourly | `Go/internal/hosted/idleaccounts.go` | #6785 |
 | hosted `v1/waitlist/`, `v1/waiting/` | document | The waitlist | 10,000 of 4 KiB, else refused; 90 days, or sign-up or a block | `Go/internal/hosted/recordbounds.go` (`sweepWaitlist`) | #6786 |
 | Operator backups | blob | Each account's store | The newest 7, or 1 to 90; 90 days; the newest copy of an account that exists stays; over 10 MB is made, with a warning | `Go/internal/hosted/backup.go` (`PruneBackups`) | #6787 |
 | `control.log` (`~/Library/Logs/Agents/control.log` or `/data/control.log`) | log | Operational log lines | 4 MB and one older file, 7 days; the oldest go first | `Go/internal/rolllog/rolllog.go` | #6901 |

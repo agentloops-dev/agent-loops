@@ -86,6 +86,69 @@
       }
     },
     {
+      "name": "artifacts/get",
+      "x-capability": "artifacts/1",
+      "description": "A client (#5953, spec 5713 §1–2): an artifact's record and the version its ref names, the head for a name or one version for a digest; with content, each layer's bytes.",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "schema/artifacts.schema.json#/definitions/ArtifactGet"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema/artifacts.schema.json#/definitions/ArtifactGot"
+        }
+      }
+    },
+    {
+      "name": "artifacts/put",
+      "x-capability": "artifacts/1",
+      "description": "A client (#5953): a new version of an artifact, as an OCI image manifest whose layers are blobs in the store; the head moves by a conditional write, and a writer whose parents are not the heads makes a second head, never an overwrite. The author is the caller's person.",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "schema/artifacts.schema.json#/definitions/ArtifactPut"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema/artifacts.schema.json#/definitions/ArtifactPutResult"
+        }
+      }
+    },
+    {
+      "name": "artifacts/versions",
+      "x-capability": "artifacts/1",
+      "description": "A client (#5953): an artifact's versions from its log, newest first, at most 100 a page.",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "schema/artifacts.schema.json#/definitions/ArtifactVersionsAsk"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema/artifacts.schema.json#/definitions/ArtifactVersionPage"
+        }
+      }
+    },
+    {
       "name": "attention/need",
       "x-capability": "attention/2",
       "description": "A host, on its channel 0 (R6).",
@@ -2320,27 +2383,6 @@
       }
     },
     {
-      "name": "git/credential",
-      "x-capability": "git/1",
-      "description": "A host, on its channel 0, for its own git (#1122).",
-      "paramStructure": "by-name",
-      "params": [
-        {
-          "name": "params",
-          "required": true,
-          "schema": {
-            "$ref": "schema/org.schema.json#/definitions/GitCredentialRequest"
-          }
-        }
-      ],
-      "result": {
-        "name": "result",
-        "schema": {
-          "$ref": "schema/org.schema.json#/definitions/GitCredential"
-        }
-      }
-    },
-    {
       "name": "governance/approvals",
       "x-capability": "governance/1",
       "description": "An admin's (#2019, M5): every approval.",
@@ -4090,31 +4132,6 @@
       }
     },
     {
-      "name": "machines/lendGit",
-      "x-capability": "machines/1",
-      "tags": [
-        {
-          "name": "web"
-        }
-      ],
-      "paramStructure": "by-name",
-      "params": [
-        {
-          "name": "params",
-          "required": true,
-          "schema": {
-            "$ref": "schema/org.schema.json#/definitions/LendGit"
-          }
-        }
-      ],
-      "result": {
-        "name": "result",
-        "schema": {
-          "$ref": "schema/core.schema.json#/definitions/Empty"
-        }
-      }
-    },
-    {
       "name": "machines/lendSignIn",
       "x-capability": "machines/1",
       "paramStructure": "by-name",
@@ -4468,6 +4485,27 @@
         "name": "result",
         "schema": {
           "$ref": "schema/org.schema.json#/definitions/ControlMachine"
+        }
+      }
+    },
+    {
+      "name": "machines/setupDeliver",
+      "x-capability": "machines.setup-deliver/1",
+      "description": "Through machine/machines only, signed by the asking machine (#7155): a set-up script for another of the person's machines. The control plane sends that machine's setup/deliver as the asking machine signed it and keeps none of it; the machine has to be online. Refused unsigned.",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "schema/machines.schema.json#/definitions/MachineSetupDeliver"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema/core.schema.json#/definitions/Empty"
         }
       }
     },

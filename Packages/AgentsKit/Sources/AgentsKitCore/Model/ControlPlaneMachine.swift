@@ -103,17 +103,36 @@ public enum ControlPlaneMachine {
     /// the load, and before the first look, "No capacity reading yet".
     public static func rowLine(_ look: DaemonAPI.ControlCapacityCopy?) -> String {
         guard let look else { return noReading }
-        var parts = [level(look)]
-        switch look.level {
-        case .ok:
-            parts.append(CapacityWords.load(look.loadPerCore))
-        case .near, .full:
-            // Only the pressures that are there: 0.0% says nothing.
-            if look.pressureIOFullAvg60 >= 0.05 { parts.append("I/O pressure \(percent(look.pressureIOFullAvg60))") }
-            if look.pressureMemoryFullAvg60 >= 0.05 { parts.append("Memory pressure \(percent(look.pressureMemoryFullAvg60))") }
-            parts.append(CapacityWords.load(look.loadPerCore))
+        return ([level(look)] + figures(look)).joined(separator: " \u{00B7} ")
+    }
+
+    /// The row's line when the whole line does not fit (#7366): the level and its main figure
+    /// in short words only, "Near capacity · I/O 16.7%" or "OK · Load 1.4"; the help text has
+    /// the whole line.
+    public static func shortRowLine(_ look: DaemonAPI.ControlCapacityCopy?) -> String {
+        guard let look else { return noReading }
+        return ([level(look)] + figures(look, short: true).prefix(1)).joined(separator: " \u{00B7} ")
+    }
+
+    /// The row's help text (#7366): the whole line, then the reason as a sentence when the level
+    /// is near or full.
+    public static func rowHelp(_ look: DaemonAPI.ControlCapacityCopy?) -> String {
+        guard let look else { return noReadingDetail }
+        let line = rowLine(look)
+        return look.level == .ok ? line : line + "\n" + sentence(look)
+    }
+
+    /// The figures after the level, the main one first: at OK the load; near or full, the
+    /// pressures that are there (0.0% says nothing), then the load.
+    private static func figures(_ look: DaemonAPI.ControlCapacityCopy, short: Bool = false) -> [String] {
+        let pressure = short ? "" : " pressure"
+        var parts: [String] = []
+        if look.level != .ok {
+            if look.pressureIOFullAvg60 >= 0.05 { parts.append("I/O\(pressure) \(percent(look.pressureIOFullAvg60))") }
+            if look.pressureMemoryFullAvg60 >= 0.05 { parts.append("Memory\(pressure) \(percent(look.pressureMemoryFullAvg60))") }
         }
-        return parts.joined(separator: " \u{00B7} ")
+        parts.append(short ? "Load \(String(format: "%.1f", look.loadPerCore))" : CapacityWords.load(look.loadPerCore))
+        return parts
     }
 
     /// Under a machine that also runs agents, while its control plane is near or full: "Control
@@ -148,6 +167,20 @@ public enum ControlPlaneMachine {
 
     public static let noReading = "No capacity reading yet"
     public static let noReadingDetail = "The first reading will appear after the control plane checks itself."
+    /// The line when no reading will come by waiting (#7364): the read failed, or the answers stay empty.
+    public static let noReadingNow = "No capacity reading"
+    public static let readFailedDetail = "The capacity read failed. There is no reading to show."
+    public static let emptyDetail = "The control plane gives no capacity reading. It may need an update."
+
+    /// Why there is no reading (#7364), from the state of the reads: before the first read and
+    /// after an empty answer, that one will come; after a first read that failed, that it
+    /// failed; when the answers stay empty for one look or more, that the control plane gives
+    /// none. `emptyFor` is the time from the first empty answer to the last one.
+    public static func noReadingWords(failed: Bool, emptyFor: TimeInterval?) -> (line: String, detail: String) {
+        if failed { return (noReadingNow, readFailedDetail) }
+        if let emptyFor, emptyFor >= Double(lookSeconds) { return (noReadingNow, emptyDetail) }
+        return (noReading, noReadingDetail)
+    }
     public static let foot = "Reading every \(lookSeconds) seconds. The control plane keeps serving requests at every level."
     public static let refreshFailed = "Capacity could not refresh. Showing the last reading."
 

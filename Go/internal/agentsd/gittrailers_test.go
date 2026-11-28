@@ -15,8 +15,8 @@ import (
 )
 
 // git/trailers (#6371): the block for a session in a folder, by the effective commitTrailers
-// rule, with the PR's totals, its epic from lineage, its approvers from the forge, and Claude's
-// own Co-authored-by last.
+// rule, with the PR's totals, its epic from lineage, and its approvers from the forge. It has
+// no Co-authored-by: that is the runtime's own (#7174).
 //
 // Not parallel: it replaces trailerItem.
 func TestGitTrailersWritesTheBlockByTheRule(t *testing.T) {
@@ -70,14 +70,15 @@ func TestGitTrailersWritesTheBlockByTheRule(t *testing.T) {
 	// The defaults: Cost off, every other trailer on; Requested-by has no value.
 	got := lines(2, map[string]any{"session": a.ID, "pr": 10})
 	want := []string{
-		"Made-by: claude-code:claude-opus-5-5",
+		"Managed-by: Agent Loops <noreply@agentloops.dev>",
+		"Runtime: claude-code",
+		"Model: opus-5-5",
 		"Session: " + string(a.ID),
 		"Fixes: #7",
 		"Epic: #5",
 		"Approved-by: alexec",
 		"Tokens: in=412.0k out=38.0k",
 		"Duration: 47m",
-		"Co-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
 	}
 	if !slices.Equal(got, want) {
 		t.Fatalf("got\n%q\nwant\n%q", got, want)
@@ -86,15 +87,17 @@ func TestGitTrailersWritesTheBlockByTheRule(t *testing.T) {
 		t.Fatalf("the forge was asked for %v, not only the PR (the epic is lineage's)", asked)
 	}
 
-	// The folder turns Cost on and Co-authored-by off; the person turns Tokens off, which is
-	// tighter for a spend trailer, so it wins over the default.
+	// The folder turns Cost on and Model off, and has an old layer's Co-authored-by, which has
+	// no effect; the person turns Tokens off, which is tighter for a spend trailer, so it wins
+	// over the default.
 	c.call(t, 3, "policy/setFolder", map[string]any{"folder": store.FolderURL(dir),
-		"rules": map[string]any{"commitTrailers": map[string]string{"Cost": "on", "Co-authored-by": "off"}}})
+		"rules": map[string]any{"commitTrailers": map[string]string{"Cost": "on", "Model": "off", "Co-authored-by": "off"}}})
 	c.call(t, 4, "policy/setYours", wire.SetYourPolicyRequest{Rules: wire.PolicyRules{
 		CommitTrailers: wire.CommitTrailers{"Tokens": wire.CommitTrailerValueOff}}, Revision: 1})
 	got = lines(5, map[string]any{"session": a.ID, "pr": 10})
 	want = []string{
-		"Made-by: claude-code:claude-opus-5-5",
+		"Managed-by: Agent Loops <noreply@agentloops.dev>",
+		"Runtime: claude-code",
 		"Session: " + string(a.ID),
 		"Fixes: #7",
 		"Epic: #5",
@@ -109,7 +112,8 @@ func TestGitTrailersWritesTheBlockByTheRule(t *testing.T) {
 	// With no PR: Refs, not Fixes; no Approved-by; the totals are the session's issue's.
 	got = lines(6, map[string]any{"session": a.ID})
 	want = []string{
-		"Made-by: claude-code:claude-opus-5-5",
+		"Managed-by: Agent Loops <noreply@agentloops.dev>",
+		"Runtime: claude-code",
 		"Session: " + string(a.ID),
 		"Refs: #7",
 		"Epic: #5",
@@ -213,32 +217,39 @@ func TestGitTrailersForNoSession(t *testing.T) {
 	}
 }
 
-// Claude Code's own commit attribution is off in every session it starts (#6371), so the
-// only Co-authored-by is the one git/trailers writes, when the rule keeps it.
-func TestClaudeSessionsHaveNoAttributionOfTheirOwn(t *testing.T) {
+// Claude Code's own commit attribution is the person's and the project's (#7174): a session's
+// settings leave it alone, so Claude writes its own Co-authored-by, or none when they turn it
+// off.
+func TestClaudeSessionsKeepTheirOwnAttribution(t *testing.T) {
 	t.Parallel()
 
 	b, _ := json.Marshal(sessionMeta("claude"))
-	var meta struct {
-		ClaudeCode struct {
-			Options struct {
-				ExtraArgs map[string]string `json:"extraArgs"`
-			} `json:"options"`
-		} `json:"claudeCode"`
+	if strings.Contains(string(b), "attribution") || strings.Contains(string(b), "includeCoAuthoredBy") || strings.Contains(string(b), "settings") {
+		t.Fatalf("the session's settings change Claude's attribution: %s", b)
 	}
-	if err := json.Unmarshal(b, &meta); err != nil {
-		t.Fatal(err)
+}
+
+// Runtime is the runtime's name and Model the model's id: Claude's without its claude- prefix,
+// another runtime's as it is, and none when the model is not known.
+func TestTrailerRuntimeAndModel(t *testing.T) {
+	t.Parallel()
+
+	opt := func(v string) []wire.ConfigOption {
+		return []wire.ConfigOption{{ID: "model", Name: "Model", Type: "select", Category: ptr("model"), CurrentValue: wire.JSONValue(`"` + v + `"`)}}
 	}
-	var settings struct {
-		Attribution struct {
-			Commit *string `json:"commit"`
-		} `json:"attribution"`
-		IncludeCoAuthoredBy *bool `json:"includeCoAuthoredBy"`
-	}
-	if err := json.Unmarshal([]byte(meta.ClaudeCode.Options.ExtraArgs["settings"]), &settings); err != nil {
-		t.Fatalf("%s: %v", b, err)
-	}
-	if settings.Attribution.Commit == nil || *settings.Attribution.Commit != "" || settings.IncludeCoAuthoredBy == nil || *settings.IncludeCoAuthoredBy {
-		t.Fatalf("attribution left on: %s", b)
+	for _, c := range []struct {
+		a             wire.Agent
+		runtime, model string
+	}{
+		{wire.Agent{RuntimeID: "claude", AdvertisedOptions: opt("claude-sonnet-5-5")}, "claude-code", "sonnet-5-5"},
+		{wire.Agent{RuntimeID: "codex", AdvertisedOptions: opt("gpt-6-luna")}, "codex", "gpt-6-luna"},
+		{wire.Agent{RuntimeID: "opencode"}, "opencode", ""},
+	} {
+		if got := trailerRuntimeName(&c.a); got != c.runtime {
+			t.Errorf("%s: Runtime %q, not %q", c.a.RuntimeID, got, c.runtime)
+		}
+		if got := modelID(&c.a); got != c.model {
+			t.Errorf("%s: Model %q, not %q", c.a.RuntimeID, got, c.model)
+		}
 	}
 }

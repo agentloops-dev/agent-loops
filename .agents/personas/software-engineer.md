@@ -18,10 +18,11 @@ starts lanes.
    `git fetch origin` and `git rebase origin/main`: a new worktree starts from the local
    `HEAD` it was made from, and that `main` can be old (#5638).
    Do not lease `ci` for this step or for any local work: only a push waits for the CI
-   queue (AGENTS.md, "Landing a change", #6513). Before each push (steps 5 and 6), lease
-   `ci` with `lease_resource`, push, and release it (the lease waits for an empty CI queue,
-   #5709). On a conflict with `main`, `git merge origin/main`, settle it and push without
-   running the tests again.
+   queue (AGENTS.md, "Landing a change", #6513). Before the first push of the PR (step 6),
+   lease `ci` with `lease_resource`, push, and release it (the lease waits for an empty CI
+   queue, #5709). A push that fixes a red check or settles a conflict on the open PR does
+   not lease `ci` (Alex, 2026-11-26, #7243). On a conflict with `main`, `git merge
+   origin/main`, settle it and push without running the tests again.
 4. Fix that issue. Follow AGENTS.md. Verify only what you touch. Use
    `scripts/build-cache.sh` for builds and tests, and hold the `build` lease only while
    that command runs. Run every build, test and lint in the foreground, with a timeout
@@ -46,7 +47,7 @@ starts lanes.
    advice, not a gate: on `wait`, rebase once #N lands; on `stack`, base on #N's branch
    (#1777); say in the PR body what it said and what you did. `scripts/conflict-risk.sh
    <branch>` is the same core for a person or a script.
-6. Commit. Take the `ci` lease, push, and release it. Open a pull request whose body
+6. Commit. Take the `ci` lease, push, and release it: this is the PR's first push. Open a pull request whose body
    says `Fixes #<n>`. Turn on squash auto-merge at once, with the commit trailers (#6362): call
    the app's tool `commit_trailers` with `pr: <n>`, write its lines, as they come, to a file, and run
    `scripts/automerge.sh <n> <file>`, never a bare `gh pr merge --auto --squash`. Each time
@@ -101,8 +102,8 @@ starts lanes.
      change, say on the PR what you changed, turn auto-merge on again, and wait again.
      When it asks for nothing, wait again.
    - `pr.blocked` (#5321): the PR cannot merge until you act. Do what each of its
-     `reasons` says (`docs/reference/events.md`, "Blocked pull requests"), push once,
-     and wait again:
+     `reasons` says (`docs/reference/events.md`, "Blocked pull requests"), push once
+     with no `ci` lease (a fix push, Alex, 2026-11-26, #7243), and wait again:
      - `required_check_failed`: follow `.agents/skills/fix-failed-checks/SKILL.md` on
        your branch for each of `failedChecks`. You fix your own PR's checks, also when a
        Fix failed checks workflow is on. When main fails the same test, do not fix it:
@@ -112,8 +113,8 @@ starts lanes.
        flake (#6129); when it passes, quarantine it in this branch and push (its step 2,
        #6063).
      - `conflict` or `behind`: `git merge origin/main` (never a rebase, so no
-       force-push), settle the conflict, push without running the tests again (AGENTS.md,
-       "Lease `ci`…"), and run `scripts/rearm-automerge.sh <pr>`.
+       force-push), settle the conflict, push with no `ci` lease and without running the
+       tests again (AGENTS.md, "Lease `ci`…"), and run `scripts/rearm-automerge.sh <pr>`.
      - `changes_requested`: read the review (`reviewUrl`), make the changes, and say on
        the PR what you changed.
      - `automerge_disabled`: find out why (`gh pr view <n>`), fix that, and turn on

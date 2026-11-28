@@ -122,7 +122,7 @@ counting again from the next agent that works.
 
 | Event | Filter by | Details | What it means |
 | --- | --- | --- | --- |
-| `workflow.ran` | — | workflow, agent | A workflow started an agent. |
+| `workflow.ran` | — | workflow, agent | A workflow started an agent. An `agent: labelled` workflow starts none (#6954): its event has `broadcast`, `deliver`, `told`, `told_sessions`, `next_turn`, `not_told` and `ends_at` instead of `agent`. See [Send to labelled sessions](workflows.md#send-to-labelled-sessions). |
 | `workflow.completed` | — | workflow, agent, outcome | A workflow's run finished. `outcome` is its agent's report's, when it made one. |
 | `workflow.refused` | — | workflow, reason | A workflow did not run, and why. `reason` is `run_in_flight`, `queue_full`, `chain_too_deep`, `archived`, `over_limit`, `unreadable`, `trigger_not_supported`, `agent_unavailable`, `no_triggering_agent`, `missed_while_closed`, `folder_gone`, `day_limit_reached`, `setting_refused` or `awaiting_approval`. |
 
@@ -152,6 +152,9 @@ each issue or epic: `kind` (`lead` or `lane`), `state` (`started`, `waiting` or 
 waits for one of `limit running`, `limit open-prs`, `capacity near`, `capacity full`, `on hold`,
 `blocked by #n` or `mode high`, or is paused for `paused: main red` or `paused: over budget`. The daemon keeps
 the rows in `autopilot-status.json`, a bounded small file (the newest 100 rows of each folder, 90 days). With the mode off there are no rows.
+`autopilot/resume { folder, ref }` drops a paused row, raises `autopilot.resumed` with the reason it cleared and wakes the loop (#5905); a `ref` that is not paused is left as it is.
+
+Autopilot pauses itself when the work goes bad (#5902). Main red for more than 60 minutes (the newest `ci.yml` runs on the default branch fail) pauses the row `main`: nothing new starts in the folder until main is green. An epic whose spend is 2× its estimate (the overrun notice's point, #4529) is paused, and its lead is told to start no new lane; it resumes when the estimate is raised. Each pause posts one notice, on the epic's lead or the folder's newest session, with the reason.
 
 ## Files
 
@@ -205,9 +208,9 @@ they are `machine.`.
 | `mac.sleep` | — | | The Mac is going to sleep. Mac only. |
 | `mac.wake` | — | | The Mac woke up. Mac only. |
 | `machine.disk_low` | — | volume, free_bytes, free_percent, level, threshold, worktrees | Free space on a volume holding the Agent Loops root, a folder or a worktree fell below its threshold. `level` is `low` (below 10% of the disk) or `critical` (below 1%, where commands start failing); Folder Settings ▸ Disk Space moves both. `threshold` is the line it fell below, in bytes. `worktrees` names the largest worktrees on the volume and their sizes, measured within a budget, so `over` means at least. Raised once per crossing; falling further from low to critical is a second crossing. The window shows a strip across the top while it lasts. On a Linux server the volume is called "This server’s disk". |
-| `machine.disk_ok` | — | volume, free_bytes, free_percent, threshold | Free space on a volume that was low climbed back above its threshold, by a margin of a tenth of it (at least 1 GB) so it does not flap. |
+| `machine.disk_ok` | — | volume, free_bytes, free_percent, threshold | Free space on a volume that was low or critical climbed back to the ok line: the low line plus 10 percentage points of the disk (20% at the default 10% line, 60% at a 50% one; #6953), so a volume that hovers at the low line does not flap. A critical volume goes back to low only at the low line, and that is not an event. `threshold` is the ok line, in bytes. The disk's notice in Needs you goes at the same line. |
 | `machine.busy` | — | level, signal, load_per_core, memory_pressure, swap_used_percent | The machine is near or at capacity (#4578). `level` is `near` (load per core above 2.0) or `full` (load per core above 3.0, or memory pressure `critical`); `signal` is what put it there: `load` or `memory_pressure`. Memory pressure `warn` and swap are reported but give no level: on macOS both stay high when the machine is not busy (#4583). Load per core is the 1-minute load average over the cores; memory pressure is the kernel's (macOS `kern.memorystatus_vm_pressure_level`, Linux PSI). Looked at every 15 s. Raised as the level leaves `ok`, not when it goes from near to full. `machine/usage` carries the same signals and the level as `capacity`. |
-| `machine.ok` | — | was, load_per_core, memory_pressure, swap_used_percent | The machine that was near or at capacity is `ok` again: every signal was under its line for two looks in a row, so it does not flap. `was` is `near` or `full`. |
+| `machine.ok` | — | was, load_per_core, memory_pressure, swap_used_percent | The machine that was near or at capacity is `ok` again: every signal was under its line for two looks in a row, and the load under 1.5 per core, well under the 2.0 where `machine.busy` starts (#6953), so it does not flap. `was` is `near` or `full`. |
 | `person.away` | why | why | You locked the screen or stepped away for 5 minutes. `why` is `locked` or `idle`. Mac only. |
 | `person.back` | why | why | You unlocked the screen or came back. `why` is `locked` or `idle`. Mac only. |
 | `cost.limit_reached` | — | limit, agent | A spending limit was reached. When it is an agent's, it also carries `labels`, `runtime` and `started_by`. See [Settings and the Resources page](settings.md). |
@@ -762,7 +765,7 @@ It is read only.
   permission, question or sandbox card; change a setting, a cost limit or a folder's
   limits; approve, deny, run, turn on or off, or delete a workflow; approve a plugin; add,
   approve or remove an MCP server, a skill or a marketplace; add or delete a folder;
-  pair, forget or remove a client or a machine; lend a sign-in or git access; change a
+  pair, forget or remove a client or a machine; lend a sign-in; change a
   machine provider. Reads, prompts and presence are not kept. An entry is written when
   the control plane passes the call on, so a call that the host refuses is kept too.
 - **An agent's reads and changes of an outside account** (#4157): `manage_accounts` tells the

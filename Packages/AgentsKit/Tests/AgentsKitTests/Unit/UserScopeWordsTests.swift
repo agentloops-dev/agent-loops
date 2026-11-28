@@ -36,6 +36,11 @@ struct UserScopeWordsTests {
         #expect(CardSecret(number: "4242424242424242", expiry: "13/31", cvc: "737", name: "S", zip: "1").problem == "Write the expiry as MM/YY.")
         #expect(CardSecret(number: "4242424242424242", expiry: "09/31", cvc: "73", name: "S", zip: "1").problem == "The CVC is 3 or 4 digits.")
         #expect(CardSecret(number: "4242424242424242", expiry: "09/31", cvc: "737", name: "", zip: "1").problem == "Write the name on the card.")
+        // #5569: the billing address is optional, each part in the value only when set, as cardValue writes it.
+        let billed = CardSecret(number: "4242424242424242", expiry: "09/31", cvc: "737", name: "S", zip: "1",
+                                line1: " 1 Scratch Street ", line2: "", city: "Testville", state: "CA", country: "United States")
+        #expect(billed.value == #"{"city":"Testville","country":"United States","cvc":"737","expiry":"09/31","line1":"1 Scratch Street","name":"S","number":"4242424242424242","state":"CA","zip":"1"}"#)
+        #expect(CardSecret(value: billed.value) == billed)
         var row = DaemonAPI.UserSecretRow(name: "SHOP_CARD", updated: "", machines: [])
         #expect(!row.isCard)
         row.kind = CardSecret.kind

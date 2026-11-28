@@ -32,3 +32,9 @@ test("a secret's one field is its reason, never the title", () => {
 test("a page to open keeps its own words", () => {
   assert.deepEqual(askHead({ id: "r", agentID: "a", mode: { url: { _0: "https://example.com" } } }), { title: "The agent wants you to open a page" });
 });
+
+test("a page to open shows its message, with the code to type there (#7639)", () => {
+  const message = "Open https://auth.openai.com/codex/device and enter the code ABCD-EFGH1, then choose Done.";
+  assert.deepEqual(askHead({ id: "r", agentID: "a", message, mode: { url: { _0: "https://auth.openai.com/codex/device" } } }),
+    { title: "The agent wants you to open a page", message });
+});

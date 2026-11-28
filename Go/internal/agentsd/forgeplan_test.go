@@ -37,6 +37,9 @@ func (f *fakeForgeGitLab) Blockers(_ context.Context, project string, numbers []
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.blocked = append(f.blocked, fmt.Sprint(project, numbers))
+	if f.blockers != nil {
+		return f.blockers, nil
+	}
 	return map[int][]gitlabmcp.Ref{numbers[0]: {{Project: "Group/App", Number: 90, Open: true}, {Project: "ops/tool", Number: 91}}}, nil
 }
 
@@ -46,6 +49,9 @@ func (f *fakeForgeGitLab) Parents(_ context.Context, project string, numbers []i
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.parented = append(f.parented, fmt.Sprint(project, numbers))
+	if f.parents != nil {
+		return f.parents, nil
+	}
 	return map[int]gitlabmcp.Ref{numbers[0]: {Project: "Group/App", Number: 5, Open: true}}, nil
 }
 

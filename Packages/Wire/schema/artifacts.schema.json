@@ -1,0 +1,406 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://agents.alexecollins.com/schema/artifacts.schema.json",
+  "title": "The wire: artifacts types",
+  "description": "Part of the source of every type on the wire (#1135, #5380): one file per domain in Packages/Wire/schema. A $ref to another file names it (core.schema.json#/definitions/JSONValue); scripts/wire.sh gen reads them all.",
+  "definitions": {
+    "Artifact": {
+      "type": "object",
+      "description": "An artifact's record (#5953, spec 5713 §1): its name, kind, labels and head. Its versions are OCI image manifests in the blob store.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "The artifact's id, unique in the organisation's store: 1 to 64 of a-z, 0-9, '.', '_' and '-', starting with a letter or digit."
+        },
+        "topic": {
+          "type": "string",
+          "description": "Its project's id, or the organisation's; the <topic> of its ref."
+        },
+        "ref": {
+          "type": "string",
+          "description": "agents:artifact:<topic>#<id>: the name form, which moves with the head."
+        },
+        "name": {
+          "type": "string",
+          "description": "What a person reads."
+        },
+        "kind": {
+          "$ref": "#/definitions/ArtifactKind"
+        },
+        "labels": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Free labels, key to value: at most 32, a key at most 64 bytes and a value at most 256. A version carries them as dev.agentloops.label.<key> annotations."
+        },
+        "head": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "description": "The current version's manifest digest; the newest head when there are two or more."
+        },
+        "heads": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          },
+          "description": "Every head, when writers diverged (a write whose parent was not the head): set aside, never overwritten. Absent with one head."
+        },
+        "versions": {
+          "type": "integer",
+          "description": "How many versions it has; the newest is this number."
+        },
+        "deleted": {
+          "type": "boolean",
+          "description": "The head is a tombstone: the artifact was deleted, and its versions are kept."
+        },
+        "created": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updated": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "topic",
+        "ref",
+        "name",
+        "kind",
+        "head",
+        "versions",
+        "created",
+        "updated"
+      ],
+      "additionalProperties": false
+    },
+    "ArtifactGet": {
+      "type": "object",
+      "description": "artifacts/get: an artifact by its ref, the head for a name (agents:artifact:<topic>#<id>) or one version for a digest (agents:artifact:<topic>#sha256:…).",
+      "properties": {
+        "ref": {
+          "type": "string"
+        },
+        "content": {
+          "type": "boolean",
+          "description": "Also send each layer's bytes, at most 24 MiB in all; a larger version is refused."
+        }
+      },
+      "required": [
+        "ref"
+      ],
+      "additionalProperties": false
+    },
+    "ArtifactGot": {
+      "type": "object",
+      "description": "artifacts/get's answer: the record and the version the ref names.",
+      "properties": {
+        "artifact": {
+          "$ref": "#/definitions/Artifact"
+        },
+        "version": {
+          "$ref": "#/definitions/ArtifactVersion"
+        }
+      },
+      "required": [
+        "artifact",
+        "version"
+      ],
+      "additionalProperties": false
+    },
+    "ArtifactKind": {
+      "type": "string",
+      "enum": [
+        "archive",
+        "binary",
+        "build",
+        "document",
+        "image",
+        "other",
+        "package"
+      ],
+      "description": "What an artifact is (epic #5713): its version's artifactType is application/vnd.agentloops.<kind>.v1."
+    },
+    "ArtifactLayer": {
+      "type": "object",
+      "description": "One file of a version: an OCI descriptor.",
+      "properties": {
+        "mediaType": {
+          "type": "string",
+          "description": "The file's own type, as text/markdown or image/svg+xml."
+        },
+        "digest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "description": "The blob's digest."
+        },
+        "size": {
+          "type": "integer"
+        },
+        "title": {
+          "type": "string",
+          "description": "The file's name (org.opencontainers.image.title)."
+        },
+        "data": {
+          "$ref": "core.schema.json#/definitions/Base64",
+          "description": "The bytes, when artifacts/get was asked for content."
+        }
+      },
+      "required": [
+        "mediaType",
+        "digest",
+        "size"
+      ],
+      "additionalProperties": false
+    },
+    "ArtifactLayerPut": {
+      "type": "object",
+      "description": "One file of a version to put.",
+      "properties": {
+        "mediaType": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string",
+          "description": "The file's name: no '/', at most 255 bytes."
+        },
+        "data": {
+          "$ref": "core.schema.json#/definitions/Base64"
+        }
+      },
+      "required": [
+        "mediaType",
+        "title",
+        "data"
+      ],
+      "additionalProperties": false
+    },
+    "ArtifactPut": {
+      "type": "object",
+      "description": "artifacts/put: a new version of an artifact, or its first, which makes the record. At most 64 layers and 24 MiB in all.",
+      "properties": {
+        "topic": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string",
+          "description": "Sets the name; the first version's default is the id."
+        },
+        "kind": {
+          "$ref": "#/definitions/ArtifactKind",
+          "description": "Required for the first version; a later one keeps the record's."
+        },
+        "labels": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Free labels, key to value: at most 32, a key at most 64 bytes and a value at most 256. A version carries them as dev.agentloops.label.<key> annotations."
+        },
+        "parents": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          },
+          "description": "The head (or heads) the writer saw: none for the first version, two or more to settle a divergence. A parent that is no longer a head makes a second head, never an overwrite."
+        },
+        "capture": {
+          "type": "string",
+          "enum": [
+            "checkpoint",
+            "manual",
+            "settled"
+          ],
+          "description": "How the version was made (dev.agentloops.capture); manual when absent."
+        },
+        "tombstone": {
+          "type": "boolean",
+          "description": "Delete: a version with no layers that marks the artifact deleted; its versions are kept."
+        },
+        "layers": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ArtifactLayerPut"
+          }
+        }
+      },
+      "required": [
+        "topic",
+        "id",
+        "layers"
+      ],
+      "additionalProperties": false
+    },
+    "ArtifactPutResult": {
+      "type": "object",
+      "description": "artifacts/put's answer.",
+      "properties": {
+        "artifact": {
+          "$ref": "#/definitions/Artifact"
+        },
+        "version": {
+          "$ref": "#/definitions/ArtifactVersion"
+        },
+        "diverged": {
+          "type": "boolean",
+          "description": "The parents were not every head, so the artifact now has two or more heads."
+        }
+      },
+      "required": [
+        "artifact",
+        "version"
+      ],
+      "additionalProperties": false
+    },
+    "ArtifactVersion": {
+      "type": "object",
+      "description": "One version: its manifest, as the record and the log say it.",
+      "properties": {
+        "number": {
+          "type": "integer",
+          "description": "Its place in the artifact's log, from 1."
+        },
+        "digest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "description": "The manifest's digest: the version's id, immutable."
+        },
+        "ref": {
+          "type": "string",
+          "description": "agents:artifact:<topic>#sha256:…: the immutable form."
+        },
+        "parents": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          }
+        },
+        "created": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "author": {
+          "type": "string",
+          "description": "Who made it, recorded, never guessed: person:<id>, session:<id> or unknown."
+        },
+        "capture": {
+          "type": "string"
+        },
+        "tombstone": {
+          "type": "boolean"
+        },
+        "layers": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ArtifactLayer"
+          },
+          "description": "Its files; absent in a listing."
+        }
+      },
+      "required": [
+        "number",
+        "digest",
+        "ref",
+        "created",
+        "author"
+      ],
+      "additionalProperties": false
+    },
+    "ArtifactVersionPage": {
+      "type": "object",
+      "description": "artifacts/versions's answer: newest first.",
+      "properties": {
+        "versions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ArtifactVersion"
+          }
+        },
+        "next": {
+          "type": "integer",
+          "description": "Pass as before for the next page; absent on the last."
+        }
+      },
+      "required": [
+        "versions"
+      ],
+      "additionalProperties": false
+    },
+    "ArtifactVersionsAsk": {
+      "type": "object",
+      "description": "artifacts/versions: an artifact's versions, newest first.",
+      "properties": {
+        "ref": {
+          "type": "string",
+          "description": "The artifact's name ref, agents:artifact:<topic>#<id>."
+        },
+        "before": {
+          "type": "integer",
+          "description": "Only versions numbered below this."
+        },
+        "limit": {
+          "type": "integer",
+          "description": "At most 100; 0 is 50."
+        }
+      },
+      "required": [
+        "ref"
+      ],
+      "additionalProperties": false
+    },
+    "BlobInfo": {
+      "type": "object",
+      "description": "A blob in the artifact store (#5715, epic #5713): bytes at a sha256 digest.",
+      "properties": {
+        "digest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "description": "The blob's id, \"sha256:\" and 64 lower-case hex digits."
+        },
+        "size": {
+          "type": "integer",
+          "description": "The blob's length in bytes."
+        },
+        "stored": {
+          "type": "string",
+          "format": "date-time",
+          "description": "When the blob was first written, in RFC 3339."
+        }
+      },
+      "required": [
+        "digest",
+        "size",
+        "stored"
+      ],
+      "additionalProperties": false
+    },
+    "BlobPage": {
+      "type": "object",
+      "description": "One page of a blob listing, in digest order, at most 1000 blobs (#5715).",
+      "properties": {
+        "blobs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/BlobInfo"
+          }
+        },
+        "next": {
+          "type": "string",
+          "description": "Pass as the next listing's after to get the next page; absent on the last page."
+        }
+      },
+      "required": [
+        "blobs"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

@@ -323,6 +323,7 @@ func (d *Daemon) gitContext(a *wire.Agent) (*gitContext, wire.GitView) {
 	var view wire.GitView
 	if a.StartingPoint != nil && isDir(store.FolderPath(a.StartingPoint.Repository)) {
 		ctx.root, ctx.since = store.FolderPath(a.StartingPoint.Repository), a.StartingPoint.Commit
+		ctx.since = branchPointSince(cwd, ctx.since, a.Worktree)
 		if d.ownsItsFolder(a) {
 			view.Owned = &wire.GitViewOwned{Since: ctx.since}
 		} else {
@@ -341,6 +342,26 @@ func (d *Daemon) gitContext(a *wire.Agent) (*gitContext, wire.GitView) {
 		ctx.scope = rel
 	}
 	return &ctx, view
+}
+
+// branchPointSince is the later of the start and the merge-base of HEAD with the branch's base
+// (and the base's remote copy), as GitHub's "Files changed" starts: work that main brought in,
+// by a move to a newer worktree or a merge of origin/main, is not this session's change (#6870).
+func branchPointSince(cwd, since string, wt *wire.AgentWorktree) string {
+	if wt == nil || !wt.MadeByApp || wt.Base == nil || *wt.Base == "" {
+		return since
+	}
+	best := since
+	for _, base := range []string{*wt.Base, "origin/" + *wt.Base} {
+		mb, err := git(cwd, "merge-base", "HEAD", base)
+		if err != nil || len(mb) < 40 || mb == best {
+			continue
+		}
+		if _, err := git(cwd, "merge-base", "--is-ancestor", best, mb); err == nil {
+			best = mb
+		}
+	}
+	return best
 }
 
 func (d *Daemon) ownsItsFolder(a *wire.Agent) bool {

@@ -52,7 +52,8 @@ func ptr(s string) *string { return &s }
 // docker is containers on the machine that runs the control plane, such as the Linux
 // devbox: the ones named in containers, or else every container labelled agents.workspace,
 // each reached by its agents.ssh label or the shared ssh line. With an image, it makes
-// labelled containers from it, which install Agents and join by themselves (#1025), and
+// labelled containers from it, which run the person's root.sh as root (#7159), install Agents
+// and join by themselves (#1025), and
 // deletes them with their volumes and image when no other container uses them (#3728).
 func docker(o map[string]any) Config {
 	var containers []string
@@ -89,7 +90,7 @@ func docker(o map[string]any) Config {
 	making := Making{}
 	if image := nonEmpty(o["image"]); image != nil {
 		making = Making{
-			Create: "docker run -d --name ${name} --label agents.workspace ${image} && docker exec ${name} sh -c ${firstBoot}",
+			Create: dockerCreate,
 			Delete: dockerDelete,
 			Options: map[string]any{"type": "object", "properties": map[string]any{
 				"image": map[string]any{"type": "string", "title": "Image", "description": *image, "default": *image}}},
@@ -97,6 +98,14 @@ func docker(o map[string]any) Config {
 	}
 	return newConfig(nil, listing, states, making)
 }
+
+// dockerCreate makes a labelled container from the image, starts the person's root.sh in it as
+// root (${rootBoot}, a file of the lines, #7159) detached, so a slow one never holds the create
+// up, then installs Agents as the image's user beside it. With no root.sh, ${rootBoot} is empty.
+const dockerCreate = `docker run -d --name ${name} --label agents.workspace ${image} && ` +
+	`{ [ -z ${rootBoot} ] || { docker cp ${rootBoot} ${name}:/tmp/agents-root-boot.sh && ` +
+	`docker exec -d -u root ${name} sh /tmp/agents-root-boot.sh; }; } && ` +
+	`docker exec ${name} sh -c ${firstBoot}`
 
 // dockerDelete deletes a workspace's container with its anonymous volumes, then its named
 // volumes and its image when no container uses them any more (#3728). It asks Docker
@@ -121,8 +130,8 @@ func doctl(o map[string]any) (Config, error) {
 	}
 	tunnel, _ := o["tunnel"].(bool)
 	return newConfig(nil, &Listing{
-		Command: "doctl compute droplet list --tag-name " + ShellQuoted(tag) + " --format ID,Name,Status,PublicIPv4 --no-header",
-		Shape:   Shape{Columns: []string{"id", "name", "state", "ip"}},
+		Command: "doctl compute droplet list --tag-name " + ShellQuoted(tag) + " --format ID,Name,Status,PublicIPv4,PublicIPv6 --no-header",
+		Shape:   Shape{Columns: []string{"id", "name", "state", "ip", "ip6"}},
 		Commands: Commands{Start: "doctl compute droplet-action power-on ${id} --wait",
 			Stop: "doctl compute droplet-action power-off ${id} --wait",
 			SSH:  ptr(user + "@${ip}"), Tunnel: tunnel},
@@ -281,7 +290,7 @@ func digitalOceanAPI(o map[string]any) (Config, error) {
 		Request: &Request{Method: "GET", Headers: headers,
 			URL: base + "/v2/droplets?per_page=200&tag_name=" + url.QueryEscape(tag)},
 		Shape: Shape{Items: "droplets", Fields: map[string]string{"id": "id", "name": "name", "state": "status",
-			"ip": "networks.v4[type=public].ip_address"}},
+			"ip": "networks.v4[type=public].ip_address", "ip6": "networks.v6[type=public].ip_address"}},
 		Commands: Commands{StartRequest: action("power_on"), StopRequest: action("power_off"),
 			SSH: ptr(user + "@${ip}"), Tunnel: tunnel},
 	}, digitalOceanStates, Making{
@@ -429,7 +438,8 @@ func awsEC2API(o map[string]any) (Config, error) {
 	return newConfig(nil, &Listing{
 		Request: query("DescribeInstances", list),
 		Shape: Shape{Items: "reservationSet[].instancesSet", Fields: map[string]string{"id": "instanceId",
-			"name": "tagSet[key=Name].value", "state": "instanceState.name", "ip": "ipAddress"}},
+			"name": "tagSet[key=Name].value", "state": "instanceState.name", "ip": "ipAddress",
+			"ip6": "ipv6Address"}},
 		Commands: Commands{StartRequest: query("StartInstances", "&InstanceId.1=${id}"),
 			StopRequest: query("StopInstances", "&InstanceId.1=${id}"),
 			SSH:         ptr(user + "@${ip}"), Tunnel: tunnel},
@@ -533,7 +543,7 @@ func gcpComputeAPI(o map[string]any) (Config, error) {
 	return newConfig(nil, &Listing{
 		Request: &Request{Method: "GET", URL: instances + "?filter=" + url.QueryEscape("labels."+label+":*"), Google: auth},
 		Shape: Shape{Items: "items", Fields: map[string]string{"id": "name", "name": "name", "state": "status",
-			"ip": "networkInterfaces[0].accessConfigs[0].natIP"}},
+			"ip": "networkInterfaces[0].accessConfigs[0].natIP", "ip6": "networkInterfaces[0].ipv6AccessConfigs[0].externalIpv6"}},
 		Commands: Commands{
 			StartRequest: &Request{Method: "POST", URL: instances + "/${id}/start", Google: auth},
 			StopRequest:  &Request{Method: "POST", URL: instances + "/${id}/stop", Google: auth},

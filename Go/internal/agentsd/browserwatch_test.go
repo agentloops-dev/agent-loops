@@ -222,3 +222,67 @@ func TestABrowserCallCastsTheTabForTheChatInFront(t *testing.T) {
 		t.Fatalf("a live frame after the drive: %+v", f)
 	}
 }
+
+func TestASlowWatcherGetsTheNewestFrameAndAtMostSixInFlight(t *testing.T) {
+	t.Parallel()
+
+	d, slow := start(t, t.TempDir())
+	fast := newConn()
+	go d.Accept(fast)
+	slow.call(t, 1, "browser/watch", wire.BrowserWatchRequest{Width: 800, Height: 600})
+	fast.call(t, 1, "browser/watch", wire.BrowserWatchRequest{Width: 800, Height: 600})
+	gen := screenGen(d, "")
+	for n := int64(1); n <= 10; n++ {
+		d.browserFrame(gen, browser.Frame{JPEG: []byte{byte(n)}, Ack: n})
+		// The fast watcher draws each frame: its window never fills.
+		if f := nextBrowserFrame(fast, 2*time.Second); f == nil || f.Ack != n {
+			t.Fatalf("the fast watcher got %+v, not frame %d", f, n)
+		}
+		sendBrowserAck(fast, 1+n, n)
+	}
+	for n := int64(1); n <= browserWindow; n++ {
+		if f := nextBrowserFrame(slow, 2*time.Second); f == nil || f.Ack != n {
+			t.Fatalf("the slow watcher got %+v, not frame %d", f, n)
+		}
+	}
+	if f := nextBrowserFrame(slow, 200*time.Millisecond); f != nil {
+		t.Fatalf("frame %d past a full window", f.Ack)
+	}
+	// An ack frees the window: the newest frame comes, not the ones between.
+	sendBrowserAck(slow, 2, 3)
+	if f := nextBrowserFrame(slow, 2*time.Second); f == nil || f.Ack != 10 {
+		t.Fatalf("after the ack: %+v, not frame 10", f)
+	}
+	if f := nextBrowserFrame(slow, 200*time.Millisecond); f != nil {
+		t.Fatalf("frame %d after the newest", f.Ack)
+	}
+	close(fast.in)
+}
+
+func TestAWatcherThatStoppedDrawingGetsTheNewestFrameLater(t *testing.T) {
+	t.Parallel()
+
+	d, c := start(t, t.TempDir())
+	c.call(t, 1, "browser/watch", wire.BrowserWatchRequest{Width: 800, Height: 600})
+	gen := screenGen(d, "")
+	for n := int64(1); n <= browserWindow+2; n++ {
+		d.browserFrame(gen, browser.Frame{JPEG: []byte{byte(n)}, Ack: n})
+	}
+	for n := int64(1); n <= browserWindow; n++ {
+		if f := nextBrowserFrame(c, 2*time.Second); f == nil || f.Ack != n {
+			t.Fatalf("got %+v, not frame %d", f, n)
+		}
+	}
+	// No ack: after browserAckWait the window opens, with the newest frame.
+	if f := nextBrowserFrame(c, browserAckWait+2*time.Second); f == nil || f.Ack != browserWindow+2 {
+		t.Fatalf("got %+v, not the newest frame", f)
+	}
+}
+
+// sendBrowserAck says browser/ack of frame n and does not wait for the answer: call would
+// keep a frame that comes before it where nextBrowserFrame does not look.
+func sendBrowserAck(c *conn, id, n int64) {
+	b, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": id, "method": "browser/ack",
+		"params": wire.BrowserAckRequest{Ack: n}})
+	c.in <- string(b)
+}

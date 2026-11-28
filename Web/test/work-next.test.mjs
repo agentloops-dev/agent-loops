@@ -67,3 +67,27 @@ test("an empty page and an older machine say why", () => {
   assert.match(n.nextProblem("Method not found: forge/next"), /older/);
   assert.equal(n.nextProblem("GitHub refused the token"), "GitHub refused the token");
 });
+
+test("Autopilot: the strip, the cell and the item that starts next (#5905)", () => {
+  const at = (ms) => (ms - Date.UTC(2001, 0, 1)) / 1000;
+  const now = Date.parse("2026-11-26T12:00:00Z");
+  const status = (mode, rows = [], lastRunAt) => ({ mode, rows, ...lastRunAt ? { lastRunAt: at(lastRunAt) } : {} });
+  assert.equal(n.autopilotStrip(null, now), null);
+  assert.match(n.autopilotStrip(status("off"), now).text, /^Autopilot: Off/);
+  assert.equal(n.autopilotStrip(status("on", [], now - 120_000), now).text, "Autopilot: On · last run 2 min ago");
+  const paused = { ref: "#9", kind: "lead", state: "paused", reason: "paused: main red", since: at(now - 72 * 60_000) };
+  assert.deepEqual(n.autopilotStrip(status("on", [paused], now), now), { text: "Paused: main red for 1 h", paused: true });
+
+  const rows = [row(1, 1), row(2, 2), row(3, 3), row(9, 4), row(4, 0, { onHold: true })];
+  const st = status("on", [
+    { ref: "#1", kind: "lane", state: "started", reason: "", since: at(now) },
+    { ref: "#2", kind: "lane", state: "waiting", reason: "limit open-prs", since: at(now) }, paused,
+  ]);
+  assert.equal(n.startsNext(st, rows.filter((r) => !r.onHold)), "github:issue:alexec/agents#3");
+  assert.deepEqual(n.autopilotCell(st, rows[0], false), { words: "Started", resume: null });
+  assert.deepEqual(n.autopilotCell(st, rows[1], false), { words: "limit open-prs", resume: null });
+  assert.deepEqual(n.autopilotCell(st, rows[2], true), { words: "Starts next", resume: null });
+  assert.deepEqual(n.autopilotCell(st, rows[3], false), { words: "paused: main red", resume: "#9" });
+  assert.deepEqual(n.autopilotCell(st, rows[4], false), { words: "on hold", resume: null });
+  assert.equal(n.autopilotCell(status("off"), rows[0], true), null);
+});

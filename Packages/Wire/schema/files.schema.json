@@ -334,6 +334,23 @@
       ],
       "additionalProperties": false
     },
+    "AutopilotResumeRequest": {
+      "type": "object",
+      "properties": {
+        "folder": {
+          "$ref": "core.schema.json#/definitions/URLString"
+        },
+        "ref": {
+          "type": "string",
+          "description": "The paused issue or epic, as autopilot/status names it."
+        }
+      },
+      "required": [
+        "folder",
+        "ref"
+      ],
+      "additionalProperties": false
+    },
     "AutopilotRow": {
       "type": "object",
       "properties": {

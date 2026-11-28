@@ -31,7 +31,9 @@ const (
 type autopilotRecord struct {
 	LastRunAt *wire.Date          `json:"lastRunAt,omitzero"`
 	Rows      []wire.AutopilotRow `json:"rows"`
-	Updated   wire.Date           `json:"updated"`
+	// Restarts is when Autopilot started a lead again, by epic ref, for the last day (#5901).
+	Restarts map[string][]wire.Date `json:"restarts,omitzero"`
+	Updated  wire.Date              `json:"updated"`
 }
 
 func (d *Daemon) autopilotPath() string {
@@ -159,6 +161,42 @@ func (d *Daemon) autopilotSiblings(folder string) []string {
 	return out
 }
 
+// resumeAutopilot drops the paused row of ref in the folder, raises autopilot.resumed with the
+// reason that was cleared, and wakes the loop. A ref that is not paused is left as it is.
+func (d *Daemon) resumeAutopilot(r wire.AutopilotResumeRequest) (wire.AutopilotStatus, error) {
+	folder := store.FolderPath(r.Folder)
+	if _, ok := d.summaryFor(folder); !ok {
+		return wire.AutopilotStatus{}, noSuchFolder(folder + " is not a folder.")
+	}
+	var cleared *wire.AutopilotRow
+	err := d.autopilotFile.Update(func(m map[string]autopilotRecord) error {
+		e, ok := m[folder]
+		if !ok {
+			return nil
+		}
+		rows := make([]wire.AutopilotRow, 0, len(e.Rows))
+		for _, row := range e.Rows {
+			if row.Ref == r.Ref && row.State == wire.AutopilotRowStatePaused {
+				row := row
+				cleared = &row
+				continue
+			}
+			rows = append(rows, row)
+		}
+		e.Rows, e.Updated = rows, now()
+		m[folder] = e
+		return nil
+	})
+	if err != nil {
+		return wire.AutopilotStatus{}, &Error{Code: CodeInternal, Message: "Autopilot's status could not be written: " + err.Error()}
+	}
+	if cleared != nil {
+		d.raise(autopilotDraft(autopilotResumed, folder, "resumed", cleared.Ref, map[string]string{"ref": cleared.Ref, "reason": cleared.Reason}, now()))
+		d.autopilotHear(wire.Event{Name: "forge.changed"})
+	}
+	return d.autopilotStatus(wire.AutopilotRequest{Folder: r.Folder})
+}
+
 // autopilotForget drops the folder's rows.
 func (d *Daemon) autopilotForget(folder string) {
 	if err := d.autopilotFile.Update(func(m map[string]autopilotRecord) error {
@@ -200,7 +238,7 @@ func (d *Daemon) autopilotNote(folder string, row wire.AutopilotRow) error {
 		if len(rows) > autopilotMostRows {
 			rows = rows[:autopilotMostRows]
 		}
-		m[folder] = autopilotRecord{LastRunAt: &at, Rows: rows, Updated: at}
+		m[folder] = autopilotRecord{LastRunAt: &at, Rows: rows, Restarts: e.Restarts, Updated: at}
 		return nil
 	})
 	if err != nil {

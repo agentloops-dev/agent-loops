@@ -37,6 +37,8 @@ import { machineNeed, machineNeedLine } from "./OfflineStrip";
 import { MachinesList } from "./MachinesList";
 import { type GroupRows, machinesGroupLimit, machinesGroupRows, machinesGroupWords, sidebarPins } from "../model/machinesGroup";
 import { MachineRow, MakingRow } from "./MachineRow";
+import { ControlPlanePage, ControlPlaneRow, controlPlaneTitle, isControlPlaneOnly, runsControlPlane } from "./ControlPlane";
+import { agentsRowLine, lookOn } from "../model/controlPlaneMachine";
 import { deleteMakingQuestion, joinTrustQuestion, type MachineMaking, makingRows, newMachineItems } from "../model/machineRow";
 import { openContextMenu, type MenuItem } from "./ContextMenu";
 import { AddMachineDialog } from "./AddMachineDialog";
@@ -176,8 +178,10 @@ function MachineNeedLine({ store, host }: { store: Store; host: string }) {
   const need = row ? machineNeed(row, store.hostIsOnline(host), store.runtimes.value[host] ?? [],
     store.disk.value[host]?.alarms ?? [], store.capacity.value[host]?.level, store.capacity.value[host]?.reason) : null;
   if (!row) return null;
+  // "Control plane near capacity", when it runs the control plane too and needs nothing more urgent (#6592).
+  const control = runsControlPlane(store, host) ? agentsRowLine(lookOn(host, store.hosts.value)) : null;
   // Nothing wrong: how many sessions run on it, or Idle (#5490), from the count the machine's page reads.
-  const words = need ? machineNeedLine(need, row)
+  const words = need ? machineNeedLine(need, row) : control ? control
     : store.hostIsOnline(host) ? runningLineOf({ running: store.sessionsByMachine.value[host]?.working ?? 0 }) : null;
   if (!words) return null;
   return (
@@ -200,6 +204,15 @@ function EventsWaitingLine({ store }: { store: Store }) {
   return words ? <p class="page-need quiet small" role="status">{words}</p> : null;
 }
 
+/** The machines that run the control plane first (#6592), when the person sees them as such; a machine that runs only
+ * the control plane is called Control plane. */
+function controlFirst(store: Store, pages: NavPage[]): NavPage[] {
+  const runs = (p: NavPage) => p.draw.kind === "machine" && runsControlPlane(store, p.draw.host);
+  const named = (p: NavPage) => p.draw.kind === "machine" && isControlPlaneOnly(store, p.draw.host)
+    ? { ...p, title: controlPlaneTitle(store, p.draw.host) } : p;
+  return [...pages.filter(runs), ...pages.filter((p) => !runs(p))].map(named);
+}
+
 /** The Machines group's rows (#5286): the machine pages it draws, at most seven, This Mac, pinned and busy first. */
 function machinesGroup(store: Store, pages: readonly NavPage[], making: number): { pages: NavPage[]; rows: GroupRows } {
   const pins = sidebarPins.value;
@@ -207,7 +220,8 @@ function machinesGroup(store: Store, pages: readonly NavPage[], making: number):
   const ids = pages.flatMap((p) => p.draw.kind === "machine" ? [p.draw.host] : []);
   // With seven or fewer every machine is drawn in its order, so `active` changes nothing and is not worked out (#6158).
   const ranks = ids.length + making > machinesGroupLimit;
-  const listed = ids.map((id) => ({ id, pinned: pins.includes(id), active: ranks && machineIsActive(store, id) }));
+  // The control plane's machines stay in the group, as a pinned one does (#6592).
+  const listed = ids.map((id) => ({ id, pinned: pins.includes(id) || runsControlPlane(store, id), active: ranks && machineIsActive(store, id) }));
   const rows = machinesGroupRows(listed, making, macID);
   const byID = new Map(pages.map((p) => [p.draw.kind === "machine" ? p.draw.host : p.id, p]));
   return { pages: rows.machines.flatMap((id) => byID.get(id) ?? []), rows };
@@ -236,7 +250,7 @@ export function SectionPage({ store, section, down }: { store: Store; section: E
   const admin = adminOf(store);
   const r = route.value;
   // A page per machine under Machines (#3626).
-  const more = section === "machines" ? machinePages(store.hosts.value, store.macHostID.value) : [];
+  const more = section === "machines" ? controlFirst(store, machinePages(store.hosts.value, store.macHostID.value)) : [];
   const open = openPage(section, routePageID(section, r), admin, more);
   // At most seven machines, then All Machines (N), the Machines page, after them (#5286).
   const making = section === "machines" ? makingRows(store.machinesMaking.value, store.providers.list.value, store.hosts.value,
@@ -284,7 +298,9 @@ export function SectionPage({ store, section, down }: { store: Store; section: E
               {machinesHead(group) ? (
                 <h2 class="section-head" onContextMenu={(e) => openContextMenu(e, headItems())}>{group}</h2>
               ) : <h2 class="section-head">{section === "work" ? sectionTitle(section) : group}</h2>}
-              {pages.filter((p) => !p.tabOf).map((p) => p.draw.kind === "machine" ? (
+              {pages.filter((p) => !p.tabOf).map((p) => p.draw.kind === "machine" && isControlPlaneOnly(store, p.draw.host) ? (
+                <ControlPlaneRow key={p.id} store={store} host={p.draw.host} on={p.id === open?.id} open={() => go({ nav: section, section: p.id })} />
+              ) : p.draw.kind === "machine" ? (
                 <MachineRow key={p.id} store={store} host={p.draw.host} on={p.id === open?.id}
                   open={() => go({ nav: section, section: p.id })}>
                   <MachineNeedLine store={store} host={p.draw.host} />
@@ -348,7 +364,9 @@ export function PageView({ store, page, down }: { store: Store; page: NavPage; d
             ? <WorkReleasePage key={route.value.item} store={store} ref={route.value.item} />
             : <WorkPage key={route.value.item} store={store} kind={page.draw.work} ref={route.value.item} />
           : <WorkList key={page.draw.work} store={store} kind={page.draw.work} />)
-        : page.draw.kind === "machine" ? <MachinePage key={page.draw.host} store={store} host={page.draw.host} />
+        : page.draw.kind === "machine" ? (isControlPlaneOnly(store, page.draw.host)
+          ? <ControlPlanePage key={page.draw.host} store={store} host={page.draw.host} />
+          : <MachinePage key={page.draw.host} store={store} host={page.draw.host} />)
         : page.draw.kind === "timeline" ? <WorkTimeline store={store} />
         : page.draw.kind === "deploys" ? <WorkDeploysPage store={store} />
         : page.draw.kind === "next" ? <WorkNext store={store} />

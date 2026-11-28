@@ -41,6 +41,11 @@ every turn, from `<its folder>/<its name>.behaviour`:
   ok      (or no file) it answers, saying what it was handed.
 
 So a walk can make a runtime run out, and later come back, by rewriting one file.
+
+Linked as `npx`, it stands in for Claude, which the host starts by npx (#7459): it keeps a
+record of each conversation as Claude does, `$CLAUDE_CONFIG_DIR/projects/<folder>/<id>.jsonl`,
+and loads a conversation only when that record is in the account's folder it was started
+with. So a walk sees a conversation move from one account's folder to another's.
 """
 import json
 import os
@@ -252,6 +257,24 @@ def options():
     ]
 
 
+CLAUDE = NAME == "npx"
+
+
+def claude_record(session_id, cwd=None):
+    """Where Claude keeps a conversation's record in its config folder, or None."""
+    home = os.environ.get("CLAUDE_CONFIG_DIR")
+    if not CLAUDE or not home:
+        return None
+    if cwd is None:
+        projects = os.path.join(home, "projects")
+        for folder in (os.listdir(projects) if os.path.isdir(projects) else []):
+            found = os.path.join(projects, folder, session_id + ".jsonl")
+            if os.path.isfile(found):
+                return found
+        return None
+    return os.path.join(home, "projects", cwd.replace("/", "-"), session_id + ".jsonl")
+
+
 def main():
     for line in sys.stdin:
         line = line.strip()
@@ -267,7 +290,7 @@ def main():
         params = message.get("params") or {}
         if method == "initialize":
             reply(request_id, {"protocolVersion": 1, "authMethods": [],
-                               "agentCapabilities": {"loadSession": False,
+                               "agentCapabilities": {"loadSession": CLAUDE,
                                                      "promptCapabilities": {"embeddedContext": True},
                                                      "mcpCapabilities": {"http": True}}})
         elif method == "session/new":
@@ -276,7 +299,23 @@ def main():
                 if server.get("name") == "agents" and server.get("url"):
                     servers[session_id] = server
             folders[session_id] = params.get("cwd") or os.getcwd()
+            record = claude_record(session_id, folders[session_id])
+            if record:
+                os.makedirs(os.path.dirname(record), exist_ok=True)
+                with open(record, "w") as f:
+                    f.write(json.dumps({"type": "summary", "sessionId": session_id}) + "\n")
             reply(request_id, {"sessionId": session_id, "configOptions": options()})
+        elif method == "session/load":
+            session_id = params.get("sessionId", "")
+            if not claude_record(session_id):
+                send({"jsonrpc": "2.0", "id": request_id,
+                      "error": {"code": -32002, "message": "Resource not found: " + session_id}})
+                continue
+            for server in params.get("mcpServers", []):
+                if server.get("name") == "agents" and server.get("url"):
+                    servers[session_id] = server
+            folders[session_id] = params.get("cwd") or os.getcwd()
+            reply(request_id, {"configOptions": options()})
         elif method == "session/set_config_option":
             chosen[params.get("configId", "")] = params.get("value")
             reply(request_id, {"configOptions": options()})

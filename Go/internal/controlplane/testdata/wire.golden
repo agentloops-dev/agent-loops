@@ -21,6 +21,7 @@ control/status
   },
   "capabilities": [
     "approvals/1",
+    "artifacts/1",
     "attention/1",
     "attention/2",
     "audit.sinks/1",
@@ -49,7 +50,6 @@ control/status
     "folders.send-seed/1",
     "folders.signed-upload/1",
     "folders.to-machine/1",
-    "git/1",
     "governance/1",
     "groups/1",
     "handover/1",
@@ -78,6 +78,7 @@ control/status
     "machine.agent-secrets/1",
     "machine/1",
     "machines.all/1",
+    "machines.setup-deliver/1",
     "machines/1",
     "machines/2",
     "maturity/1",
@@ -285,9 +286,6 @@ control/setFolderDetection
 machines/lendSignIn
 {}
 
-machines/lendGit
-{}
-
 control/status
 {
   "name": "Test plane",
@@ -306,6 +304,7 @@ control/status
   },
   "capabilities": [
     "approvals/1",
+    "artifacts/1",
     "attention/1",
     "attention/2",
     "audit.sinks/1",
@@ -334,7 +333,6 @@ control/status
     "folders.send-seed/1",
     "folders.signed-upload/1",
     "folders.to-machine/1",
-    "git/1",
     "governance/1",
     "groups/1",
     "handover/1",
@@ -363,6 +361,7 @@ control/status
     "machine.agent-secrets/1",
     "machine/1",
     "machines.all/1",
+    "machines.setup-deliver/1",
     "machines/1",
     "machines/2",
     "maturity/1",
@@ -436,9 +435,6 @@ machines/list
     "machineID": "MACHINE-2",
     "signInFrom": {
       "claude": "mac"
-    },
-    "gitFrom": {
-      "github.com": "mac"
     },
     "implementation": "go",
     "owner": "<uuid>",
@@ -551,8 +547,4 @@ host reads
 
 # notifications
 
-control/hostChanged
-{
-  "host": "<host a>",
-  "state": "online"
-}
+

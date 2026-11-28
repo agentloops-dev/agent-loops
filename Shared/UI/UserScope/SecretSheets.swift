@@ -216,6 +216,11 @@ struct CardSheet: View {
     @State private var cvc = ""
     @State private var holder = ""
     @State private var zip = ""
+    @State private var line1 = ""
+    @State private var line2 = ""
+    @State private var city = ""
+    @State private var region = ""
+    @State private var country = ""
     @State private var locked = false
     @State private var askBeforeUse: Bool
     @State private var about: String
@@ -232,7 +237,10 @@ struct CardSheet: View {
     }
 
     private var chosen: String { name ?? typedName.trimmingCharacters(in: .whitespaces) }
-    private var card: CardSecret { CardSecret(number: number, expiry: expiry, cvc: cvc, name: holder, zip: zip) }
+    private var card: CardSecret {
+        CardSecret(number: number, expiry: expiry, cvc: cvc, name: holder, zip: zip,
+                   line1: line1, line2: line2, city: city, state: region, country: country)
+    }
 
     var body: some View {
         Form {
@@ -258,10 +266,30 @@ struct CardSheet: View {
                     .autocorrectionDisabled()
                 TextField("Billing ZIP", text: $zip, prompt: Text("ZIP or postal code"))
                     .autocorrectionDisabled()
-                SecretDescriptionField(text: $about)
-                AskBeforeUseToggle(isOn: $askBeforeUse)
             } header: {
                 Text(name.map { "Replace \($0)" } ?? "Add a Card")
+            }
+            // The billing address (#5569): optional, for a sign-up that bills. fill_secret fills
+            // each line into its own field.
+            Section {
+                TextField("Address line 1", text: $line1, prompt: Text("Street"))
+                    .autocorrectionDisabled()
+                TextField("Address line 2", text: $line2, prompt: Text("Optional"))
+                    .autocorrectionDisabled()
+                TextField("City", text: $city, prompt: Text("City or town"))
+                    .autocorrectionDisabled()
+                TextField("State", text: $region, prompt: Text("State, province or region"))
+                    .autocorrectionDisabled()
+                TextField("Country", text: $country, prompt: Text("Country"))
+                    .autocorrectionDisabled()
+            } header: {
+                Text(UserScopeWords.cardAddressHeader)
+            } footer: {
+                Text(UserScopeWords.cardAddressHint).appText(.fine)
+            }
+            Section {
+                SecretDescriptionField(text: $about)
+                AskBeforeUseToggle(isOn: $askBeforeUse)
             } footer: {
                 Text(problem ?? UserScopeWords.nameHint).appText(.fine)
                     .tinted(problem == nil ? .none : .failure)
@@ -290,7 +318,7 @@ struct CardSheet: View {
         #if os(macOS)
         .frame(minWidth: 400)
         #endif
-        .onDisappear { number = ""; cvc = "" }
+        .onDisappear { number = ""; cvc = ""; line1 = ""; line2 = "" }
     }
 }
 

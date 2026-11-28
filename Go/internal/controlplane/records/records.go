@@ -842,6 +842,35 @@ func (r *Records) ChangeHost(ctx context.Context, id string, change func(*Machin
 	return nil
 }
 
+// DropGitLends deletes the git lends that #1122 kept in a machine's record (gitFrom) from
+// each record that still holds one (#7286). Git lending is removed and nothing reads them.
+// It writes only those records, and is safe to run on every start.
+func (r *Records) DropGitLends(ctx context.Context) error {
+	r.writing.Lock()
+	defer r.writing.Unlock()
+	r.mu.Lock()
+	var stale []held[MachineRecord]
+	for _, h := range r.hosts {
+		if h.record.gitLends {
+			stale = append(stale, h)
+		}
+	}
+	r.mu.Unlock()
+	for _, h := range stale {
+		c := h.record
+		c.gitLends = false
+		c.Rev++
+		kept, etag, err := write(ctx, r.Store, c, HostKey(c.ID), store.Matching(h.etag))
+		if err != nil {
+			return err
+		}
+		r.mu.Lock()
+		r.hosts[c.ID] = held[MachineRecord]{kept, etag}
+		r.mu.Unlock()
+	}
+	return nil
+}
+
 // ErrHostTaken is AddHost's refusal: a host of that id is already kept, here or at
 // another copy (#1996).
 var ErrHostTaken = errors.New("a host of that id is already enrolled")
@@ -910,7 +939,7 @@ func (r *Records) removeHost(ctx context.Context, id string, still func(MachineR
 		tombstone.Forgotten, tombstone.ForgottenAt = &yes, &now
 		tombstone.Rev++
 		// A tombstone keeps nothing that grows (#6758).
-		tombstone.SignInFrom, tombstone.GitFrom, tombstone.Workspace, tombstone.Labels, tombstone.Extra = nil, nil, nil, nil, nil
+		tombstone.SignInFrom, tombstone.Workspace, tombstone.Labels, tombstone.Extra = nil, nil, nil, nil
 		var err error
 		_, etag, err = write(ctx, r.Store, tombstone, HostKey(id), store.Matching(h.etag))
 		again, err := r.tombstoneAgain(ctx, err, attempt)

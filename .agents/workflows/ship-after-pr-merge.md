@@ -2,7 +2,7 @@
 name: Ship after PR merge
 on:
   - pr.merged
-agent: new
+agent: standing
 cooldown: 4h
 when-done: archive
 permission-mode: approve-for-me

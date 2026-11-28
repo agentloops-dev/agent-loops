@@ -217,12 +217,16 @@ struct SettingsWindow: View {
                 .paperForm()
             }
         case .machines:
-            if let control {
+            if control != nil || model.showsMachineScriptsSettings {
                 HStack(spacing: 0) {
-                    MachinesPageList(page: $machinesPage)
-                    switch machinesPage {
-                    case .thisMac: FormColumn { MacSettingsView() }
-                    case .autoDetect: ControlSettingsView(control: control, page: .autoDetect)
+                    MachinesPageList(page: $machinesPage, autoDetect: control != nil,
+                                     machineScripts: model.showsMachineScriptsSettings)
+                    if machinesPage == .autoDetect, let control {
+                        ControlSettingsView(control: control, page: .autoDetect)
+                    } else if machinesPage == .machineScripts, model.showsMachineScriptsSettings {
+                        FormColumn { MachineScriptsSettingsView() }
+                    } else {
+                        FormColumn { MacSettingsView() }
                     }
                 }
             } else {
@@ -288,7 +292,7 @@ extension SettingsScope {
         // How this app draws: Sidebar is kept on the Mac's host so every client draws the
         // same (#1033, #2079), but its subject is the app (#2157).
         // Notifications' limits are rules of Agents ▸ Policy now (#2957, FR-023).
-        // Early Features (#6052): the features that are not GA, which the person can turn off.
+        // Features (#6052): the features that are not GA, which the person can turn off.
         // Feature Flags (#6254): the features in work that the person turns on, on every client.
         case .thisApp: [.appearance, .sidebar, .voice, .earlyFeatures]
         // What agents may do, what they spend and what they take (#2957, FR-018).
@@ -423,11 +427,14 @@ enum SettingsPane: String, Hashable, CaseIterable {
 /// folders picker looks. The list of every machine went to the sidebar (#3975).
 enum MachinesPage: Hashable {
     case thisMac, autoDetect
+    /// The person's root.sh and setup.sh (#7512), behind the flag machine-scripts.
+    case machineScripts
 
     var title: String {
         switch self {
         case .thisMac: "This Mac"
         case .autoDetect: ControlPage.autoDetect.title
+        case .machineScripts: "Machine scripts"
         }
     }
 }
@@ -569,6 +576,10 @@ private struct SettingsRail: View {
 /// Runtimes' runtimes, Agent Configuration's pages and the control plane's. Each line is a
 /// `PageLine`.
 struct PageList<Content: View>: View {
+    /// As wide as the smallest window leaves beside the rail and a form pane (1,000 − 236 − 560,
+    /// less the divider; #7268): room for the longest runtime's name and its status icon.
+    static var width: CGFloat { 200 }
+
     @ViewBuilder var content: Content
 
     var body: some View {
@@ -578,7 +589,7 @@ struct PageList<Content: View>: View {
                     .padding(12)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .frame(width: 180)
+            .frame(width: Self.width)
             .frame(maxHeight: .infinity)
             Divider()
         }
@@ -602,6 +613,8 @@ struct PageLine<Trailing: View>: View {
                 trailing
             }
         }
+        // A name longer than the column (a named runtime) ends in "…": the whole name on hover.
+        .help(title)
     }
 }
 
@@ -651,13 +664,22 @@ private struct RuntimePageList: View {
 /// Machines' pages (#1759): every machine, with its count, and this Mac's own settings.
 private struct MachinesPageList: View {
     @Binding var page: MachinesPage
+    /// Auto-detect is the control plane's.
+    var autoDetect: Bool
+    var machineScripts: Bool
 
     var body: some View {
         PageList {
             PageLine(title: MachinesPage.thisMac.title, lit: page == .thisMac, count: nil,
                      action: { page = .thisMac })
-            PageLine(title: MachinesPage.autoDetect.title, lit: page == .autoDetect, count: nil,
-                     action: { page = .autoDetect })
+            if machineScripts {
+                PageLine(title: MachinesPage.machineScripts.title, lit: page == .machineScripts, count: nil,
+                         action: { page = .machineScripts })
+            }
+            if autoDetect {
+                PageLine(title: MachinesPage.autoDetect.title, lit: page == .autoDetect, count: nil,
+                         action: { page = .autoDetect })
+            }
         }
     }
 }

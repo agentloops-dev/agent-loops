@@ -97,6 +97,9 @@ type Daemon struct {
 	shells    map[shellKey]*shell
 	// agentMu orders every read-change-save of an agent record.
 	agentMu sync.Mutex
+	// parentMu holds every check and write of a session parent on this host (#7538), so two
+	// moves cannot each pass the cycle check and make a cycle together.
+	parentMu sync.Mutex
 	pinState
 	viewCountBook
 	reviewBook
@@ -109,10 +112,12 @@ type Daemon struct {
 	secretUseState
 	driveApprovalState
 	terminalState
+	pairingState
 	secretProxyState
 	lockState
 	lockRecords
 	setupScriptsState
+	userSetupState
 	selfUpdateState
 	quitState
 	processBook
@@ -158,11 +163,14 @@ type Daemon struct {
 	idleBook
 	turnBook
 	summaryBook
+	meetingBook
 	findBook
 	optionBook
 	timeBook
 	reportBook
 	lineageBook
+	// The broadcasts of labelled workflows (#6954).
+	broadcastBook
 	// The build timings (#5177).
 	ciTimingsBook
 	// The queue of each repository's CI, for the ci lease (#5678).
@@ -290,6 +298,7 @@ func newWith(ctx context.Context, root string, opts startOptions) (*Daemon, erro
 	d.erased = d.openErased()
 	d.deployStore = d.openDeploys()
 	d.autopilotFile = d.openAutopilot()
+	d.broadcastFile = d.openBroadcasts()
 	d.releaseDone = d.openReleaseTags()
 	d.secretOps.pending = d.openSecretOpsPending()
 	d.accountOps = d.openAccountOps()

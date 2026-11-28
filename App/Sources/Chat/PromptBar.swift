@@ -59,7 +59,6 @@ struct PromptBar: View {
     /// Prompts this bar has sent that the host has not yet taken (#87). The send button
     /// spins meanwhile; past a beat, the bar says so in words too.
     @State private var sending = 0
-    @State private var sendingIsSlow = false
 
     private var agent: Agent? {
         // The background window's bar is never the main window's session's (#5798).
@@ -148,6 +147,7 @@ struct PromptBar: View {
             VStack(alignment: .leading, spacing: 12) {
                 whereAndWhat
                 startingOnOut
+                setupScriptFailed
                 if draftLostSomething {
                     Text(PromptWords.draftLostSomething)
                         .appText(.fine)
@@ -169,23 +169,13 @@ struct PromptBar: View {
                     autoRefusal(reasons)
                 }
                 // On its way (#87): a start can take seconds, making a worktree and a
-                // runtime, and a send to a slow host as long.
+                // runtime. A send has only the spinner in the button (#5856).
                 if agent == nil, model.isStarting {
                     Telling(host: recipient, doing: AgentState.startingLabel)
-                } else if agent != nil, sending > 0, sendingIsSlow {
-                    Telling(host: recipient, doing: "Sending")
                 }
                 field
                 options
             }
-        }
-        // A send is usually back before anyone could read a word; the spinner in the
-        // button is enough for that. Words only for one still going after a beat.
-        .task(id: sending > 0) {
-            sendingIsSlow = false
-            guard sending > 0 else { return }
-            try? await Task.sleep(for: .milliseconds(400))
-            if !Task.isCancelled { sendingIsSlow = true }
         }
         // The same column the transcript draws in, so the bar's edges track its edges
         // at every width (FR-021).
@@ -296,6 +286,18 @@ struct PromptBar: View {
         if agent == nil, let runtimeID = model.draftRuntimeID,
            let sentence = model.runtimeAllowances?.startingOnOut(runtimeID) {
             Text(sentence)
+                .appText(.fine)
+                .foregroundStyle(StateTint.warning.style(or: .primary))
+        }
+    }
+
+    /// A new chat on a machine whose Root set-up or Your set-up failed (#7558; #7151, gate 1):
+    /// which step failed, said before the first prompt. Send still starts the session.
+    @ViewBuilder
+    private var setupScriptFailed: some View {
+        if let step = targetSetupFailed {
+            Label(MachineSetupWords.startsDespiteFailure(step, machine: model.hosts.label(targetHost)),
+                  icon: MachineSetupSection<EmptyView>.warningSymbol)
                 .appText(.fine)
                 .foregroundStyle(StateTint.warning.style(or: .primary))
         }
@@ -488,6 +490,8 @@ struct PromptBar: View {
                     // ⌘V attaches pictures and files too, and still pastes the words (#396).
                     .modifier(PastesIntoPrompt(isFocused: focused, attachFile: attach,
                                                attachPicture: attachPicture))
+                    // The wheel over a long prompt scrolls the prompt, not the chat (#6887).
+                    .modifier(ScrollsLongPrompt())
                     // Held, words and all, while they start an agent (#87).
                     .disabled(agent == nil && model.isStarting)
                     // Return sends. Shift-Return and Option-Return break the line (#377,
@@ -685,6 +689,8 @@ struct PromptBar: View {
                           : targetSettingUp ? MachineSetupWords.noSessionYet(model.hosts.label(targetHost))
                           : PromptWords.sendHelp(willQueue: willQueue))
                     .accessibilityLabel(PromptWords.sendLabel(willQueue: willQueue))
+                    // The spinner, in words (#5856).
+                    .accessibilityValue(isGoing ? Telling.words(doing: isNew ? AgentState.startingLabel : "Sending", host: recipient) : "")
                 }
             }
         }
@@ -1036,6 +1042,7 @@ struct PromptBar: View {
             model.draftLevel(field)
         }
         return LevelPill(field: field, chosen: chosen, runtimeName: runtimeName(runtimeID),
+                         owner: agent?.id.uuidString ?? "draft-\(runtimeID)",
                          cell: { model.autoMappings.cell(runtimeID, field, $0) },
                          own: own, binding: binding(for:)) { level in
             if let agent {
@@ -1044,6 +1051,7 @@ struct PromptBar: View {
                 model.chooseDraftLevel(field, level)
             }
         }
+        .equatable()
     }
 
     /// The pills of a new session on Auto (#2658): Permission mode, Sandbox and Model, each
@@ -1053,10 +1061,11 @@ struct PromptBar: View {
         let picked = model.draftAutoPreview?.runtimeID
         return HStack(spacing: 10) {
             LevelPill(field: .permission, chosen: model.draftLevels.permission?.rawValue,
-                      runtimeName: picked.map(runtimeName),
+                      runtimeName: picked.map(runtimeName), owner: "auto",
                       cell: { level in picked.flatMap { model.autoMappings.cell($0, .permission, level) } }) {
                 model.chooseDraftLevel(.permission, $0)
             }
+            .equatable()
             SelectCapsule(name: LevelWords.sandboxField, title: LevelWords.sandbox(model.draftSandbox ?? .runtime)) { dismiss in
                 SelectGroupHeading(title: LevelWords.sandboxField)
                 ForEach(SandboxChoice.allCases, id: \.self) { choice in
@@ -1072,10 +1081,11 @@ struct PromptBar: View {
             }
             Spacer(minLength: 16)
             LevelPill(field: .model, chosen: model.draftLevels.model?.rawValue,
-                      runtimeName: picked.map(runtimeName),
+                      runtimeName: picked.map(runtimeName), owner: "auto",
                       cell: { level in picked.flatMap { model.autoMappings.cell($0, .model, level) } }) {
                 model.chooseDraftLevel(.model, $0)
             }
+            .equatable()
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -1184,8 +1194,16 @@ struct PromptBar: View {
     /// Offline, and not a stopped workspace that keeps what is sent until it is up (#691 US3).
     private var targetOffline: Bool { model.hosts.isOffline(targetHost) && !model.startsWhenUsed(targetHost) }
 
-    /// A new session waits until its machine's set-up is done (#5357, #7108).
-    private var targetSettingUp: Bool { agent == nil && model.hosts.settingUp(targetHost) }
+    /// A new session waits until its machine's set-up is done (#5357, #7108), except after a
+    /// failed Root set-up or Your set-up: then it starts, with a warning (#7558).
+    private var targetSettingUp: Bool {
+        agent == nil && model.hosts.settingUp(targetHost) && targetSetupFailed == nil
+    }
+
+    /// The failed Root set-up or Your set-up of a new chat's machine, behind the flag (#7558).
+    private var targetSetupFailed: DaemonAPI.MachineSetupStep? {
+        agent == nil ? model.failedSetupScript(targetHost) : nil
+    }
 
     /// Who the prompt goes to, as the pending mark says it.
     private var recipient: String {

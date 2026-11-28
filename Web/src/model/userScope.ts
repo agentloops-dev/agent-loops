@@ -99,7 +99,24 @@ export const cardRule = "Add only a card that has a spend limit, such as a Priva
   + "An agent fills it into a page with fill_secret and never sees it. It stays sealed on your own machines.";
 export const cardConfirm = "This card has a spend limit";
 
-export interface Card { number: string; expiry: string; cvc: string; name: string; zip: string }
+/** The billing address's parts (#5569): each optional, and left out of the value when empty. */
+export const addressParts = ["line1", "line2", "city", "state", "country"] as const;
+export type AddressPart = (typeof addressParts)[number];
+export type Card = { number: string; expiry: string; cvc: string; name: string; zip: string } & Partial<Record<AddressPart, string>>;
+
+/** The card sheet's optional billing address (#5569), the window's words. */
+export const cardAddressHeader = "Billing address";
+export const cardAddressHint = "Optional. For a sign-up that asks for a billing address. Agents fill each line and never see it.";
+
+/** The address parts that are set, trimmed. */
+function address(typed: Partial<Record<AddressPart, unknown>>): Partial<Record<AddressPart, string>> {
+  const out: Partial<Record<AddressPart, string>> = {};
+  for (const part of addressParts) {
+    const text = typeof typed[part] === "string" ? (typed[part] as string).trim() : "";
+    if (text) out[part] = text;
+  }
+  return out;
+}
 
 /** The expiry as MM/YY, from 9/2031, 09/31 or 0931. */
 export function tidyExpiry(typed: string): string {
@@ -115,7 +132,7 @@ export function tidyExpiry(typed: string): string {
 /** The card as the person typed it, tidied: the number's digits only, the expiry as MM/YY. */
 export function tidyCard(typed: Card): Card {
   return { number: typed.number.replace(/\D/g, ""), expiry: tidyExpiry(typed.expiry), cvc: typed.cvc.trim(),
-    name: typed.name.trim(), zip: typed.zip.trim() };
+    name: typed.name.trim(), zip: typed.zip.trim(), ...address(typed) };
 }
 
 function luhn(digits: string): boolean {
@@ -145,7 +162,7 @@ export function parseCard(value: string): Card | null {
   try {
     const card = JSON.parse(value) as Partial<Card>;
     if (typeof card !== "object" || card === null || typeof card.number !== "string") return null;
-    return { number: card.number, expiry: card.expiry ?? "", cvc: card.cvc ?? "", name: card.name ?? "", zip: card.zip ?? "" };
+    return { number: card.number, expiry: card.expiry ?? "", cvc: card.cvc ?? "", name: card.name ?? "", zip: card.zip ?? "", ...address(card) };
   } catch {
     return null;
   }
@@ -157,6 +174,8 @@ export function spacedNumber(number: string): string {
 }
 
 export function cardValue(card: Card): string {
-  const { cvc, expiry, name, number, zip } = card;
-  return JSON.stringify({ cvc, expiry, name, number, zip });
+  const parts: Record<string, string> = { cvc: card.cvc, expiry: card.expiry, name: card.name, number: card.number, zip: card.zip,
+    ...address(card) };
+  // The keys in order, as the window's JSONEncoder sorts them; an address part only when set.
+  return JSON.stringify(Object.fromEntries(Object.entries(parts).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))));
 }

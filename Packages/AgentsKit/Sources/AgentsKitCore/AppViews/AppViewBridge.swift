@@ -244,8 +244,8 @@ public struct AppViewStart: Equatable, Sendable {
             }
             if !labels.contains(where: { SessionLabelPolicy.key($0) == SessionLabelPolicy.key(label) }) { labels.append(label) }
         }
-        guard labels.count <= SessionLabelPolicy.maximumCount else {
-            return .failure(Refusal(words: SessionLabelPolicy.Refusal.tooMany.localizedDescription))
+        if let refusal = SessionLabelPolicy.refusal(of: labels) {
+            return .failure(Refusal(words: refusal.localizedDescription))
         }
         let worktree = params?["worktree"]?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines)
         let branch = params?["branch"]?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines)

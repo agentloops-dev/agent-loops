@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -46,6 +48,7 @@ func (d *Daemon) registerAgents() {
 		d.actedOn(r.AgentID, c.actor())
 		return wire.Empty{}, d.startNow(r.AgentID)
 	})
+	d.registerParents()
 	On(d, wire.CallAgentsRename, func(ctx context.Context, c *Client, r wire.RenameRequest) (wire.Agent, error) {
 		return d.rename(r)
 	})
@@ -163,7 +166,11 @@ func (d *Daemon) prompt(r wire.PromptRequest) error {
 		return err
 	}
 	if err := d.needsSignIn(a.RuntimeID); err != nil {
+		d.raiseSignInCard(a.ID, a.RuntimeID)
 		return err
+	}
+	if a.RuntimeID == "claude" {
+		d.raiseSignInCard(a.ID, a.RuntimeID) // a Claude that still uses the Mac's sign-in (#7506)
 	}
 	if !d.once(r.SendID) {
 		return nil
@@ -366,7 +373,56 @@ func (d *Daemon) rename(r wire.RenameRequest) (wire.Agent, error) {
 
 // MARK: labels (SessionLabelPolicy)
 
-const labelLength, labelCount = 24, 5
+// A session has at most labelCount plain labels, and apart from them at most linkLabelCount
+// links (#12, ENG-4, P#12) and the finished words (merged, closed, archived), which are only
+// three (#7241): a lane that joins several issues still links its PR and shows it merged.
+const labelLength, labelCount, linkLabelCount = 24, 5, 20
+
+var (
+	issueLabelPattern = regexp.MustCompile(`^(#[0-9]+|[A-Z][A-Z0-9]*-[0-9]+)$`)
+	prLabelPattern    = regexp.MustCompile(`^[Pp]#[0-9]+$`)
+)
+
+// labelKind is SessionLabel.Kind: what a label names, by its text alone.
+type labelKind int
+
+const (
+	labelPlain labelKind = iota
+	labelLink
+	labelFinished
+)
+
+func kindOfLabel(v string) labelKind {
+	v = strings.TrimSpace(v)
+	switch {
+	case issueLabelPattern.MatchString(v), prLabelPattern.MatchString(v):
+		return labelLink
+	case slices.Contains([]string{"merged", "closed", "archived"}, strings.ToLower(v)):
+		return labelFinished
+	}
+	return labelPlain
+}
+
+// labelRoomRefusal is why one more label of v's kind does not fit on result, or nil.
+func labelRoomRefusal(result []wire.SessionLabel, v string) error {
+	kind := kindOfLabel(v)
+	if kind == labelFinished {
+		return nil
+	}
+	var same []string
+	for _, l := range result {
+		if kindOfLabel(l.Value) == kind {
+			same = append(same, l.Value)
+		}
+	}
+	switch {
+	case kind == labelLink && len(same) >= linkLabelCount:
+		return Invalid("A session can have at most %d links to issues and pull requests (#12, P#12). It has %s.", linkLabelCount, strings.Join(same, ", "))
+	case kind == labelPlain && len(same) >= labelCount:
+		return Invalid("A session can have at most five labels, apart from links (#12, P#12) and merged, closed or archived. It has %s.", strings.Join(same, ", "))
+	}
+	return nil
+}
 
 func labelKey(v string) string { return strings.ToLower(strings.TrimSpace(v)) }
 
@@ -456,8 +512,8 @@ func addLabelsAs(actor wire.SessionLabelOwner, result []wire.SessionLabel, addin
 		if found {
 			continue
 		}
-		if len(result) >= labelCount {
-			return nil, Invalid("A session can have at most five labels.")
+		if err := labelRoomRefusal(result, v); err != nil {
+			return nil, err
 		}
 		canonical := v
 		for _, l := range folder {
@@ -562,8 +618,13 @@ func (d *Daemon) deleteArchived(a *wire.Agent, because string) error {
 // collects them, to queue many at once (#2427).
 func (d *Daemon) deleteArchivedThen(a *wire.Agent, because string, erase func(*wire.Agent)) error {
 	d.forgetLive(a.ID)
+	children := d.Store.Children(a.ID)
 	if err := d.Store.Delete(a.ID); err != nil {
 		return &Error{Code: wire.FailureCouldNotSave, Message: "The agent could not be deleted: " + err.Error()}
+	}
+	// A deleted lead's children go back under their starters (#7538).
+	if len(children) > 0 {
+		d.clearParentsOf(a.ID, children)
 	}
 	// The runtime's own copy goes next, and a backup never brings the agent back (#1001).
 	erase(a)

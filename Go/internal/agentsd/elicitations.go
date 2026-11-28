@@ -301,7 +301,8 @@ func (l *live) dismissQuestions() (left []string) {
 	}
 	// A lost form (#4990) goes as a form left open does.
 	for _, req := range l.d.lostForms(l.id) {
-		if req.Secret != nil || req.HandOff != nil || req.Mode.Form == nil {
+		// A sign-in card is the daemon's, not the agent's question: it stays (#7472).
+		if req.Secret != nil || req.HandOff != nil || req.Mode.Form == nil || l.d.signInCardOf(req.ID) != "" {
 			continue
 		}
 		if !l.d.endRequest(req.ID, wire.RequestStateDropped, nil, wire.RequestEndedWhyByPerson, nil) {

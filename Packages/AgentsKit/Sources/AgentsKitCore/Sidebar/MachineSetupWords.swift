@@ -31,7 +31,24 @@ public enum MachineSetupWords {
     /// What a failed Root set-up says to do (#7154, gate 2's *page root failed*): root.sh runs
     /// once, on the first boot, so a fixed one needs a new machine.
     public static func rootFailedAdvice(_ machine: String) -> String {
-        "Fix root.sh, then make a new machine: \(machine) can’t run it again by itself. You can start sessions here."
+        "Fix root.sh, then make a new machine: \(machine) can’t run it again by itself. "
+            + "Or copy a command that you run as root there, then press Try Again. You can start sessions here."
+    }
+
+    /// The root command sheet (#7159, gate 2's *own server*): why the person runs it, for a machine
+    /// that no provider made, or one whose root.sh failed.
+    public static func rootCommandLead(_ machine: String, failed: Bool) -> String {
+        failed
+            ? "Run this as root, or with sudo, on \(machine):"
+            : "No provider makes \(machine), so Agent Loops can’t be root there. Run this as root, or with sudo, on \(machine):"
+    }
+
+    /// Under the command (#7159).
+    public static let rootCommandAfter = "It runs the root.sh that you approved, once. Then press Check."
+
+    /// The spec's "left as they are" (#7151, section 8): sudo on the machine is root for its agents.
+    public static func rootSudoWarning(_ machine: String) -> String {
+        "Where your user on \(machine) has sudo, agents there can become root too."
     }
 
     /// The step that stopped the run, if one failed.
@@ -48,6 +65,20 @@ public enum MachineSetupWords {
     /// Why a new session on `name` cannot be sent yet, in a tooltip.
     public static func noSessionYet(_ name: String) -> String { "\(name) is still setting up" }
 
+    /// A failed Root set-up or Your set-up (#7558; #7151, gate 1, section 1, "Failure"): the
+    /// person's own script failed, and a person can still start sessions there, with a warning.
+    public static func failedScript(_ setup: DaemonAPI.MachineSetup?) -> DaemonAPI.MachineSetupStep? {
+        guard let setup, let failed = failedStep(setup), failed.id == "root" || failed.id == "user" else { return nil }
+        return failed
+    }
+
+    /// The warning above a new session on a machine whose script failed (#7558): which step,
+    /// and that the session starts all the same.
+    public static func startsDespiteFailure(_ step: DaemonAPI.MachineSetupStep, machine: String) -> String {
+        let script = step.id == "root" ? "root.sh" : "setup.sh"
+        return "\(name(step)) failed on \(machine). The session starts, but what \(script) installs can be missing."
+    }
+
     /// 7 of 8: the step that is on, which is the number of the first step not done.
     public static func position(_ setup: DaemonAPI.MachineSetup) -> Int {
         min(doneCount(setup) + 1, max(setup.steps.count, 1))
@@ -63,13 +94,14 @@ public enum MachineSetupWords {
     /// The chip in the page's header: *Setting up · 7 of 8*, *Ready · 3 min 42 s*, or *Set-up failed · 6 of 8*.
     public static func chip(_ setup: DaemonAPI.MachineSetup, now: Date = Date()) -> String {
         let total = setup.steps.count
-        if isReady(setup) {
-            let end = setup.readyAt ?? setup.steps.compactMap(\.endedAt).max() ?? now
-            return "Ready · \(duration(end.timeIntervalSince(setup.startedAt)))"
-        }
+        // A failed step first: Run Again of your set-up can fail on a machine that was ready (#7155).
         if let failed = failedStep(setup) {
             let at = (setup.steps.firstIndex { $0.id == failed.id } ?? 0) + 1
             return "Set-up failed · step \(at) of \(total)"
+        }
+        if isReady(setup) {
+            let end = setup.readyAt ?? setup.steps.compactMap(\.endedAt).max() ?? now
+            return "Ready · \(duration(end.timeIntervalSince(setup.startedAt)))"
         }
         return "Setting up · \(position(setup)) of \(total)"
     }

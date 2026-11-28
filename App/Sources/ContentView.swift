@@ -435,6 +435,12 @@ struct ContentView: View {
         // Each page the window comes to goes on its history (#5784).
         .onChange(of: model.pagePlace, initial: true) { model.notePagePlace() }
         .onChange(of: model.flags.on) { model.leaveHiddenPages() }
+        // The person became an admin (#7364): read
+        // the control plane's capacity now, not at the next connect. The first value is false
+        // until the people load, so the connect's own read is not done twice at launch.
+        .task(id: model.showsControlPlaneMachine) {
+            if model.showsControlPlaneMachine, let control = model.controlRequests { await model.controlCapacity.shown(control) }
+        }
         .onChange(of: model.selection) {
             // Open File… searches the session it was opened over.
             requests.showsFileSearch = false
@@ -445,17 +451,6 @@ struct ContentView: View {
                 frame.isOpen = false
             }
             showWhatWasAskedFor()
-        }
-        // The window's one alert, held while it is open (#101): a reconnect clearing the
-        // problem, or a second arriving, waits for its button rather than closing it.
-        .heldAlert(\.title, item: { WindowAlert.wanted(by: model) }, dismiss: { $0.closed() }) { alert in
-            switch alert {
-            case .lendGit(let ask):
-                Button("Approve") { model.answerGitLend(ask, allowed: true) }
-                Button("Deny", role: .cancel) { model.answerGitLend(ask, allowed: false) }
-            }
-        } message: { alert in
-            Text(alert.message)
         }
         // The project's settings or one folder's, over whatever the window is showing (066, #3280).
         .settingsSheets(requests)
@@ -480,47 +475,6 @@ struct ContentView: View {
         // the mood changes; the image changes with no animation.
         .onChange(of: model.iconMood, initial: true) { _, mood in
             DockMood.show(mood)
-        }
-    }
-}
-
-/// What the window's one alert is about (#101): a choice that blocks the work, such as a
-/// machine asking to use this Mac's git access. One at a time. Something
-/// that could not be finished is a toast (`WindowToast`, #4737).
-enum WindowAlert: Identifiable {
-    case lendGit(GitLendAsk)
-
-    var id: String {
-        switch self {
-        case .lendGit(let ask): "lend-git-\(ask.id)"
-        }
-    }
-
-    var title: String {
-        switch self {
-        case .lendGit(let ask): ask.title
-        }
-    }
-
-    var message: String {
-        switch self {
-        case .lendGit(let ask): ask.message
-        }
-    }
-
-    @MainActor
-    static func wanted(by model: AppModel) -> WindowAlert? {
-        if let ask = model.gitLendAsk { return .lendGit(ask) }
-        return nil
-    }
-
-    /// Closed, by its button or by Escape (its cancel button). An ask the model has moved
-    /// on from is not the model's to forget again.
-    @MainActor
-    func closed() {
-        switch self {
-        // Escape is Deny, which its cancel button has said.
-        case .lendGit: break
         }
     }
 }

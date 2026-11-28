@@ -58,6 +58,9 @@ struct ChatTranscript: View {
     /// Passed only into the turn that holds the line, so that turn is drawn again when
     /// the host gains it.
     var allowanceCanStart = false
+    /// The accounts **Continue on** offers under the line, by name (#7459). Passed only into
+    /// the turn that holds the line.
+    var allowanceAccounts: [String] = []
     /// Told whether the pane is following the end. The model lets the oldest entries
     /// go only while it is, so nothing leaves from above somebody reading back.
     var onFollowing: (Bool) -> Void = { _ in }
@@ -309,7 +312,8 @@ struct ChatTranscript: View {
                                  isLastRow: part.isLast,
                                  allowanceLine: onThisTurn,
                                  allowanceAt: onThisTurn == nil ? nil : allowanceResetsAt,
-                                 allowanceCanStart: onThisTurn != nil && allowanceCanStart)
+                                 allowanceCanStart: onThisTurn != nil && allowanceCanStart,
+                                 allowanceAccounts: onThisTurn == nil ? [] : allowanceAccounts)
                             .equatable()
                             .inColumn(column)
                             .layoutValue(key: TranscriptRowID.self, value: part.id)
@@ -521,22 +525,7 @@ struct ChatTranscript: View {
     private var askCards: [WaitingCard] { cards.filter(\.asks) }
 
     private var nowCard: NowCard {
-        let agentID = agent.id
-        let stop = actions.stopBackground
-        let steps = actions.subagentSteps
-        var background = BackgroundActions(output: actions.backgroundOutput)
-        if let stop {
-            background.stop = { item in await stop(item, agentID) }
-        }
-        if let steps {
-            background.steps = { item in steps(item.id) }
-        }
-        return NowCard(agent: agent, isComingBack: isComingBack,
-                       parts: cards.filter { !$0.asks },
-                       leases: actions.leaseStatus(agentID)?.without(agent.eventWait),
-                       capacityStart: actions.capacityStart(agent),
-                       background: background,
-                       openLease: actions.openLease)
+        NowCard(agent: agent, isComingBack: isComingBack, cards: cards, actions: actions)
     }
 
     /// The turns among the rows drawn, as indices into the turns: the rows less the head

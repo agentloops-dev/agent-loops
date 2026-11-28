@@ -89,7 +89,13 @@ func sendBulk(conn Uplink, line string) bool {
 // One mutex, not an actor: every write is a queue on the socket (Conn.Send), so nothing
 // waits while it is held.
 type Router struct {
-	mu       sync.Mutex
+	mu sync.Mutex
+	// The hosts' read loops (#7631): what ends a local host's uplink writes to the store
+	// (its lease's release, when its version was last seen), so the Service waits for them
+	// before it is stopped. Added under mu, and only until waited is set.
+	reading sync.WaitGroup
+	waited  bool
+
 	handler  Handler
 	homeHost string
 	clients  map[string]*clientSession
@@ -493,6 +499,12 @@ func (r *Router) AttachProxy(host string, conn Uplink) { r.attachHost(host, conn
 
 func (r *Router) attachHost(host string, conn Uplink, local bool) {
 	r.mu.Lock()
+	if r.waited {
+		// Stopped: nobody would wait for its read loop.
+		r.mu.Unlock()
+		conn.Close()
+		return
+	}
 	if old := r.hosts[host]; old != nil {
 		// A host that links again before its old link's end is read here (#6346) had an
 		// outage all the same: what it said in between is lost, and its channels close. Its
@@ -517,9 +529,11 @@ func (r *Router) attachHost(host string, conn Uplink, local bool) {
 		k := r.keeper
 		go k.Attached(host)
 	}
+	r.reading.Add(1)
 	r.mu.Unlock()
 	calls := r.startHostCalls(host, gen)
 	go func() {
+		defer r.reading.Done()
 		for {
 			line, err := conn.Read(context.Background())
 			if err != nil {
@@ -533,7 +547,8 @@ func (r *Router) attachHost(host string, conn Uplink, local bool) {
 		if !local {
 			r.dropHostLocked(host, gen, nil)
 			r.mu.Unlock()
-			r.offlineUnlessBack(host, 5*time.Second)
+			// It writes nothing to the store, so a stop does not wait out its grace.
+			go r.offlineUnlessBack(host, 5*time.Second)
 			return
 		}
 		r.dropHostLocked(host, gen, &hostState{State: "offline", Since: time.Now()})
@@ -543,6 +558,15 @@ func (r *Router) attachHost(host string, conn Uplink, local bool) {
 			ended(host)
 		}
 	}()
+}
+
+// waitReading waits for every host's read loop to end, and takes no host after: the
+// Service's Stop, once it has closed every uplink (#7631).
+func (r *Router) waitReading() {
+	r.mu.Lock()
+	r.waited = true
+	r.mu.Unlock()
+	r.reading.Wait()
 }
 
 // offlineUnlessBack shows a host offline if nobody holds it again within grace.
@@ -1204,11 +1228,6 @@ func (r *Router) channelZero(msg, host string, gen int64, calls *hostCalls) {
 		return
 	}
 	call := hostCall{id: m.ID, method: m.Method, params: m.Params}
-	if m.Method == "git/credential" {
-		// A git command waits on a person's answer (#1122): it holds no lane.
-		go r.answerHost(host, gen, call)
-		return
-	}
 	if calls.take(call) {
 		calls.noteTaken()
 	} else {

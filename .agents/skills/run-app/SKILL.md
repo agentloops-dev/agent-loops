@@ -95,6 +95,9 @@ Then it:
    user's own window's pairing, which lives in the same container.
 
 `--no-window` leaves the window out, for work the socket proves on its own.
+`--window-env KEY=VALUE` gives the window one more variable, as `--env` gives the host one:
+`--window-env AGENTS_TEST_HOME=$ROOT/home` makes Settings ▸ Machines ▸ This Mac ▸ Command
+line link `loops` under that home, never in the real `~/.local/bin` (#6875).
 It runs the `agents-control` and `agentsd` the build carries (Go, the only ones since #1314),
 as the app's launch agents do, and says which on stderr.
 `CONTROL_BIN=<path>` and `AGENTSD_BIN=<path>` run others in their place, such as a Go one
@@ -241,9 +244,20 @@ $S/walk.py $ROOT key return                     # a key to the window's first re
 $S/walk.py $ROOT wait "P00 seeded live 0" 10    # until it is there (gone: until it has left)
 $S/walk.py $ROOT size 1500 900                  # the window's frame, for wide-window walks
 $S/walk.py $ROOT menu Session                   # a menu's items; menu Session Stop chooses one
+$S/walk.py $ROOT pick =Add "Add a Card…"         # a menu button's menu (a SwiftUI Menu): its items, or one chosen (#7530)
 $S/walk.py $ROOT dock /tmp/run-mychange-dock.png # the icon the app gives the Dock tile, and its badge (#1317)
 $S/walk.py $ROOT notify live/frame '{"source":"browser",…}'  # a host's notification, as if the host sent it (#4140): a live tile's frames while nobody is at the Mac
 ```
+
+`pick TEXT [ITEM…]` is for a SwiftUI `Menu` in a window (#7530). `pick TEXT` lists its
+items; `pick TEXT ITEM` chooses one, and `ITEM SUB` goes into a submenu. A `Menu` in a
+row of chips (`.menuStyle(.borderlessButton)`) is an AppKit pop-up button: its menu is read
+in place, and nothing is shown. A `Menu` that SwiftUI draws itself (Secrets ▸ **Add**) has
+no AppKit view and no menu until it opens one, so `pick` presses it, takes the menu as it
+opens, chooses the item and closes it again. This works with the window behind the
+others. Its label is an attributed title, which `find` now reads (`find "=Add"`). Do not
+`press` it: a press opens its menu inside the command, and the walk waits until the menu
+closes. Use `pick`.
 
 `walk.py` with no arguments lists every command, `--window N` for another window, `--first`
 for the first match, and `info`, `views` and `layers` for when a shot or a press goes

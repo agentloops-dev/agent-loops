@@ -1,13 +1,23 @@
 import AgentsKitCore
 import SwiftUI
 
-/// The two buttons under "Its allowance ran out" (#5919). Nil draws neither. `startNew` is
+/// The buttons under "Its allowance ran out" (#5919, #7459). Nil draws neither. `startNew` is
 /// nil when the host cannot start the new session, and then only **Continue at** is drawn.
 struct AllowanceOutActions {
     var resetsAt: Date?
     var wait: @MainActor () async -> Void
     /// Nil on a host without `chat.continue-in-new-session/1`.
     var startNew: (@MainActor () async -> Void)?
+    /// **Continue on** another account of the runtime (#7459): empty on a host without
+    /// `chat.continue-on-account/1`, or when no other account can take the chat.
+    var accounts: [AllowanceAccountAction] = []
+}
+
+/// One **Continue on Claude · Personal** under the allowance line (#7459).
+struct AllowanceAccountAction: Identifiable {
+    var choice: ContinueChoice
+    var go: @MainActor () async -> Void
+    var id: String { choice.id }
 }
 
 /// What the shared chat views need from whichever app is drawing them (033).

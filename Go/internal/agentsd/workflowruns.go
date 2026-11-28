@@ -479,6 +479,13 @@ func (d *Daemon) fire(fr fireRequest) {
 		d.recordOutcome(fr, name, wire.WorkflowOutcome{Refused: &wire.WorkflowOutcomeRefused{Value: *refused, At: now()}}, nil)
 		return
 	}
+	if isLabelled(f.wf) {
+		// A labelled workflow starts no agent: it sends its words to the sessions (#6954).
+		w := f.wf
+		d.workflowMu.Unlock()
+		d.fireBroadcast(fr, w)
+		return
+	}
 	run := workflowRun{ID: store.NewUUID(), WorkflowID: fr.id, Folder: store.FolderURL(fr.folder), Trigger: fr.trigger,
 		TriggeringAgentID: fr.triggeringAgent, Depth: fr.depth, StartedAt: now()}
 	rec := d.recordsLocked()

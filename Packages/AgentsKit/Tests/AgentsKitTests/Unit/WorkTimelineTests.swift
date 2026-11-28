@@ -23,13 +23,12 @@ struct WorkTimelineTests {
                                     waitsForPerson: waits ? true : nil)
     }
 
-    /// By default created with its first child, and closed with its last once all are.
+    /// By default created with its first child, and open: an epic closes only when `closed` says so, also when all
+    /// its children are closed (its lead closes it).
     static func epic(_ n: Int, _ children: [DaemonAPI.WorkTimelineChild], created: Double? = nil, closed: Double? = nil,
                      forecast: DaemonAPI.WorkTimelineForecast? = nil, feature: String? = "work",
                      reason: String? = nil) -> DaemonAPI.WorkTimelineEpic {
-        let closes = children.compactMap(\.closedAt)
-        let last = closes.count == children.count ? closes.max() : nil
-        let closedAt = closed.map(h) ?? last
+        let closedAt = closed.map(h)
         return DaemonAPI.WorkTimelineEpic(item: item(n, feature: feature, state: closedAt == nil ? "open" : "closed"), stateReason: reason,
                                           createdAt: created.map(h) ?? children.map(\.createdAt).min() ?? h(-100), closedAt: closedAt,
                                           children: children, forecast: forecast)
@@ -77,47 +76,45 @@ struct WorkTimelineTests {
         ])
         let lines = WorkTimeline.lines(timeline, now: Self.now)
         try #require(lines.count == 1)
-        #expect(lines[0].id == "github:alexec/Agents#2" && lines[0].how == .joined)
+        #expect(lines[0].id == "github:alexec/Agents#2" && lines[0].how == .open)
         #expect(lines[0].work == DateInterval(start: Self.h(-20), end: Self.h(-5)))
         #expect(lines[0].figures == "#2 · 2 of 2")
     }
 
-    /// #7058: a block is solid from start to finish; only an open epic has a ghost, to its predicted finish.
-    @Test func onlyAnOpenEpicHasAGhostToItsPredictedFinish() throws {
+    /// #7058: a block is solid from start to finish, with a ghost to its predicted finish; only an open epic is drawn (#7334).
+    @Test func onlyAnOpenEpicIsDrawnWithAGhostToItsPredictedFinish() throws {
         let forecast = DaemonAPI.WorkTimelineForecast(low: Self.h(2), mid: Self.h(5), high: Self.h(11))
         let timeline = DaemonAPI.WorkTimeline(epics: [
-            // Created before its children and closed after them: its dates draw nothing.
+            // Closed: not drawn (#7334).
             Self.epic(1, [Self.child(10, created: -20, started: -18, closed: -10)], created: -30, closed: -4),
             Self.epic(2, [Self.child(11, started: -8, closed: -5), Self.child(12)], created: -9, forecast: forecast),
             // Not started: the ghost only, from Now.
             Self.epic(3, [Self.child(13), Self.child(14)], created: -15, forecast: forecast),
             // Not started, and nothing to forecast: nothing to draw.
             Self.epic(4, [Self.child(15)], created: -15),
+            // Closed as not planned: not drawn either.
             Self.epic(5, [Self.child(16, started: -12, closed: -7)], created: -14, closed: -6, reason: "not_planned"),
             // On hold: never shown, open or closed.
             Self.with(Self.epic(6, [Self.child(17, started: -3)], forecast: forecast), onHold: true),
             Self.with(Self.epic(7, [Self.child(18, started: -3, closed: -2)]), onHold: true),
         ])
         let lines = WorkTimeline.lines(timeline, now: Self.now)
-        try #require(lines.map(\.number) == ["#1", "#2", "#3", "#5"])
+        try #require(lines.map(\.number) == ["#2", "#3"])
         func span(_ from: Double, _ to: Double) -> DateInterval { DateInterval(start: Self.h(from), end: Self.h(to)) }
-        #expect(lines.map(\.work) == [span(-18, -10), span(-8, -5), nil, span(-12, -7)])
-        #expect(lines.map(\.ghost) == [nil, span(-5, 5), span(0, 5), nil])
-        #expect(lines.map(\.from) == [-18, -8, 0, -12].map { Self.h($0) })
-        #expect(lines.map(\.end) == [-10, 5, 5, -7].map { Self.h($0) })
-        #expect(lines.map(\.how) == [.joined, .forecast, .forecast, .dropped])
-        // The words say when the epic closed, not when its work stopped.
-        #expect(WorkTimeline.lineLine(lines[0], now: Self.now) == "#1 · 1 of 1 · closed 4 h ago")
+        #expect(lines.map(\.work) == [span(-8, -5), nil])
+        #expect(lines.map(\.ghost) == [span(-5, 5), span(0, 5)])
+        #expect(lines.map(\.from) == [-8, 0].map { Self.h($0) })
+        #expect(lines.map(\.end) == [5, 5].map { Self.h($0) })
+        #expect(lines.map(\.how) == [.forecast, .forecast])
         // Nothing started, so nothing stopped.
-        #expect(lines[2].stopped(now: Self.now) == nil)
-        #expect(WorkTimeline.lastJoined(timeline, before: Self.h(-1)) == Self.h(-4))
+        #expect(lines[1].stopped(now: Self.now) == nil)
         // A session in a turn: solid to Now, the ghost from there. One on an epic not started: still a ghost.
         let working = WorkTimeline.lines(timeline, now: Self.now, working: Set([3, 5, 12].map { "github:alexec/Agents#\($0)" }))
-        try #require(working.count == 4)
-        #expect(working.map(\.working) == [0, 1, 1, 0])
-        #expect(working[1].work == span(-8, 0) && working[1].ghost == span(0, 5) && working[2].work == nil)
+        try #require(working.count == 2)
+        #expect(working.map(\.working) == [1, 1])
+        #expect(working[0].work == span(-8, 0) && working[0].ghost == span(0, 5) && working[1].work == nil)
         // Forecast off: the past only.
-        #expect(WorkTimeline.lines(timeline, now: Self.now, forecast: false).map(\.number) == ["#1", "#2", "#5"])
+        #expect(WorkTimeline.lines(timeline, now: Self.now, forecast: false).map(\.number) == ["#2"])
     }
 
     @Test func anOpenLineIsForecastWaitsOrStopsAtNow() throws {
@@ -173,11 +170,17 @@ struct WorkTimelineTests {
         #expect(WorkTimeline.hit((x: Self.axis.x(Self.h(-10)), y: y), lines: [filed], axis: Self.axis) == filed)
     }
 
-    @Test func aDroppedEpicEndsInACross() {
+    /// #7334: a closed epic is not drawn, also one closed as not planned; an open one with all its children closed is.
+    @Test func aClosedEpicIsNotDrawn() {
         let timeline = DaemonAPI.WorkTimeline(epics: [
-            Self.epic(8, [Self.child(30, started: -5, closed: -4)], reason: "not_planned"),
+            Self.epic(8, [Self.child(30, started: -5, closed: -4)], closed: -3, reason: "not_planned"),
+            Self.epic(9, [Self.child(31, started: -5, closed: -4)], closed: -3),
+            Self.epic(10, [Self.child(32, started: -5, closed: -4)]),
         ])
-        #expect(WorkTimeline.lines(timeline, now: Self.now).map(\.how) == [.dropped])
+        let lines = WorkTimeline.lines(timeline, now: Self.now)
+        #expect(lines.map(\.number) == ["#10"])
+        #expect(lines.map(\.how) == [.open])
+        #expect(WorkTimeline.spoken(lines, now: Self.now).map(\.words) == ["Issue 10, 1 of 1 done, open, stopped 4 h ago"])
     }
 
     @Test func onlyTheLinesThatOverlapTheWindowAreDrawn() {
@@ -320,10 +323,9 @@ struct WorkTimelineTests {
         let timeline = DaemonAPI.WorkTimeline(epics: [
             Self.epic(19, [Self.child(60, started: -9, closed: -1)]),
             Self.epic(20, [Self.child(61, started: -24, closed: -23.5)]),
-            Self.epic(21, [Self.child(62, started: -20, closed: -19)], reason: "not_planned"),
         ])
         let lines = WorkTimeline.lines(timeline, now: Self.now)
-        let wide = lines[0], narrow = lines[1], dropped = lines[2]
+        let wide = lines[0], narrow = lines[1]
         // 8 h is 160 pt: "Issue 19" fits, 6 pt in.
         let inside = WorkTimeline.blockWords(wide, axis: Self.axis, measure: measure)
         #expect(inside.inside == "Issue 19" && inside.insideX == Self.axis.x(wide.from) + 6 && inside.outside == nil)
@@ -332,8 +334,6 @@ struct WorkTimelineTests {
         #expect(after.inside == nil && after.outside == "Issue 20" && after.outsideX == Self.axis.x(narrow.end) + 6)
         #expect(WorkTimeline.blockWords(narrow, axis: Self.axis, measure: measure, next: Self.h(-21.6)).outside == "Iss…")
         #expect(WorkTimeline.blockWords(narrow, axis: Self.axis, measure: measure, next: Self.h(-23.4)).outside == nil)
-        // Closed as not planned: "✕ closed as not planned" after the block.
-        #expect(WorkTimeline.blockWords(dropped, axis: Self.axis, measure: measure).outside == "Issue 21  ✕ closed as not planned")
         // A block that starts before the left edge keeps its title at the edge, after ←, cut to what is left of it.
         let edge = WorkTimeline.blockWords(wide, axis: Self.axis, measure: measure, left: Self.axis.x(Self.h(-4)))
         #expect(edge.arrow && edge.insideX == Self.axis.x(Self.h(-4)) + 6 && edge.inside == "← Issue…")
@@ -358,6 +358,42 @@ struct WorkTimelineTests {
         #expect(WorkTimeline.colour("work", of: 12) == WorkTimeline.colour("Work", of: 12))
         #expect(WorkTimeline.colour(nil, of: 12) == 11)
         #expect((0..<11).contains(WorkTimeline.colour("autonomy", of: 12)))
+    }
+
+    /// #7335: with the On hold toggle, an open epic on hold is drawn dimmed, below the rest, with no forecast; one with no work
+    /// yet is a mark at Now; a closed one is not drawn.
+    @Test func theOnHoldToggleDrawsTheEpicsOnHoldBelowTheRest() throws {
+        let forecast = DaemonAPI.WorkTimelineForecast(low: Self.h(2), mid: Self.h(5), high: Self.h(11))
+        let timeline = DaemonAPI.WorkTimeline(epics: [
+            Self.epic(40, [Self.child(60, started: -10), Self.child(61)], forecast: forecast),
+            Self.with(Self.epic(41, [Self.child(62, started: -6, closed: -4), Self.child(63)], forecast: forecast), priority: "low", onHold: true),
+            Self.with(Self.epic(42, []), priority: "high", onHold: true),
+            Self.with(Self.epic(43, [Self.child(64, started: -6, closed: -4)], closed: -4), onHold: true),
+        ])
+        #expect(WorkTimeline.lines(timeline, now: Self.now).map(\.number) == ["#40"])
+        let lines = WorkTimeline.layout(WorkTimeline.lines(timeline, now: Self.now, held: true))
+        let by = Dictionary(uniqueKeysWithValues: lines.map { ($0.number, $0) })
+        #expect(Set(by.keys) == ["#40", "#41", "#42"])
+        let held = try #require(by["#41"]), mark = try #require(by["#42"])
+        #expect(held.how == .held && held.ghost == nil && held.band == nil)
+        #expect(held.work == DateInterval(start: Self.h(-6), end: Self.h(-4)))
+        #expect(mark.how == .held && mark.work == nil && mark.from == Self.now && mark.end == Self.now)
+        #expect(mark.markWidth == WorkTimeline.heldMarkWidth && held.markWidth == 0)
+        // Below the rest, a row each, in the order of forge/next: High before Low.
+        #expect([by["#40"]?.row, mark.row, held.row] == [0, 1, 2])
+        #expect(WorkTimeline.bands(lines).map { "\($0.words)@\($0.row)x\($0.rows)" } == ["None@0x1", "On hold@1x2"])
+        // The words: after the block, in the hover card, for VoiceOver and in the list.
+        let measure: (String) -> Double = { Double($0.count) * 6 }
+        let words = WorkTimeline.blockWords(mark, axis: Self.axis, measure: measure)
+        #expect(words.outside?.hasSuffix("On hold") == true)
+        #expect(words.outsideX == Self.axis.x(Self.now) + WorkTimeline.heldMarkWidth + 6)
+        #expect(WorkTimeline.lineLine(held, now: Self.now).hasSuffix("· On hold"))
+        #expect(WorkTimeline.spoken(lines, now: Self.now).last?.words.contains("On hold") == true)
+        let rows = WorkTimeline.epicRows(lines, window: DateInterval(start: Self.h(-48), end: Self.h(48)), now: Self.now)
+        #expect(rows.first { $0.line.number == "#42" }?.line2 == "On hold")
+        // A click on the mark opens the epic.
+        #expect(WorkTimeline.hit((Self.axis.x(Self.now) + WorkTimeline.heldMarkWidth, WorkTimeline.rowTop(mark.row) + 4),
+                                 lines: lines, axis: Self.axis)?.number == "#42")
     }
 
     @Test func theHitIsTheBlock() {
@@ -393,12 +429,13 @@ struct WorkTimelineTests {
 
     @Test func theHoverCardIsAMiniRow() throws {
         let timeline = DaemonAPI.WorkTimeline(epics: [
-            Self.epic(30, [Self.child(31, started: -5, closed: -2), Self.child(32, started: -5, closed: -1, reason: "not_planned")]),
+            // Closed: no block, so no hover card (#7334).
+            Self.epic(30, [Self.child(31, started: -5, closed: -2), Self.child(32, started: -5, closed: -1, reason: "not_planned")],
+                      closed: -1),
             Self.epic(33, [Self.child(34, started: -3), Self.child(35, waits: true)]),
         ])
         let lines = WorkTimeline.lines(timeline, now: Self.now)
-        let joined = try #require(lines.first { $0.number == "#30" })
-        #expect(WorkTimeline.lineLine(joined, now: Self.now) == "#30 · 2 of 2 · closed 1 h ago")
+        #expect(!lines.contains { $0.number == "#30" })
         let waits = try #require(lines.first { $0.number == "#33" })
         #expect(WorkTimeline.lineLine(waits, now: Self.now) == "#33 · 0 of 2 · stopped 3 h ago · 1 waits for you")
     }
@@ -406,18 +443,19 @@ struct WorkTimelineTests {
     @Test func theTitleLineAndTheEmptyCardSayTheRange() {
         #expect(WorkTimeline.titleWords(project: "Agents", epics: 6, range: .twoDays) == "Agents · 6 epics in these 2 days")
         #expect(WorkTimeline.titleWords(project: "", epics: 1, range: .day) == "1 epic in these 24 hours")
-        #expect(WorkTimeline.noEpicsWords(.week) == "No epic in these 7 days")
+        #expect(WorkTimeline.noEpicsWords(.week) == "No open epic in these 7 days")
         let timeline = DaemonAPI.WorkTimeline(epics: [
-            Self.epic(40, [Self.child(41, closed: -100)]),
-            Self.epic(42, [Self.child(43, closed: -96)]),
+            Self.epic(40, [Self.child(41, started: -10, closed: -6)], closed: -6),
+            Self.epic(42, [Self.child(43, started: -8, closed: -5)], closed: -5, reason: "not_planned"),
             Self.epic(44, [Self.child(45, started: -2)]),
         ])
-        let joined = WorkTimeline.lastJoined(timeline, before: Self.h(-24))
-        #expect(joined == Self.h(-96))
-        #expect(WorkTimeline.lastJoinedWords(Self.h(-96), now: Self.now) == "The last one joined 4 d ago.")
-        #expect(WorkTimeline.lastJoined(timeline, before: Self.h(-200)) == nil)
         let lines = WorkTimeline.lines(timeline, now: Self.now)
         #expect(WorkTimeline.epicCount(lines, in: WorkTimeline.Range.twoDays.window(now: Self.now)) == 1)
+        // Only closed epics in the window: it is empty (S11), in every range (#7334).
+        let closed = DaemonAPI.WorkTimeline(epics: Array(timeline.epics.prefix(2)))
+        for range in WorkTimeline.Range.allCases {
+            #expect(WorkTimeline.epicCount(WorkTimeline.lines(closed, now: Self.now), in: range.window(now: Self.now)) == 0)
+        }
     }
 
     /// #6044: the phone in portrait draws the list of epics, in the order the web page's `epicRows` gives.
@@ -425,8 +463,9 @@ struct WorkTimelineTests {
         var utc = Calendar(identifier: .gregorian)
         utc.timeZone = TimeZone(identifier: "UTC")!
         let timeline = DaemonAPI.WorkTimeline(epics: [
-            Self.epic(50, [Self.child(51, started: -10, closed: -6)]),
-            Self.epic(52, [Self.child(53, started: -3, closed: -2)]),
+            // Closed: not in the list (#7334).
+            Self.epic(50, [Self.child(51, started: -10, closed: -6)], closed: -6),
+            Self.epic(52, [Self.child(53, started: -3, closed: -2)], closed: -2, reason: "not_planned"),
             Self.epic(54, [Self.child(55, started: -4)]),
             Self.epic(56, [Self.child(57, started: -1)],
                       forecast: .init(low: Self.h(5), mid: Self.h(6), high: Self.h(9))),
@@ -438,9 +477,9 @@ struct WorkTimelineTests {
         ])
         let rows = WorkTimeline.epicRows(WorkTimeline.lines(timeline, now: Self.now), window: Self.axis.interval, now: Self.now,
                                          calendar: utc)
-        // High first; then the forecasts, the soonest first; the wait; the open one; the joined, the latest first.
-        #expect(rows.map(\.line.number) == ["#63", "#58", "#56", "#60", "#54", "#52", "#50"])
-        try #require(rows.count == 7)
+        // High first; then the forecasts, the soonest first; the wait; the open one.
+        #expect(rows.map(\.line.number) == ["#63", "#58", "#56", "#60", "#54"])
+        try #require(rows.count == 5)
         let six = Self.h(6).formatted(Date.FormatStyle(timeZone: utc.timeZone).hour().minute())
         let nine = Self.h(9).formatted(Date.FormatStyle(timeZone: utc.timeZone).hour().minute())
         let five = Self.h(5).formatted(Date.FormatStyle(timeZone: utc.timeZone).hour().minute())
@@ -448,7 +487,6 @@ struct WorkTimelineTests {
         #expect(rows[2].line2 == "closes about \(six) · \(five)–\(nine) · stopped 1 h ago")
         #expect(rows[3].line2 == "1 waits for you · stopped 2 h ago")
         #expect(rows[4].line2 == "open · stopped 4 h ago")
-        #expect(rows[5].line2.hasPrefix("joined "))
         #expect(WorkTimeline.nowWords(Self.now, calendar: utc).hasPrefix("Now · "))
     }
 
@@ -507,7 +545,7 @@ struct WorkTimelineTests {
     @Test func aFirstAnswerKeepsTheForecastsOnScreen() {
         let forecast = DaemonAPI.WorkTimelineForecast(low: Self.h(1), mid: Self.h(2), high: Self.h(3))
         let first = DaemonAPI.WorkTimeline(epics: [Self.epic(1, [Self.child(2, started: -2)]), Self.epic(3, [Self.child(4, started: -2)]),
-                                                   Self.epic(5, [Self.child(6, closed: -1)])], partial: true)
+                                                   Self.epic(5, [Self.child(6, closed: -1)], closed: -1)], partial: true)
         let shown = DaemonAPI.WorkTimeline(epics: [Self.epic(1, [Self.child(2, started: -2)], forecast: forecast),
                                                    Self.epic(5, [Self.child(6, started: -2)], forecast: forecast)])
         #expect(WorkTimeline.keepForecasts(first, shown: shown).epics.map(\.forecast) == [forecast, nil, nil])

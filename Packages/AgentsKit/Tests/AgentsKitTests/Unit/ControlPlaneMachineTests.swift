@@ -19,6 +19,19 @@ struct ControlPlaneMachineTests {
                                       goroutines: 87, openFiles: 42, storeFiles: 1284, storeBytes: 68 * 1_048_576, at: at)
     }
 
+    /// #7364: a failed first read says that it failed, and answers that stay empty for a look say
+    /// that the control plane gives none; only before a read, or a first empty answer, is it "yet".
+    @Test func noReadingSaysWhyThereIsNone() {
+        #expect(ControlPlaneMachine.noReadingWords(failed: false, emptyFor: nil)
+            == (ControlPlaneMachine.noReading, ControlPlaneMachine.noReadingDetail))
+        #expect(ControlPlaneMachine.noReadingWords(failed: false, emptyFor: 0)
+            == (ControlPlaneMachine.noReading, ControlPlaneMachine.noReadingDetail))
+        #expect(ControlPlaneMachine.noReadingWords(failed: true, emptyFor: nil)
+            == (ControlPlaneMachine.noReadingNow, ControlPlaneMachine.readFailedDetail))
+        #expect(ControlPlaneMachine.noReadingWords(failed: false, emptyFor: Double(ControlPlaneMachine.lookSeconds))
+            == (ControlPlaneMachine.noReadingNow, ControlPlaneMachine.emptyDetail))
+    }
+
     @Test func rolesSayWhichMachinesRunTheControlPlane() throws {
         let control = try row("control", roles: ["control"])
         let both = try row("mac", roles: ["agents", "control"])
@@ -76,6 +89,15 @@ struct ControlPlaneMachineTests {
         #expect(ControlPlaneMachine.summary(loadOnly).first?.value == "Full")
         #expect(ControlPlaneMachine.agentsRowLine(look("a", machine: "m")) == "Control plane near capacity")
         #expect(ControlPlaneMachine.agentsRowLine(look("a", machine: "m", level: .ok)) == nil)
+    }
+
+    @Test func theShortRowKeepsTheLevelAndItsMainFigure() {
+        #expect(ControlPlaneMachine.shortRowLine(nil) == "No capacity reading yet")
+        #expect(ControlPlaneMachine.shortRowLine(look("a", machine: "m")) == "Near capacity · I/O 16.7%")
+        #expect(ControlPlaneMachine.shortRowLine(look("a", machine: "m", level: .ok)) == "OK · Load 1.4")
+        #expect(ControlPlaneMachine.rowHelp(look("a", machine: "m"))
+                == "Near capacity · I/O pressure 16.7% · Load 1.4 per core\nThe control plane is near capacity: its disk is busy.")
+        #expect(ControlPlaneMachine.rowHelp(look("a", machine: "m", level: .ok)) == "OK · Load 1.4 per core")
     }
 
     @Test func theSentenceIsTheReasonAsASentence() {

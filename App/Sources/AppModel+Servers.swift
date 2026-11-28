@@ -334,6 +334,8 @@ extension AppModel {
             return (try? await self.sendFacts(folder, on: .mac))?.hasChanges ?? false
         }, pools: { [weak self] in
             await self?.warmPools() ?? []
+        }, scripts: { [weak self] provider in
+            self?.newMachineScripts(provider)
         })
     }
 
@@ -534,12 +536,6 @@ extension AppModel {
                           DaemonAPI.MachineOptions(host: host, startWhenUsed: startWhenUsed,
                                                    stopWhenIdleMinutes: stopWhenIdleMinutes,
                                                    startForSchedules: startForSchedules))
-    }
-
-    /// Stop Lending on a machine's page (#1122, #3975): it stops using a Mac's git access for one server.
-    func stopLendingGit(_ host: MachineRef, from: MachineRef, server: String) async {
-        await controlCall(DaemonAPI.Method.hostsLendGit,
-                          DaemonAPI.LendGit(host: host, from: from, server: server, allowed: false))
     }
 
     /// Approve or Deny on a machine's card (#994): a refusal is the window's alert.

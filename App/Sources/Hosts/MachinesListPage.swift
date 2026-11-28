@@ -243,7 +243,7 @@ struct MachinesListPage: View {
 
     private var selected: [DaemonAPI.ControlMachine] { rows.filter { picked.contains($0.id) } }
 
-    /// The rows as drawn: the control plane's machines first, for an admin with its flag (#6591).
+    /// The rows as drawn: the control plane's machines first, for an admin (#6591).
     private var shown: [DaemonAPI.ControlMachine] {
         model.showsControlPlaneMachine ? ControlPlaneMachine.first(rows) : rows
     }
@@ -253,18 +253,24 @@ struct MachinesListPage: View {
     @ViewBuilder
     private func controlLines(_ row: DaemonAPI.ControlMachine) -> some View {
         let look = model.controlPlaneLook(row.id)
+        let none = model.controlCapacity.noReadingWords
         Text(ControlPlaneMachine.controlOnly(row) ? ControlPlanePage.meta(row, among: model.controlPlaneHosts ?? rows) : "Runs the control plane \u{00B7} \(MachineListChoice.stateWords(row))")
             .appText(.fine).foregroundStyle(.secondary).lineLimit(1)
         HStack(spacing: 5) {
             Circle().fill((look?.level == .ok ? StateTint.vouched : MachinePage.tint(look?.level)).style(or: .secondary))
                 .frame(width: 7, height: 7)
                 .accessibilityHidden(true)
-            Text(ControlPlaneMachine.rowLine(look))
-                .foregroundStyle(look.map { MachinePage.tint($0.level) }?.style(or: .secondary) ?? AnyShapeStyle(.secondary))
+            // The whole line when it fits, else the level and its main figure (#7366).
+            ViewThatFits(in: .horizontal) {
+                Text(look == nil ? none.line : ControlPlaneMachine.rowLine(look))
+                Text(look == nil ? none.line : ControlPlaneMachine.shortRowLine(look))
+            }
+            .foregroundStyle(look.map { MachinePage.tint($0.level) }?.style(or: .secondary) ?? AnyShapeStyle(.secondary))
         }
         .appText(.fine)
         .monospacedDigit()
         .lineLimit(1)
+        .help(look == nil ? none.detail : ControlPlaneMachine.rowHelp(look))
     }
 
     private var stopTitle: String {

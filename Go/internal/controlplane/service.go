@@ -113,6 +113,10 @@ type Config struct {
 	// start; it answers nil to allow, or the words of a refusal that names the limit and
 	// the plan. agents-hosted sets it per account; nil holds no copy to a limit.
 	AgentsRunningGate func(running int) error
+	// Used is told each time a client or a machine finishes the key exchange (#6785): the
+	// hosted service counts it as a use of the account, for its idle clock. Nil on a
+	// control plane that is not hosted.
+	Used func()
 	// Where other copies reach this one (several copies over one store, US3). "" for a
 	// single copy (Agents Host's), which links with nobody and takes no leases (#206).
 	PeerURL string
@@ -691,6 +695,10 @@ func (s *Service) takeUp(ctx context.Context) error {
 	if err := s.records.Migrate(ctx); err != nil {
 		return err
 	}
+	// Git lending is removed (#7286): the lends a machine's record still holds are deleted.
+	if err := s.records.DropGitLends(ctx); err != nil {
+		s.log("the machines' git lends: " + err.Error())
+	}
 	if err := s.ensureControlMachine(ctx); err != nil {
 		s.log("the control plane's own machine record: " + err.Error())
 	}
@@ -746,6 +754,11 @@ func (s *Service) Stop() {
 	}
 	if s.mesh != nil {
 		s.mesh.stop()
+	}
+	// After the sockets and the peers' streams are closed: a host's read loop writes as it
+	// ends (#7631), and the store may be gone once Stop returns.
+	if s.router != nil {
+		s.router.waitReading()
 	}
 	// The entries still queued are kept, for a while (#2433).
 	ctx, cancel := context.WithTimeout(context.Background(), auditDrain)
@@ -1492,6 +1505,9 @@ func (s *Service) acceptVia(conn *Conn, webOrigin string, proved func(failed boo
 		return
 	}
 	setReadLimitFor(conn, id.Kind)
+	if s.cfg.Used != nil && (id.Kind == 'c' || id.Kind == 'h') {
+		s.cfg.Used()
+	}
 	switch id.Kind {
 	case 'c':
 		s.attachClient(conn, client, auth, via)

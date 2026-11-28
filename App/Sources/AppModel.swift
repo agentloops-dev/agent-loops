@@ -1421,6 +1421,7 @@ final class AppModel {
         #if DEBUG
         openFromLaunchArguments()
         WalkNotify.model = work
+        WalkMeeting.client = { [weak self] in self?.macClient }
         WalkNotify.also = { [weak self] method, params in
             guard method == DaemonAPI.Notification.moveChanged,
                   let change = try? params?.decode(DaemonAPI.MoveNotification.self) else { return false }
@@ -1475,7 +1476,7 @@ final class AppModel {
     /// `control/status.maturity` (#6579): the levels of the control plane's capabilities that are
     /// not GA. Nil from one older than that, or before its status arrives.
     var controlPlaneMaturity: [String: String]?
-    /// What each part says of its levels, for Early Features (#6579): the control plane's and each
+    /// What each part says of its levels, for Features (#6579): the control plane's and each
     /// host's. None without a control plane, and the window reads its own list.
     var partsMaturity: [[String: String]?] {
         guard let hosts = controlPlaneHosts else { return [] }
@@ -1549,8 +1550,6 @@ final class AppModel {
     let machineSignIn = MachineSignInDriver()
     /// The Export… or Import Agents… on its way, drawn as a busy sheet with Cancel (#2437).
     var exportImport: ExportImportProgress?
-    /// Git asks answered here, until the control plane's list drops them (#1122).
-    var gitAsksAnswered: Set<String> = []
     /// What a server with no connection answers through: nothing, at once.
     private static let unreachable = DaemonClient(link: UnreachableLink())
 
@@ -2659,16 +2658,19 @@ final class AppModel {
     /// The feature flags the person has on (#6572), as the mirror keeps them.
     let flags = FeatureFlagStates(defaults: WindowDefaults.store)
 
+    /// Send Set-up's sends that wait for a machine to be online (#7155).
+    let setupSends = SetupSendState()
+
     /// The control plane as a machine in Machines, with its level, its page and a strip (#6591):
-    /// behind its flag, and for an admin only.
+    /// for an admin only. Its flag went with the web page's part (#6592).
     var showsControlPlaneMachine: Bool {
-        flags.isOn(.controlPlaneMachine) && people.you?.isAdmin == true
+        people.you?.isAdmin == true
     }
 
-    /// Make This the Control Plane… on a machine's page, and the strip of a move (#6614): behind its
-    /// flag, and for an admin only.
+    /// Make This the Control Plane… on a machine's page, and the strip of a move (#6614): for an
+    /// admin only. Its flag came out in #7390.
     var showsControlPlaneMove: Bool {
-        flags.isOn(.controlPlaneMove) && people.you?.isAdmin == true
+        people.you?.isAdmin == true
     }
 
     /// The machine record a page is of, as the control plane lists it: this Mac's too (#6614).
@@ -3333,6 +3335,20 @@ final class AppModel {
             returning: DaemonAPI.NotCommittedResponse.self)
     }
 
+    /// What Autopilot did in a folder and why each item waits (#5904, #5898), read by its own machine.
+    func autopilotStatus(in key: FolderKey) async throws -> DaemonAPI.AutopilotStatus {
+        try await client(for: key.host).call(
+            DaemonAPI.Method.autopilotStatus, DaemonAPI.AutopilotRequest(folder: key.folder),
+            returning: DaemonAPI.AutopilotStatus.self)
+    }
+
+    /// What Autopilot starts in a folder (#5904); the status after the change.
+    func setAutopilot(_ mode: DaemonAPI.AutopilotMode, in key: FolderKey) async throws -> DaemonAPI.AutopilotStatus {
+        try await client(for: key.host).call(
+            DaemonAPI.Method.autopilotSet, DaemonAPI.AutopilotSetRequest(folder: key.folder, mode: mode),
+            returning: DaemonAPI.AutopilotStatus.self)
+    }
+
     /// The project's working hours (#4821); nil takes them out, back to 09:00-17:00 Mon-Fri.
     func setWorkingHours(_ hours: WorkflowHours?, for key: FolderKey) async {
         do {
@@ -3915,8 +3931,6 @@ final class AppModel {
             KeptThisMacHost.keep(from: listed, controlKey: controlKey, in: WindowDefaults.store)
             keptHost = KeptThisMacHost.read(controlKey: controlKey, from: WindowDefaults.store)
         }
-        // An ask no longer waiting may be asked again later, once taken back (#1122).
-        gitAsksAnswered.formIntersection(GitLendAsk.waiting(in: listed))
         controlPlaneListed = true
         controlPlaneName = status.name
         controlPlaneMaturity = status.maturity
@@ -5068,6 +5082,33 @@ final class AppModel {
         return true
     }
 
+    /// The other accounts of the runtime a chat on this Mac whose allowance ran out can
+    /// continue on (#7459). None for a server's chat: no client has a server's accounts.
+    func continueChoices(_ agent: Agent) -> [ContinueChoice] {
+        guard host(ofAgent: agent.id) == .mac, accountProfilesRead,
+              self.host(agent.host, has: Capability.chatContinueOnAccount1) else { return [] }
+        return AccountChoices(runtimeID: agent.runtimeID, profiles: accountProfiles, policy: policyState?.policy)
+            .continueChoices(from: agent.accountID, allowances: runtimeAllowances)
+    }
+
+    /// **Continue on Claude · Personal** (#7459): the same chat on the account the person chose,
+    /// or a new session there when the conversation could not move. Opens the one that goes on.
+    @discardableResult
+    func continueOnAccount(_ agentID: UUID, accountID: String) async -> Bool {
+        var next: UUID?
+        let went = await attempt(on: host(ofAgent: agentID)) {
+            next = try await self.client(forAgent: agentID).call(
+                DaemonAPI.Method.agentsContinueOnAccount,
+                DaemonAPI.ContinueOnAccountRequest(agentID: agentID, accountID: accountID, requestID: UUID()),
+                returning: UUID.self)
+        }
+        guard went, let next else { return false }
+        let host = host(ofAgent: agentID)
+        if host == .mac { await refreshAgents() } else { await refreshServer(host) }
+        selection = next
+        return true
+    }
+
     /// Carry on when the allowance is back, or no longer (#1859).
     func continueWhenBack(_ agentID: UUID) async { await waitForAllowance(agentID, DaemonAPI.Method.agentsContinueWhenBack) }
     func cancelContinue(_ agentID: UUID) async { await waitForAllowance(agentID, DaemonAPI.Method.agentsCancelContinue) }
@@ -5191,6 +5232,22 @@ final class AppModel {
         await act(.startNow, on: agentID) {
             try await self.client(forAgent: agentID).call(DaemonAPI.Method.agentsStartNow,
                                        DaemonAPI.AgentRequest(agentID: agentID))
+        }
+    }
+
+    /// Asks the session's host to write its summary again (#7322, `agents/summarise`): only
+    /// while the summary is shown (Alex on #7318), and the host writes only when a turn ended
+    /// since it last read. It answers at once; `agents/changed` brings the new text. Nothing
+    /// on a host without `session-summary/1`.
+    func summarise(_ agentID: UUID) async {
+        guard agent(agentID, has: Capability.sessionSummary1) else { return }
+        do {
+            _ = try await client(forAgent: agentID).call(DaemonAPI.Method.agentsSummarise,
+                                                         DaemonAPI.AgentRequest(agentID: agentID),
+                                                         returning: SessionSummary.self)
+        } catch {
+            // The page keeps the summary it has, with its time (gate 2, #7320).
+            Self.chatLog.info("agent \(agentID, privacy: .public): no summary asked: \(error.localizedDescription, privacy: .public)")
         }
     }
 

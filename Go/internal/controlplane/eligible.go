@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/capacity"
+	"github.com/agentloops-dev/agent-loops/Go/internal/controllink"
 	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/records"
 	"github.com/agentloops-dev/agent-loops/Go/internal/controlsetup"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
@@ -154,9 +155,57 @@ func (m *Methods) controlEligible(ctx context.Context, params json.RawMessage, f
 	if h.ID == m.s.controlMachineID() {
 		return nil, fail(invalidParams, "%s already runs this control plane.", h.Name)
 	}
-	facts := m.s.eligibleFacts(ctx, *h, request.AllowSleep != nil && *request.AllowSleep)
+	allowSleep := request.AllowSleep != nil && *request.AllowSleep
+	// The uplink's address, its tunnel and machine/usage are only at the copy that holds the
+	// machine: that copy answers, so every copy gives the same answer (#7315).
+	if answer, ok := m.s.eligibleAtHolder(ctx, h.ID, allowSleep); ok {
+		return answer, nil
+	}
+	facts := m.s.eligibleFacts(ctx, *h, allowSleep)
 	reasons := eligibleReasons(facts)
 	return eligibleAnswer(facts, reasons), nil
+}
+
+// peerEligible is control/eligible's ask of the copy that holds the machine.
+const peerEligible = "control/eligible"
+
+// eligiblePeerParams is what the asking copy sends with it.
+type eligiblePeerParams struct {
+	AllowSleep bool `json:"allowSleep"`
+}
+
+// eligibleAtHolder is control/eligible's answer from the copy that holds host; false when this
+// copy holds it, or no copy answered in time.
+func (s *Service) eligibleAtHolder(ctx context.Context, host string, allowSleep bool) (wire.ControlEligible, bool) {
+	if s.mesh == nil || s.router.Holds(host) {
+		return wire.ControlEligible{}, false
+	}
+	// The holder's own facts take eligiblePatience at most; on top, the two trips on the link.
+	ctx, cancel := context.WithTimeout(ctx, eligiblePatience+eligibleDial)
+	defer cancel()
+	raw, ok := s.mesh.askHolder(ctx, host, peerEligible, eligiblePeerParams{AllowSleep: allowSleep})
+	if !ok {
+		return wire.ControlEligible{}, false
+	}
+	var answer wire.ControlEligible
+	if json.Unmarshal(raw, &answer) != nil {
+		return wire.ControlEligible{}, false
+	}
+	return answer, true
+}
+
+// eligibleForPeer answers another copy's control/eligible for a machine held here.
+func eligibleForPeer(ctx context.Context, s *Service, host string, params json.RawMessage) (any, bool) {
+	var p eligiblePeerParams
+	if len(params) > 0 && json.Unmarshal(params, &p) != nil {
+		return nil, false
+	}
+	h := s.records.Host(host)
+	if h == nil {
+		return nil, false
+	}
+	facts := s.eligibleFacts(ctx, *h, p.AllowSleep)
+	return eligibleAnswer(facts, eligibleReasons(facts)), true
 }
 
 // eligibleAnswer is control/eligible's answer: the reasons, and what the screen shows of the
@@ -192,14 +241,29 @@ func (s *Service) eligibleFacts(ctx context.Context, h records.MachineRecord, al
 			}
 		}
 	}
+	// The reach (a DNS lookup and the dials) and machine/usage run at the same time, under one
+	// bound, so a machine that drops packets costs eligiblePatience, not their sum (#7397).
+	ctx, cancel := context.WithTimeout(ctx, eligiblePatience)
+	defer cancel()
+	usage := make(chan *wire.MachineUsageState, 1)
+	go func() { usage <- s.machineUsage(h.ID) }()
 	f.address, f.unreachable = s.reach(ctx, h.ID)
-	if answer := s.router.Ask(h.ID, wire.CallMachineUsage.Name, wire.Empty{}, eligiblePatience); answer != nil && len(answer.Result) > 0 {
-		var usage wire.MachineUsageState
-		if json.Unmarshal(answer.Result, &usage) == nil {
-			f.usage = &usage
-		}
-	}
+	f.usage = <-usage
 	return f
+}
+
+// machineUsage is what the machine says of its usage, nil when it does not answer in
+// eligiblePatience.
+func (s *Service) machineUsage(host string) *wire.MachineUsageState {
+	answer := s.router.Ask(host, wire.CallMachineUsage.Name, wire.Empty{}, eligiblePatience)
+	if answer == nil || len(answer.Result) == 0 {
+		return nil
+	}
+	var usage wire.MachineUsageState
+	if json.Unmarshal(answer.Result, &usage) != nil {
+		return nil
+	}
+	return &usage
 }
 
 // reach is where this copy reached the machine's control role, as a person reads it, and
@@ -219,7 +283,7 @@ func (s *Service) reach(ctx context.Context, host string) (address, why string) 
 	}
 	from, here := s.router.UplinkAddress(host)
 	if !here {
-		return "", "It is connected to another copy of this control plane, which can’t check it from here."
+		return "", "It is connected to another copy of this control plane, which did not answer. Try again in a minute."
 	}
 	control := s.router.ControlAddress(host)
 	name, ip, why := s.reachAt(ctx, from, control)
@@ -337,9 +401,19 @@ func domainName(d string) bool {
 
 // publicAddress says clients elsewhere can dial addr. 100.64/10 stays in: a machine is seen
 // to come from it only inside a tailnet, which is a tunnel.
-func publicAddress(addr netip.Addr) bool {
-	addr = addr.Unmap()
-	return addr.IsGlobalUnicast() && !addr.IsPrivate()
+func publicAddress(addr netip.Addr) bool { return controllink.PublicAddress(addr) }
+
+// helloAnswer is the answer to host's machine/hello: this control plane's capabilities, and
+// the address the host's uplink comes from when it is public (#7493), so that an install of
+// the control role on a machine behind NAT can say where it is reached.
+func (m *Methods) helloAnswer(host string) wire.MachineHelloAnswer {
+	answer := wire.MachineHelloAnswer{Capabilities: capabilities()}
+	if from, ok := m.router.UplinkAddress(host); ok {
+		if addr, err := netip.ParseAddr(from); err == nil && publicAddress(addr) {
+			answer.Address = new(addr.Unmap().String())
+		}
+	}
+	return answer
 }
 
 func dialTCP(ctx context.Context, address string) error {

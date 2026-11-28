@@ -46,3 +46,9 @@ came (held, then sent to the home host), a method of the control plane's own, an
 home host's. `HomeLinkTests` checks that the Swift client writes exactly these bytes, and the Go
 control plane's `TestTheRemotesWrappedLinesReachTheHomeHost` sends them to a real router and checks
 where each is answered from. A change on either side that breaks the Remote fails one of the two.
+
+## meetings
+
+`made-up-mic.wav`: one made-up line, said by macOS `say` (the voice Daniel), 16 kHz mono,
+3.7 s, for meeting mode's feed (#7584). No real voice: the repo is public. Made again with
+`say -v Daniel --file-format=WAVE --data-format=LEI16@16000 -o made-up-mic.wav "Shall we look at the release plan? I think Friday works."`.

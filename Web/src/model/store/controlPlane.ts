@@ -16,6 +16,7 @@ import { withoutRequest } from "../channelLinks";
 import { withoutSignIn } from "../signIn";
 import type { Store } from "../store";
 import { takeMoves } from "../controlMove";
+import * as controlCapacity from "../controlPlaneMachine";
 
 export const controlPlaneMethods = {
   /**
@@ -109,7 +110,9 @@ export const controlPlaneMethods = {
    */
   load(this: Store): Promise<void> {
     return this.once("*", async () => {
-      const [hosts] = await Promise.all([this.link.call("machines/list", {}), this.loadPlane(), this.loadKept(), this.loadJoinRequests(),
+      const [hosts] = await Promise.all([this.link.call("machines/list", {}),
+        // The capacity after the status, which says whether the person is an admin.
+        this.loadPlane().then(() => this.loadControlCapacity()), this.loadKept(), this.loadJoinRequests(),
         this.loadPeople().then(() => Promise.all([this.loadLinkRequests(), this.loadGovernanceRequests(), this.loadBudgetRequests(),
           this.loadRemoveRequests(), this.loadControlMoves()])),
         this.loadSignInRequests()]);
@@ -186,6 +189,22 @@ export const controlPlaneMethods = {
     if (!this.planeHas(Capability.controlMove1) || this.person.value?.role !== "admin") return;
     const listed = await this.link.call("control/moves/list", {}).catch(() => null);
     if (listed) takeMoves(listed.moves);
+  },
+  /**
+   * The control plane's own capacity (#6592, as the window's #6591), for an admin: each copy's latest look, which says the
+   * level of the control plane's row in Machines and the strip, and which machine runs a copy (#7393). A member reads
+   * nothing: the control plane answers admins only.
+   */
+  async loadControlCapacity(this: Store): Promise<void> {
+    if (!this.planeHas(Capability.console1) || this.person.value?.role !== "admin") return;
+    controlCapacity.refreshing.value = true;
+    try {
+      controlCapacity.takeBoard((await this.link.call("control/capacity", {})).copies);
+    } catch (error) {
+      controlCapacity.takeFailure(error);
+    } finally {
+      controlCapacity.refreshing.value = false;
+    }
   },
   /**
    * The one people list (#2055), and the groups the first time: every view reads these. A control plane before

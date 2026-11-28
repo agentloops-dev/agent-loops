@@ -8,6 +8,7 @@ import (
 	"net/netip"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/controllink"
@@ -208,6 +209,40 @@ func TestReachDialsTheUplinksAddress(t *testing.T) {
 	}
 }
 
+// The reach and machine/usage run at the same time (#7397): here the domain's lookup answers
+// only once the machine was asked for its usage, so run one after the other it would fail.
+func TestEligibleFactsAskAtTheSameTime(t *testing.T) {
+	t.Parallel()
+	p := startPlane(t, store.NewMemory(), controllink.NewPrivateKey())
+	usageAsked := make(chan struct{})
+	var once sync.Once
+	p.asked = func(_, method string, _ json.RawMessage) (any, bool) {
+		if method == wire.CallMachineUsage.Name {
+			once.Do(func() { close(usageAsked) })
+			return goodUsage(), true
+		}
+		return nil, false
+	}
+	box := p.host("MACHINE-2")
+	p.s.router.mu.Lock()
+	p.s.router.hosts[box.member.Host].conn.(*Conn).Remote = "203.0.113.7"
+	p.s.router.mu.Unlock()
+	p.s.router.SetControlAddress(box.member.Host, &wire.MachineControlAddress{Domain: new("ams3-1.example.dev"), Port: 443})
+	p.s.lookupMachine = func(ctx context.Context, _ string) ([]netip.Addr, error) {
+		select {
+		case <-usageAsked:
+			return []netip.Addr{netip.MustParseAddr("198.51.100.9")}, nil
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
+	p.s.dialMachine = func(context.Context, string) error { return nil }
+	f := p.s.eligibleFacts(context.Background(), records.MachineRecord{ID: box.member.Host}, false)
+	if f.unreachable != "" || f.address != "ams3-1.example.dev" || f.usage == nil {
+		t.Fatalf("%q %q %v", f.address, f.unreachable, f.usage)
+	}
+}
+
 // A hello names a port and a domain name, nothing else (#7313).
 func TestValidControlAddress(t *testing.T) {
 	for _, c := range []struct {
@@ -274,5 +309,37 @@ func TestHelloKeepsTheControlAddress(t *testing.T) {
 	hello(nil)
 	if a := p.s.router.ControlAddress(box.member.Host); a != nil {
 		t.Fatalf("a hello with none keeps %+v", a)
+	}
+}
+
+// A machine connected to another copy is checked by that copy, so each copy gives the same
+// answer (#7315).
+func TestEligibleAtAnotherCopy(t *testing.T) {
+	t.Parallel()
+	a, b := twoCopies(t)
+	a.asked = func(_, method string, _ json.RawMessage) (any, bool) {
+		if method == wire.CallMachineUsage.Name {
+			return goodUsage(), true
+		}
+		return nil, false
+	}
+	host := a.host("MACHINE-2").member.Host
+	b.waitFor(func() bool { return b.s.router.Reaches(host) && !b.s.router.Holds(host) }, "B reaching the host through A")
+	ask := func(p *plane) (out wire.ControlEligible) {
+		t.Helper()
+		_, window := p.client("Window")
+		must(t, json.Unmarshal(call(t, window, "", "control/eligible", map[string]any{"machine": host}), &out))
+		return out
+	}
+	atA, atB := ask(a), ask(b)
+	// A reached the uplink, from loopback, and the machine said its usage.
+	if len(atB.Reasons) != 1 || !strings.Contains(atB.Reasons[0].Text, "no public address") ||
+		atB.MemoryBytes == nil || *atB.MemoryBytes != goodUsage().Machine.MemoryTotal {
+		t.Fatalf("at B: %+v", atB)
+	}
+	ja, _ := json.Marshal(atA)
+	jb, _ := json.Marshal(atB)
+	if string(ja) != string(jb) {
+		t.Fatalf("A said %s, B said %s", ja, jb)
 	}
 }

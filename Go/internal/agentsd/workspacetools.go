@@ -245,7 +245,12 @@ func (d *Daemon) makeMachine(agent wire.UUID, args map[string]json.RawMessage) (
 	if len(choices) > 0 {
 		question += " (" + strings.Join(choices, ", ") + ")"
 	}
-	return d.personSaysYesSince(since, agent, d.agentWho(agent)+makeCardTitle, question+"?", "Make it", func(yes bool) (string, error) {
+	// The person's scripts, when this machine sends them (#7157).
+	scripts, err := d.scriptsBeforeMake(string(found.ID))
+	if err != nil {
+		return "", err
+	}
+	return d.personSaysYesSince(since, agent, d.agentWho(agent)+makeCardTitle, question+"?"+scripts, "Make it", func(yes bool) (string, error) {
 		if !yes {
 			return "Nothing was made: the person said no, or didn’t answer.", nil
 		}
@@ -264,10 +269,14 @@ func (d *Daemon) makeMachine(agent wire.UUID, args map[string]json.RawMessage) (
 		if err := json.Unmarshal(out, &made); err != nil {
 			return "", err
 		}
-		if made.Joining {
-			return "Made " + made.Workspace.Name + ". It joins as the host " + made.Workspace.Name + " on its first boot: wait for server.online.", nil
+		at := " list_machines gives its public addresses once its provider has them."
+		if len(made.Workspace.Addresses) > 0 {
+			at = " Its public addresses: " + strings.Join(made.Workspace.Addresses, ", ") + "."
 		}
-		return "Made " + made.Workspace.Name + ". It can’t install Agent Loops on its first boot, so the person adds it from " +
+		if made.Joining {
+			return "Made " + made.Workspace.Name + "." + at + " It joins as the host " + made.Workspace.Name + " on its first boot: wait for server.online.", nil
+		}
+		return "Made " + made.Workspace.Name + "." + at + " It can’t install Agent Loops on its first boot, so the person adds it from " +
 			"Settings ▸ Machine Providers with Add as Machine….", nil
 	})
 }
@@ -638,7 +647,7 @@ func workspacesNoteProvider(p wire.AgentMachinesProvider) []string {
 }
 
 // workspacesNoteMachine is list_machines's line for one machine: its state, its host or why
-// it is no host, and its cost.
+// it is no host, its cost, and its public addresses (#7466).
 func workspacesNoteMachine(w wire.AgentMachinesMachine) string {
 	host := " — not a host"
 	// A make that failed says why (#4706), not that it is no host.
@@ -656,5 +665,13 @@ func workspacesNoteMachine(w wire.AgentMachinesMachine) string {
 	if w.Cost != nil {
 		cost = ", " + *w.Cost
 	}
-	return "  - " + w.Name + ": " + w.State + host + cost
+	return "  - " + w.Name + ": " + w.State + host + cost + addressesNote(w.Addresses)
+}
+
+// addressesNote is ", addresses …" for a machine's public addresses, or nothing (#7466).
+func addressesNote(addresses []string) string {
+	if len(addresses) == 0 {
+		return ""
+	}
+	return ", addresses " + strings.Join(addresses, ", ")
 }

@@ -9,8 +9,9 @@ when-done: archive
 permission-mode: approve-for-me
 ---
 
-You free disk space on this Mac (#199, #1796), because a disk ran low, until 20% of the
-disk is free (#4699). You run with nobody watching. You bound the shared build cache and the
+You free disk space on this Mac (#199, #1796), because a disk ran low, until free space
+reaches the ok line, where `machine.disk_ok` fires: the low line plus 10 points, 20% of the
+disk at the default line (#4699, #6953). You run with nobody watching. You bound the shared build cache and the
 Go temp folders that killed runs leave, delete build output in worktrees nobody builds in,
 remove the worktrees nobody has changed for hours, end leaked headless walk Chromes, remove
 old Xcode device support and CoreDevice's install deltas, remove the Xcode DerivedData of

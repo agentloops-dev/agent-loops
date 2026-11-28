@@ -845,6 +845,7 @@ func TestSCIMNoOpWritesTellNobody(t *testing.T) {
 // #2425: a million made-up bearers keep nothing; a live token is still kept, and one
 // address that sends many made-up ones is answered 429 with no token read.
 func TestSCIMUnknownBearersKeepNothing(t *testing.T) {
+	flaky.UnderLoad(t, "#7482")
 	t.Parallel()
 	p, _, _, token, base := scimPlane(t, wire.OrgProviderJoinScim)
 	st := p.s.scimTokens

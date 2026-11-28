@@ -15,6 +15,7 @@ import (
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
 	"github.com/agentloops-dev/agent-loops/Go/internal/connections"
+	"github.com/agentloops-dev/agent-loops/Go/internal/execfile"
 	"github.com/agentloops-dev/agent-loops/Go/internal/githubmcp"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
@@ -54,6 +55,9 @@ type gitCredentialState struct {
 	credGrants map[string]wire.UUID
 	// commandGrants is each agents-secret grant, by the agent it is for (#4178).
 	commandGrants map[string]wire.UUID
+	// scriptGrants is each agents-secret grant of a run of setup.sh (#7156), whose subject is
+	// the run, not a session.
+	scriptGrants map[string]scriptGrant
 	// appReach is whether agent-loops-dev is installed on a repository, by repository.
 	appReach map[string]reachRead
 	// appPush is whether agent-loops-dev may write code on an owner's install, by owner.
@@ -346,7 +350,7 @@ func writeGHShim(bin, agentsd, gh string) error {
 	}
 	tmp := path + ".tmp"
 	// store-bounds: not a store: an install: the gh shim.
-	if err := os.WriteFile(tmp, []byte(script), 0o700); err != nil {
+	if err := execfile.Write(tmp, []byte(script), 0o700); err != nil {
 		return err
 	}
 	return os.Rename(tmp, path)

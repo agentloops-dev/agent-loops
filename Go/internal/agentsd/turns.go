@@ -105,6 +105,9 @@ type live struct {
 	denied string
 	// lastUpdate is when the runtime last sent a session/update (opencoderefusal.go).
 	lastUpdate atomic.Int64
+	// noticeTurn is the prompt entry of a turn that told parent notices (#7538), until the
+	// runtime answers it.
+	noticeTurn atomic.Pointer[wire.UUID]
 	// unprompted is whether the turn in flight is the runtime's own, begun with no prompt
 	// (unprompted.go, #4323), and quiet the timer that ends it when nothing more comes.
 	unprompted bool
@@ -308,6 +311,13 @@ func (d *Daemon) startFor(r wire.StartRequest, by startedBy) (wire.UUID, error) 
 		d.helperRequests(&r, starter)
 		d.inheritRequests(&r, starter)
 	}
+	// A start's labels are held to the same bounds as a later add (#7241): before, any number
+	// went on, and every add after that was refused.
+	if by.queued == nil {
+		if _, err := changeLabelsAs(by.owner, nil, r.Labels, nil, nil); err != nil {
+			return "", err
+		}
+	}
 	pick, client, levelsNote, err := d.resolveLevels(&r, by)
 	if err != nil {
 		return "", err
@@ -352,7 +362,25 @@ func (d *Daemon) startFor(r wire.StartRequest, by startedBy) (wire.UUID, error) 
 	t := now()
 	a := d.newStartedAgent(r, by, path, options, pick, client, t)
 	a.Worktree = wt
-	if err := d.Store.Save(a); err != nil {
+	// Under a lead from the start (#7538): checked and saved under one hold of parentMu.
+	if r.ParentID != nil {
+		d.parentMu.Lock()
+		if err := d.startUnder(&a, *r.ParentID, t); err != nil {
+			d.parentMu.Unlock()
+			if wt != nil {
+				undoWorktree(*r.Worktree, wt)
+			}
+			return "", err
+		}
+	}
+	err = d.Store.Save(a)
+	if r.ParentID != nil {
+		if err == nil {
+			d.startedUnder(a, t)
+		}
+		d.parentMu.Unlock()
+	}
+	if err != nil {
 		if wt != nil {
 			undoWorktree(*r.Worktree, wt)
 		}
@@ -409,11 +437,9 @@ func (d *Daemon) startAccount(r *wire.StartRequest, by startedBy, rt *runtimeDef
 	if err := d.accountRefusal(r.RuntimeID, account); err != nil {
 		return policyNote, err
 	}
-	if account == nil {
-		if err := d.needsSignIn(r.RuntimeID); err != nil {
-			return policyNote, err
-		}
-	}
+	// A server with no sign-in for the runtime starts the agent all the same: its first turn
+	// waits and the first sign-in card shows (holdsForSignIn, #7609). Refused here, there was
+	// no agent to show the card on, and only a Mac that could lend got past it.
 	return policyNote, nil
 }
 
@@ -654,7 +680,8 @@ func (l *live) run() {
 		l.mu.Unlock()
 		// What is queued waits while the organisation's policy refuses the turn (#998),
 		// and while the agent or the day is at its limit.
-		if l.d.holdsForPolicy(l) || l.d.holdsForLimit(l.id) {
+		// And while this server has no sign-in for the runtime (#7609).
+		if l.d.holdsForPolicy(l) || l.d.holdsForLimit(l.id) || l.d.holdsForSignIn(l.id) {
 			if l.onHeld != nil {
 				l.onHeld()
 			}
@@ -725,11 +752,11 @@ func (l *live) turn() bool {
 	if noSession && !l.open(ctx, a, false) {
 		return false
 	}
-	q, taken := l.takeTurnWords()
+	q, notices, taken := l.takeTurnWords()
 	if !taken {
 		return false
 	}
-	bs, from, branch, turnEntry := l.recordTurnPrompt(a, q)
+	bs, from, branch, turnEntry := l.recordTurnPrompt(a, q, notices.entry)
 	// The folder as the turn begins, for Undo These Changes (#3437); its end is the second.
 	snap := d.snapshotTurn(l.id, turnEntry)
 	defer l.keepTurnChanges(snap)
@@ -744,6 +771,11 @@ func (l *live) turn() bool {
 	l.holdBlockForTurn(from)
 	d.moveState(l.id, wire.AgentStateRunning, true, nil)
 	bs = l.turnPrefaceBlocks(bs, q, branch)
+	l.noticeTurn.Store(nil)
+	if notices.text != "" {
+		bs = append([]wire.ContentBlock{textBlock(notices.text)}, bs...)
+		l.noticeTurn.Store(&turnEntry)
+	}
 	bs, s, stopped := l.addTurnBrief(bs)
 	if stopped || s == nil {
 		l.endWithoutPrompt(ctx, stopped)
@@ -784,27 +816,49 @@ func (l *live) resetForTurn(cancel context.CancelFunc) (noSession, early bool) {
 	return noSession, early
 }
 
+// turnNotices is what a turn tells of parent changes (#7538), and the entry of its prompt.
+type turnNotices struct {
+	entry wire.UUID
+	text  string
+}
+
 // takeTurnWords takes the next turn's words off the queue, now the runtime is there to
-// take them. False when nothing may go now.
-func (l *live) takeTurnWords() (wire.QueuedPrompt, bool) {
+// take them, and the parent notices with them in the same write. False when nothing may go
+// now.
+func (l *live) takeTurnWords() (wire.QueuedPrompt, turnNotices, bool) {
 	d := l.d
 	var q wire.QueuedPrompt
 	taken := false
-	d.change(l.id, func(a *wire.Agent) { q, a.QueuedPrompts, taken = nextTurn(a.QueuedPrompts) })
+	tn := turnNotices{entry: store.NewUUID()}
+	var told []wire.ParentNotice
+	var more int64
+	d.change(l.id, func(a *wire.Agent) {
+		q, a.QueuedPrompts, taken = nextTurn(a.QueuedPrompts)
+		if taken {
+			told, more = takeNotices(a, tn.entry)
+		}
+	})
 	if !taken {
-		return q, false
+		return q, tn, false
+	}
+	if len(told) > 0 {
+		tn.text = d.noticeText(l.id, told, more)
+	}
+	// What labelled workflows send goes with the turn, as the notices do (#6954).
+	if bt := d.broadcastTurnText(l.id); bt != "" {
+		tn.text = strings.TrimSpace(tn.text + "\n\n" + bt)
 	}
 	d.change(l.id, func(a *wire.Agent) {
 		if a.PendingSandboxFailure != nil {
 			a.PendingSandboxFailure = nil
 		}
 	})
-	return q, true
+	return q, tn, true
 }
 
 // recordTurnPrompt puts the prompt in the transcript, unless it is one sent again. It
 // returns the prompt's blocks, who sent it, the branch's preface and the prompt's entry.
-func (l *live) recordTurnPrompt(a *wire.Agent, q wire.QueuedPrompt) ([]wire.ContentBlock, wire.PromptOrigin, *string, wire.UUID) {
+func (l *live) recordTurnPrompt(a *wire.Agent, q wire.QueuedPrompt, entry wire.UUID) ([]wire.ContentBlock, wire.PromptOrigin, *string, wire.UUID) {
 	d := l.d
 	bs := blocks(q)
 	from := q.From
@@ -826,11 +880,17 @@ func (l *live) recordTurnPrompt(a *wire.Agent, q wire.QueuedPrompt) ([]wire.Cont
 	// as it goes rather than kept on the queued prompt, which every client is sent on each
 	// change (#1851); before the prompt is recorded, so the record is the one it went on from.
 	branch := d.branchPreface(a)
-	turnEntry := store.NewUUID()
+	turnEntry := entry
 	if !resent {
 		d.recordEntry(l.id, turnEntry, wire.TranscriptEntryKind{UserMessage: um}, q.Sender)
 	} else if id, ok := d.lastPrompt(l.id); ok {
 		turnEntry = id
+		// The notices this turn took go with the prompt it sends again (#7538).
+		d.changeAgent(l.id, false, func(a *wire.Agent) {
+			if n := a.ParentNotices; n != nil && n.SentWith != nil && *n.SentWith == entry {
+				n.SentWith = &id
+			}
+		})
 	}
 	return bs, from, branch, turnEntry
 }
@@ -952,6 +1012,9 @@ func (l *live) promptRuntime(ctx context.Context, a *wire.Agent, s *acp.Session,
 	}
 	r, err := s.Prompt(promptCtx, acpBlocks(bs))
 	endPrompt()
+	if err == nil {
+		l.noticesAnswered()
+	}
 	// What the runtime begins from here is its own, not this prompt's (#4568).
 	l.mu.Lock()
 	l.answered = true
@@ -990,6 +1053,14 @@ func (l *live) endFailedPrompt(ctx context.Context, a *wire.Agent, s *acp.Sessio
 			}
 			return false
 		}
+	}
+	// This server's own sign-in ended (#7472): said as that, with a Sign in again card.
+	l.mu.Lock()
+	failure := l.failure
+	l.mu.Unlock()
+	if code, _ := refusal(err); (code != nil && *code == authRequired || signInEnded(failure)) && d.ownSignInEnded(a) {
+		d.end(l, wire.AgentStateStopped, wire.EndedReasonSignInRefused)
+		return false
 	}
 	// An added account with no sign-in in its folder (#840): said as that, with where to fix it.
 	if code, _ := refusal(err); code != nil && *code == authRequired && a.AccountID != nil {
@@ -1055,6 +1126,11 @@ func (l *live) endAnsweredTurn(a *wire.Agent, r sdk.PromptResponse) bool {
 	// A warning is a retry the runtime is making: said, and the turn's own ending stands.
 	// An error is said too, and the turn failed whatever its stop reason.
 	failed := failure != nil && failure.isError()
+	// This server's own sign-in ended (#7472): said as that, not as a general error.
+	if signInEnded(failure) && d.ownSignInEnded(a) {
+		d.end(l, wire.AgentStateStopped, wire.EndedReasonSignInRefused)
+		return false
+	}
 	if failure != nil {
 		d.noteFailure(l.id, a.RuntimeID, failure)
 	}
@@ -1499,6 +1575,7 @@ func configOptions(v any) []wire.ConfigOption {
 // Update turns one ACP session update into today's transcript records.
 func (l *live) Update(n sdk.SessionNotification) {
 	l.lastUpdate.Store(time.Now().UnixNano())
+	l.noticesAnswered()
 	u := n.Update
 	// The runtime working with no prompt in flight is a turn of its own (#4323).
 	if !beginsWork(u) || !l.beginUnprompted() {
@@ -2149,6 +2226,10 @@ func (l *live) openStartFailed(a *wire.Agent, rt *runtimeDef, account *wire.Acco
 	// A runtime with no sign-in refuses session/new with -32000 (#1430): it is not
 	// signed in, not crashed, and the Pool page says so.
 	if code, _ := refusal(err); code != nil && *code == authRequired {
+		// This server's own sign-in ended (#7472): a Sign in again card.
+		if account == nil && d.usesOwnSignIn(a) {
+			return stopped(wire.EndedReasonSignInRefused, func() { d.ownSignInEnded(a) })
+		}
 		// An added account's sign-in is its own (#840): the runtime's is not in question.
 		if account == nil {
 			d.markNeedsSignIn(a.RuntimeID)
@@ -2351,4 +2432,18 @@ func (l *live) open(ctx context.Context, a *wire.Agent, quiet bool) bool {
 		return false
 	}
 	return true
+}
+
+// noticesAnswered clears the parent notices a turn told, once the runtime answers the
+// prompt (#7538): its first update while prompted, or the end of the prompt.
+func (l *live) noticesAnswered() {
+	l.mu.Lock()
+	prompting := l.prompting
+	l.mu.Unlock()
+	if !prompting {
+		return
+	}
+	if turn := l.noticeTurn.Swap(nil); turn != nil {
+		l.d.clearSentNotices(l.id, *turn)
+	}
 }

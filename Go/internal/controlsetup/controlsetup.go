@@ -12,11 +12,14 @@ package controlsetup
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
 	"io"
 	"net"
+	"net/netip"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -26,6 +29,7 @@ import (
 	"time"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/web"
+	"github.com/agentloops-dev/agent-loops/Go/internal/execfile"
 	"github.com/agentloops-dev/agent-loops/Go/internal/machine"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
@@ -49,6 +53,9 @@ type Options struct {
 	Domain string
 	// ACMEEmail is the address Let's Encrypt writes to about the certificate.
 	ACMEEmail string
+	// Address, with no domain, is the name or IP address other machines reach this one at
+	// (#7467). Install finds the machine's own address when it is empty.
+	Address string
 	// Agents is whether this machine also runs agents: the control plane then goes first.
 	Agents bool
 	// Port is the serving port; DefaultPort, or 443 with a domain, when 0.
@@ -63,6 +70,15 @@ type Deps struct {
 	Systemd func() bool
 	// Run runs one command and returns its combined output.
 	Run func(name string, args ...string) (string, error)
+	// Address is this machine's own IP address and whether it is public (MachineAddress).
+	Address func() (netip.Addr, bool)
+	// Seen is the public address that a control plane saw this machine's uplink come from
+	// (controllink.SeenAddress, #7493), or an invalid one; nil for none.
+	Seen func() netip.Addr
+	// Cloud is the public address that the cloud's metadata service gives this VM
+	// (CloudAddress, #7638), or an invalid one; nil for none. It is asked only when the
+	// machine has no public address of its own and no seen one.
+	Cloud func(context.Context) netip.Addr
 	// Poll and Wait bound the wait for the first start to make the store.
 	Poll, Wait time.Duration
 	Out        io.Writer
@@ -101,16 +117,21 @@ func (o *Options) port() int {
 	return DefaultPort
 }
 
-// URL is the address the control plane answers at, when the install knows it (a domain);
-// else empty, and the control plane takes the machine's own name.
+// URL is the address the control plane answers at, when the install knows it (a domain, or
+// an address); else empty, and the control plane takes the machine's own name, which only a
+// Mac on the same network can resolve (#7467).
 func (o *Options) URL() string {
-	if o.Domain == "" {
+	host := cmp.Or(o.Domain, strings.Trim(o.Address, "[]"))
+	if host == "" {
 		return ""
 	}
 	if p := o.port(); p != 443 {
-		return "https://" + net.JoinHostPort(o.Domain, strconv.Itoa(p))
+		return "https://" + net.JoinHostPort(host, strconv.Itoa(p))
 	}
-	return "https://" + o.Domain
+	if strings.Contains(host, ":") {
+		return "https://[" + host + "]"
+	}
+	return "https://" + host
 }
 
 // hostDropIn puts agentsd and its agents after the control plane on a machine with both
@@ -204,6 +225,11 @@ func Install(ctx context.Context, o Options, d Deps) error {
 	if !d.Systemd() {
 		return errors.New("this machine has no systemd user session; the control role runs as a unit there (loginctl enable-linger, or log in with a session)")
 	}
+	if a := strings.Trim(o.Address, "[]"); a != "" {
+		if _, err := netip.ParseAddr(a); err != nil && strings.ContainsAny(a, ":/ ") {
+			return fmt.Errorf("--address %s: give a name or an IP address, with no scheme, port or path", o.Address)
+		}
+	}
 	if o.Domain != "" && o.port() != 443 {
 		fmt.Fprintf(d.Out, "Port %d is not 443: Let's Encrypt must reach this machine on 443, so forward it here.\n", o.port())
 	}
@@ -213,6 +239,7 @@ func Install(ctx context.Context, o Options, d Deps) error {
 	if err := place(o.Executable, l); err != nil {
 		return err
 	}
+	sayAddress(ctx, &o, l, d)
 	var err error
 	if o.Page, err = placePage(o.Executable, l); err != nil {
 		return err
@@ -240,6 +267,103 @@ func Install(ctx context.Context, o Options, d Deps) error {
 	}
 	fmt.Fprintln(d.Out, "The control plane runs as the systemd user unit agents-control.")
 	return nil
+}
+
+// sayAddress gives a control plane with no domain an address that another machine can reach
+// (#7467), and says in the install's output what its address is. A machine's hostname is not
+// one: another machine cannot resolve a droplet's. With no --address, it keeps the one an
+// install before gave, else takes the machine's own (MachineAddress). When that is private
+// or there is none, as on a cloud VM behind NAT, it takes the public address that a control
+// plane saw this machine's uplink come from (#7493), else the one the cloud's metadata
+// service gives (#7638), when there is one.
+func sayAddress(ctx context.Context, o *Options, l Layout, d Deps) {
+	if o.Domain == "" && o.Address == "" {
+		if old, err := os.ReadFile(l.Unit); err == nil {
+			if a := addressOf(string(old)); a != nil && a.Domain == nil {
+				o.Address = urlHost(string(old))
+			}
+		}
+	}
+	kept := o.Address != ""
+	public := true
+	if o.Domain == "" && !kept {
+		ip, ok := d.Address()
+		if seen := d.seen(); !ok && seen.IsValid() {
+			fmt.Fprintf(d.Out, "This machine has no public address of its own, so the control plane takes %s, the public address its uplink came from.\n", seen)
+			ip, ok = seen, true
+		} else if !ok && d.Cloud != nil {
+			if cloud := d.Cloud(ctx); cloud.IsValid() {
+				fmt.Fprintf(d.Out, "This machine has no public address of its own, so the control plane takes %s, the public address its cloud's metadata service gives.\n", cloud)
+				ip, ok = cloud, true
+			}
+		}
+		if !ip.IsValid() {
+			fmt.Fprintln(d.Out, "This machine has no IP address another machine can reach, so the control plane takes its hostname, which only this network can resolve. Install again with --address and the name or address other machines reach it at.")
+			return
+		}
+		o.Address, public = ip.String(), ok
+	}
+	fmt.Fprintf(d.Out, "Clients and machines reach this control plane at %s.\n", o.URL())
+	if !public {
+		fmt.Fprintln(d.Out, "That is a private address: only machines on its network reach it. To reach it from elsewhere, install again with --address and its public address, or a tunnel's name.")
+	}
+}
+
+// urlHost is the host of the AGENTS_CONTROL_URL that a unit sets, or "".
+func urlHost(unit string) string {
+	for line := range strings.Lines(unit) {
+		if text, ok := strings.CutPrefix(strings.TrimSpace(line), "Environment=AGENTS_CONTROL_URL="); ok {
+			if u, err := url.Parse(text); err == nil {
+				return u.Hostname()
+			}
+		}
+	}
+	return ""
+}
+
+// MachineAddress is the IP address that other machines most likely reach this one at, and
+// whether it is public: a public IPv4 address on an interface (a droplet's), else a public
+// IPv6 one, else the source address of the default route (a machine behind NAT, not a
+// container bridge's), else a private one. Invalid when the machine has none.
+func MachineAddress() (netip.Addr, bool) {
+	var addrs []netip.Addr
+	if list, err := net.InterfaceAddrs(); err == nil {
+		for _, a := range list {
+			if p, err := netip.ParsePrefix(a.String()); err == nil {
+				addrs = append(addrs, p.Addr())
+			}
+		}
+	}
+	var outbound netip.Addr
+	// A UDP dial sends nothing: it only asks the kernel which source address its route has.
+	if c, err := net.Dial("udp4", "192.0.2.1:9"); err == nil {
+		if a, ok := c.LocalAddr().(*net.UDPAddr); ok {
+			outbound, _ = netip.AddrFromSlice(a.IP)
+			outbound = outbound.Unmap()
+		}
+		_ = c.Close()
+	}
+	return pickAddress(addrs, outbound)
+}
+
+func pickAddress(addrs []netip.Addr, outbound netip.Addr) (netip.Addr, bool) {
+	usable := func(a netip.Addr) bool { return a.IsValid() && a.IsGlobalUnicast() }
+	for _, v4 := range []bool{true, false} {
+		for _, a := range addrs {
+			if usable(a) && !a.IsPrivate() && a.Is4() == v4 {
+				return a, true
+			}
+		}
+	}
+	if usable(outbound) {
+		return outbound, !outbound.IsPrivate()
+	}
+	for _, a := range addrs {
+		if usable(a) && a.Is4() {
+			return a, false
+		}
+	}
+	return netip.Addr{}, false
 }
 
 // HostCode issues a code for this machine's own host to join with, once the control plane
@@ -303,7 +427,7 @@ func place(executable string, l Layout) error {
 	}
 	tmp := l.Binary() + ".new"
 	// store-bounds: not a store: the release's program, one copy beside agentsd
-	if err := os.WriteFile(tmp, data, 0o700); err != nil { //nolint:gosec // G306: a program must run
+	if err := execfile.Write(tmp, data, 0o700); err != nil {
 		return err
 	}
 	return os.Rename(tmp, l.Binary())
@@ -370,6 +494,14 @@ func releaseArch() string {
 	return "x86_64"
 }
 
+// seen is Seen's address, or an invalid one.
+func (d *Deps) seen() netip.Addr {
+	if d.Seen == nil {
+		return netip.Addr{}
+	}
+	return d.Seen()
+}
+
 func (d *Deps) defaults() {
 	if d.Poll == 0 {
 		d.Poll = time.Second
@@ -379,6 +511,9 @@ func (d *Deps) defaults() {
 	}
 	if d.Out == nil {
 		d.Out = io.Discard
+	}
+	if d.Address == nil {
+		d.Address = MachineAddress
 	}
 }
 

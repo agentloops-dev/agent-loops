@@ -268,6 +268,12 @@ type Agent struct {
 
 	StartedByAgent *UUID `json:"startedByAgent,omitzero"`
 
+	// The lead this session works under (#7538, spec 7535): absent, the tree follows startedByAgent; with no id, the session is at the top. startedByAgent stays the history of who started it.
+	Parent *SessionParent `json:"parent,omitzero"`
+
+	// The daemon's own: the parent changes this session is told on its next turn (#7538). Clients ignore it.
+	ParentNotices *ParentNotices `json:"parentNotices,omitzero"`
+
 	ChainDepth *int64 `json:"chainDepth,omitzero"`
 
 	EventWait *EventWait `json:"eventWait,omitzero"`
@@ -472,6 +478,9 @@ type AgentMachinesHost struct {
 
 	// When the control plane last heard its capacity. A figure older than 2 minutes is no figure (Auto's rule).
 	CapacityAt *Date `json:"capacityAt,omitzero"`
+
+	// The machine's platform as it announced it (macOS 15, Linux), so Autopilot (#5900) sends a linux-ok issue to a Linux machine. Absent when it did not say.
+	Platform *string `json:"platform,omitzero"`
 }
 
 type AgentMachinesMachine struct {
@@ -489,6 +498,9 @@ type AgentMachinesMachine struct {
 
 	// Why it failed, on a make that failed (#4706).
 	Reason *string `json:"reason,omitzero"`
+
+	// Its public addresses, IPv4 then IPv6, from the provider's own record (#7466).
+	Addresses []string `json:"addresses,omitzero"`
 }
 
 type AgentMachinesProvider struct {
@@ -909,6 +921,178 @@ type ArchiveRequestRequested struct {
 
 	// Why, in the agent's own words (#6067): one line, at most 200 characters. Absent on a request from before #6067, and on one made for the agent with none.
 	Reason *string `json:"reason,omitzero"`
+}
+
+// An artifact's record (#5953, spec 5713 §1): its name, kind, labels and head. Its versions are OCI image manifests in the blob store.
+type Artifact struct {
+	// The artifact's id, unique in the organisation's store: 1 to 64 of a-z, 0-9, '.', '_' and '-', starting with a letter or digit.
+	ID string `json:"id"`
+
+	// Its project's id, or the organisation's; the <topic> of its ref.
+	Topic string `json:"topic"`
+
+	// agents:artifact:<topic>#<id>: the name form, which moves with the head.
+	Ref string `json:"ref"`
+
+	// What a person reads.
+	Name string `json:"name"`
+
+	Kind ArtifactKind `json:"kind"`
+
+	// Free labels, key to value: at most 32, a key at most 64 bytes and a value at most 256. A version carries them as dev.agentloops.label.<key> annotations.
+	Labels map[string]string `json:"labels,omitzero"`
+
+	// The current version's manifest digest; the newest head when there are two or more.
+	Head string `json:"head"`
+
+	// Every head, when writers diverged (a write whose parent was not the head): set aside, never overwritten. Absent with one head.
+	Heads []string `json:"heads,omitzero"`
+
+	// How many versions it has; the newest is this number.
+	Versions int64 `json:"versions"`
+
+	// The head is a tombstone: the artifact was deleted, and its versions are kept.
+	Deleted *bool `json:"deleted,omitzero"`
+
+	Created string `json:"created"`
+
+	Updated string `json:"updated"`
+}
+
+// artifacts/get: an artifact by its ref, the head for a name (agents:artifact:<topic>#<id>) or one version for a digest (agents:artifact:<topic>#sha256:…).
+type ArtifactGet struct {
+	Ref string `json:"ref"`
+
+	// Also send each layer's bytes, at most 24 MiB in all; a larger version is refused.
+	Content *bool `json:"content,omitzero"`
+}
+
+// artifacts/get's answer: the record and the version the ref names.
+type ArtifactGot struct {
+	Artifact Artifact `json:"artifact"`
+
+	Version ArtifactVersion `json:"version"`
+}
+
+// What an artifact is (epic #5713): its version's artifactType is application/vnd.agentloops.<kind>.v1.
+type ArtifactKind string
+
+const ArtifactKindArchive ArtifactKind = "archive"
+const ArtifactKindBinary ArtifactKind = "binary"
+const ArtifactKindBuild ArtifactKind = "build"
+const ArtifactKindDocument ArtifactKind = "document"
+const ArtifactKindImage ArtifactKind = "image"
+const ArtifactKindOther ArtifactKind = "other"
+const ArtifactKindPackage ArtifactKind = "package"
+
+// One file of a version: an OCI descriptor.
+type ArtifactLayer struct {
+	// The file's own type, as text/markdown or image/svg+xml.
+	MediaType string `json:"mediaType"`
+
+	// The blob's digest.
+	Digest string `json:"digest"`
+
+	Size int64 `json:"size"`
+
+	// The file's name (org.opencontainers.image.title).
+	Title *string `json:"title,omitzero"`
+
+	// The bytes, when artifacts/get was asked for content.
+	Data Data `json:"data,omitzero"`
+}
+
+// One file of a version to put.
+type ArtifactLayerPut struct {
+	MediaType string `json:"mediaType"`
+
+	// The file's name: no '/', at most 255 bytes.
+	Title string `json:"title"`
+
+	Data Data `json:"data"`
+}
+
+// artifacts/put: a new version of an artifact, or its first, which makes the record. At most 64 layers and 24 MiB in all.
+type ArtifactPut struct {
+	Topic string `json:"topic"`
+
+	ID string `json:"id"`
+
+	// Sets the name; the first version's default is the id.
+	Name *string `json:"name,omitzero"`
+
+	// Required for the first version; a later one keeps the record's.
+	Kind *ArtifactKind `json:"kind,omitzero"`
+
+	// Free labels, key to value: at most 32, a key at most 64 bytes and a value at most 256. A version carries them as dev.agentloops.label.<key> annotations.
+	Labels map[string]string `json:"labels,omitzero"`
+
+	// The head (or heads) the writer saw: none for the first version, two or more to settle a divergence. A parent that is no longer a head makes a second head, never an overwrite.
+	Parents []string `json:"parents,omitzero"`
+
+	// How the version was made (dev.agentloops.capture); manual when absent.
+	Capture *string `json:"capture,omitzero"`
+
+	// Delete: a version with no layers that marks the artifact deleted; its versions are kept.
+	Tombstone *bool `json:"tombstone,omitzero"`
+
+	Layers []ArtifactLayerPut `json:"layers"`
+}
+
+// artifacts/put's answer.
+type ArtifactPutResult struct {
+	Artifact Artifact `json:"artifact"`
+
+	Version ArtifactVersion `json:"version"`
+
+	// The parents were not every head, so the artifact now has two or more heads.
+	Diverged *bool `json:"diverged,omitzero"`
+}
+
+// One version: its manifest, as the record and the log say it.
+type ArtifactVersion struct {
+	// Its place in the artifact's log, from 1.
+	Number int64 `json:"number"`
+
+	// The manifest's digest: the version's id, immutable.
+	Digest string `json:"digest"`
+
+	// agents:artifact:<topic>#sha256:…: the immutable form.
+	Ref string `json:"ref"`
+
+	Parents []string `json:"parents,omitzero"`
+
+	Created string `json:"created"`
+
+	// Who made it, recorded, never guessed: person:<id>, session:<id> or unknown.
+	Author string `json:"author"`
+
+	Capture *string `json:"capture,omitzero"`
+
+	Tombstone *bool `json:"tombstone,omitzero"`
+
+	// Its files; absent in a listing.
+	Layers []ArtifactLayer `json:"layers,omitzero"`
+}
+
+// artifacts/versions's answer: newest first.
+type ArtifactVersionPage struct {
+	Versions []ArtifactVersion `json:"versions"`
+
+	// Pass as before for the next page; absent on the last.
+	Next *int64 `json:"next,omitzero"`
+}
+
+// artifacts/versions: an artifact's versions, newest first.
+type ArtifactVersionsAsk struct {
+	// The artifact's name ref, agents:artifact:<topic>#<id>.
+	Ref string `json:"ref"`
+
+	// Only versions numbered below this.
+	Before *int64 `json:"before,omitzero"`
+
+	// At most 100; 0 is 50.
+	Limit *int64 `json:"limit,omitzero"`
 }
 
 type ArtifactWriteRequest struct {
@@ -1336,6 +1520,13 @@ type AutopilotRequest struct {
 	Folder URL `json:"folder"`
 }
 
+type AutopilotResumeRequest struct {
+	Folder URL `json:"folder"`
+
+	// The paused issue or epic, as autopilot/status names it.
+	Ref string `json:"ref"`
+}
+
 type AutopilotRow struct {
 	// The issue or epic, as the forge names it (#123).
 	Ref string `json:"ref"`
@@ -1571,6 +1762,26 @@ func (v *BackupTarget) UnmarshalJSON(b []byte) error {
 		*v = BackupTargetFolder
 	}
 	return nil
+}
+
+// A blob in the artifact store (#5715, epic #5713): bytes at a sha256 digest.
+type BlobInfo struct {
+	// The blob's id, "sha256:" and 64 lower-case hex digits.
+	Digest string `json:"digest"`
+
+	// The blob's length in bytes.
+	Size int64 `json:"size"`
+
+	// When the blob was first written, in RFC 3339.
+	Stored string `json:"stored"`
+}
+
+// One page of a blob listing, in digest order, at most 1000 blobs (#5715).
+type BlobPage struct {
+	Blobs []BlobInfo `json:"blobs"`
+
+	// Pass as the next listing's after to get the next page; absent on the last page.
+	Next *string `json:"next,omitzero"`
 }
 
 type Block struct {
@@ -3090,7 +3301,7 @@ type CommitTrailerValue string
 const CommitTrailerValueOn CommitTrailerValue = "on"
 const CommitTrailerValueOff CommitTrailerValue = "off"
 
-// The trailers of an agent's commits, each on or off, by the trailer's key (#6365): Made-by, Cost, Tokens, Duration, Session, Fixes, Epic, Requested-by, Approved-by, Co-authored-by. Fixes also writes Refs. A key the machine does not know is kept and has no effect; a key no layer sets has its default (every key on, Cost off). Record trailers (Made-by, Session, Fixes, Epic, Requested-by, Approved-by, Co-authored-by): on is tighter. Spend trailers (Cost, Tokens, Duration): off is tighter. Its rules in policy/effective are commitTrailers.<key>.
+// The trailers of an agent's commits, each on or off, by the trailer's key (#6365, #7174): Managed-by, Runtime, Model, Cost, Tokens, Duration, Session, Fixes, Epic, Requested-by, Approved-by. Fixes also writes Refs. Co-authored-by is not a key: it is the runtime's own line, and the app never adds, changes or removes it. A key the machine does not know (also the old Made-by and Co-authored-by) is kept and has no effect; a key no layer sets has its default (every key on, Cost off). Record trailers (Managed-by, Runtime, Model, Session, Fixes, Epic, Requested-by, Approved-by): on is tighter. Spend trailers (Cost, Tokens, Duration): off is tighter. Its rules in policy/effective are commitTrailers.<key>.
 type CommitTrailers map[string]CommitTrailerValue
 
 type ConfigChoice struct {
@@ -3726,6 +3937,17 @@ type ContinueInNewSessionRequest struct {
 	RequestID *UUID `json:"requestID,omitzero"`
 }
 
+// agents/continueOnAccount (#7459): a chat whose allowance ran out continues on another account of the same runtime, which the person chose.
+type ContinueOnAccountRequest struct {
+	AgentID UUID `json:"agentID"`
+
+	// The account to continue on: an added or org account's id, or default for the runtime's own sign-in.
+	AccountID string `json:"accountID"`
+
+	// As StartRequest.requestID: a retry answers as the first try did.
+	RequestID *UUID `json:"requestID,omitzero"`
+}
+
 // When a chat paused by a spent allowance carries on by itself (#1859).
 type ContinueWhenBack struct {
 	// When it sends "continue": the provider's reset time, or the app's next check of the runtime.
@@ -3910,10 +4132,6 @@ type ControlMachine struct {
 	MachineID *string `json:"machineID,omitzero"`
 
 	SignInFrom map[string]MachineRef `json:"signInFrom,omitzero"`
-
-	GitFrom map[string]MachineRef `json:"gitFrom,omitzero"`
-
-	GitAsks []GitAsk `json:"gitAsks,omitzero"`
 
 	Tunnel *MachineTunnel `json:"tunnel,omitzero"`
 
@@ -7068,28 +7286,6 @@ type FoundFolder struct {
 	IsFolder bool `json:"isFolder"`
 }
 
-type GitAsk struct {
-	Server string `json:"server"`
-
-	From MachineRef `json:"from"`
-}
-
-// A credential for one git command. Never printed, logged or kept.
-type GitCredential struct {
-	Username string `json:"username"`
-
-	Password string `json:"password"`
-}
-
-// git/credential, git/fill (#1122): only https, and only the server. `path` is the Go host's, unread by Swift.
-type GitCredentialRequest struct {
-	Protocol string `json:"protocol"`
-
-	Host string `json:"host"`
-
-	Path *string `json:"path,omitzero"`
-}
-
 // The trailer block for a commit or a squash message (#6365), in order, one "Key: value" line each; empty when the rule turns every trailer off.
 type GitTrailers struct {
 	Lines []string `json:"lines"`
@@ -7556,16 +7752,6 @@ type LeaseSnapshot struct {
 
 type LeaseTokenRequest struct {
 	Token string `json:"token"`
-}
-
-type LendGit struct {
-	Host MachineRef `json:"host"`
-
-	From MachineRef `json:"from"`
-
-	Server string `json:"server"`
-
-	Allowed bool `json:"allowed"`
 }
 
 // machines/lendSignIn (T091).
@@ -9694,6 +9880,9 @@ type MachineHello struct {
 type MachineHelloAnswer struct {
 	// The control plane's capabilities (#1748), as control/status says them to a client.
 	Capabilities []string `json:"capabilities,omitzero"`
+
+	// The public IP address this machine's uplink comes from, as the control plane sees it (#7493): where a control plane that the machine's install puts behind NAT is reached, when the machine finds only a private address of its own. Absent when the uplink comes from a private or loopback address, and from an older control plane.
+	Address *string `json:"address,omitzero"`
 }
 
 // One workspace, as its provider last listed it. `state` is running, starting, stopping, stopped or unknown; or failed, for a make that failed, with the provider's `reason` (#3972). `joining` while New Machine waits for it to join the control plane, and `notJoined` once the control plane gave up waiting (#4610). `setup` while it is being made (#6073).
@@ -9705,6 +9894,9 @@ type MachineInfo struct {
 	State string `json:"state"`
 
 	SSH *string `json:"ssh,omitzero"`
+
+	// Its public addresses, IPv4 then IPv6, from the provider's own record (#7466): an agent reaches root@<address> with the Agent Loops ssh key.
+	Addresses []string `json:"addresses,omitzero"`
 
 	Tunnel *bool `json:"tunnel,omitzero"`
 
@@ -9973,6 +10165,15 @@ type MachineSetup struct {
 	ReadyAt *Date `json:"readyAt,omitzero"`
 }
 
+// machines/setupDeliver through machine/machines (#7155): one of the person's machines, the sender, gives another of theirs a set-up script. The control plane sends that machine's setup/deliver as the sender signed it, and keeps nothing of the text.
+type MachineSetupDeliver struct {
+	// The machine's id, as the person's lock names it.
+	Host string `json:"host"`
+
+	// The sender's last try (#7528): it does not send again when this one fails. The control plane then fails that machine's Your set-up, with the reason, when the step has not begun. Absent: a refusal as not in the lock is tried again.
+	Last *bool `json:"last,omitzero"`
+}
+
 // A project folder a pool machine gets: path is the folder on its sources, project the project id it joins there, and sources the person's machines that have it, those online first.
 type MachineSetupProject struct {
 	Path string `json:"path"`
@@ -10072,9 +10273,13 @@ const MachineSetupStepIDSmoke MachineSetupStepID = "smoke"
 const MachineSetupStepIDRoot MachineSetupStepID = "root"
 const MachineSetupStepIDUser MachineSetupStepID = "user"
 
-// machine/setupWork: what the set-up of the machine that asks has left (#6890, #6896). pool: a warm pool made it. claimed: a person claimed it, and from is the first of steps 6 to 8 that waits to run (absent: none does now). done: nothing is left to ask for. projects: the project folders to get, at their last commit. An unclaimed machine does step 6 and stops.
+// machine/setupWork: what the set-up of the machine that asks has left (#6890, #6896). pool: a warm pool made it. claimed: a person claimed it, and from is the first of steps 6 to 8 that waits to run (absent: none does now). done: nothing is left to ask for. projects: the project folders to get, at their last commit. An unclaimed machine does step 6 and stops. waitUser (#7416): Your set-up is on its way to this machine or runs there, and its projects wait for it: ask again, less often each time. userFailed (#7546): Your set-up failed, so the projects, sign-in and smoke do not start: ask again only when Your set-up runs again (Run Again, Send Set-up). from on a machine that no pool made (pool false, #7559): Your set-up is done and the projects step has not begun, so the host runs steps 6 to 8 when no installer asks for the projects (a reboot ended it).
 type MachineSetupWork struct {
 	Pool bool `json:"pool"`
+
+	WaitUser *bool `json:"waitUser,omitzero"`
+
+	UserFailed *bool `json:"userFailed,omitzero"`
 
 	Claimed bool `json:"claimed"`
 
@@ -10419,6 +10624,311 @@ type MaturityLevel string
 const MaturityLevelPilot MaturityLevel = "pilot"
 const MaturityLevelAlpha MaturityLevel = "alpha"
 const MaturityLevelBeta MaturityLevel = "beta"
+
+// A meeting (#7581, epic #7327): one per session, kept in the session's folder on the machine that runs it. Behind the flag meeting-mode.
+type Meeting struct {
+	ID UUID `json:"id"`
+
+	// The meeting's session.
+	AgentID UUID `json:"agentID"`
+
+	// The folder the session works in.
+	Folder URL `json:"folder"`
+
+	// At most 200 characters.
+	Title string `json:"title"`
+
+	State MeetingState `json:"state"`
+
+	StartedAt Date `json:"startedAt"`
+
+	// When it ended; absent while it listens or is paused.
+	EndedAt *Date `json:"endedAt,omitzero"`
+
+	// What it listens to: mic, and call:<bundle id> for a call app. At most 4.
+	Sources []string `json:"sources"`
+
+	// Each voice heard, by its stream and its slot there (#7580: one diarizer per stream). At most 64.
+	Speakers []MeetingSpeaker `json:"speakers"`
+
+	// The seq of the last segment kept; 0 before the first.
+	LastSeq int64 `json:"lastSeq"`
+
+	// The last seq sent to the session's agent as a prompt; 0 before the first.
+	SentThroughSeq int64 `json:"sentThroughSeq"`
+
+	// Its segments aged out (90 days): the notes and the action items stay.
+	SegmentsRemoved *bool `json:"segmentsRemoved,omitzero"`
+
+	UpdatedAt Date `json:"updatedAt"`
+}
+
+// An action item of a meeting (#7581). At most 100 a meeting, 2 KB each. Its quote is word for word in its segments, or the daemon refuses it.
+type MeetingActionItem struct {
+	ID UUID `json:"id"`
+
+	MeetingID UUID `json:"meetingID"`
+
+	// What is to be done; at most 500 characters.
+	Text string `json:"text"`
+
+	// Who does it, as spoken; at most 100 characters.
+	Owner *string `json:"owner,omitzero"`
+
+	// When, as spoken ("by Friday"); at most 100 characters.
+	Due *string `json:"due,omitzero"`
+
+	// The due date as YYYY-MM-DD, when known.
+	DueOn *string `json:"dueOn,omitzero"`
+
+	// The words of the meeting it comes from, word for word in the segments of segmentSeqs; at most 500 characters.
+	Quote string `json:"quote"`
+
+	// The segments the quote is in, at most 20.
+	SegmentSeqs []int64 `json:"segmentSeqs"`
+
+	State MeetingActionItemState `json:"state"`
+
+	Issue *MeetingActionItemIssue `json:"issue,omitzero"`
+
+	// The fields a person changed: the agent may not change them.
+	EditedByPerson []MeetingActionItemField `json:"editedByPerson,omitzero"`
+
+	UpdatedAt Date `json:"updatedAt"`
+}
+
+// A field of an action item that a person can change.
+type MeetingActionItemField string
+
+const MeetingActionItemFieldText MeetingActionItemField = "text"
+const MeetingActionItemFieldOwner MeetingActionItemField = "owner"
+const MeetingActionItemFieldDue MeetingActionItemField = "due"
+const MeetingActionItemFieldDueOn MeetingActionItemField = "dueOn"
+const MeetingActionItemFieldState MeetingActionItemField = "state"
+const MeetingActionItemFieldIssue MeetingActionItemField = "issue"
+
+// The issue an action item was filed as.
+type MeetingActionItemIssue struct {
+	// The forge, as github.
+	Forge string `json:"forge"`
+
+	// owner/name
+	Repo string `json:"repo"`
+
+	Number int64 `json:"number"`
+
+	URL URL `json:"url"`
+}
+
+type MeetingActionItemState string
+
+const MeetingActionItemStateProposed MeetingActionItemState = "proposed"
+const MeetingActionItemStateApproved MeetingActionItemState = "approved"
+const MeetingActionItemStateDismissed MeetingActionItemState = "dismissed"
+const MeetingActionItemStateFiled MeetingActionItemState = "filed"
+
+// meetings/append: the listening client's final segments. A segment with a seq after the last is new and must follow it with no gap; one with an earlier seq is a changed speaker of that segment (its text is not changed).
+type MeetingAppendRequest struct {
+	MeetingID UUID `json:"meetingID"`
+
+	// At most 200.
+	Segments []MeetingSegment `json:"segments"`
+}
+
+// What meetings/append kept.
+type MeetingAppended struct {
+	// The last seq kept.
+	LastSeq int64 `json:"lastSeq"`
+
+	// The last seq sent to the agent.
+	SentThroughSeq int64 `json:"sentThroughSeq"`
+}
+
+// Who wrote a change.
+type MeetingAuthor string
+
+const MeetingAuthorAgent MeetingAuthor = "agent"
+const MeetingAuthorPerson MeetingAuthor = "person"
+
+// meetings/changed: what changed in a meeting, sent to every client.
+type MeetingChangedNotification struct {
+	MeetingID UUID `json:"meetingID"`
+
+	Meeting *Meeting `json:"meeting,omitzero"`
+
+	Notes *MeetingNotes `json:"notes,omitzero"`
+
+	// The items that changed.
+	ActionItems []MeetingActionItem `json:"actionItems,omitzero"`
+
+	// The last seq kept: a client reads the segments after its own.
+	LastSeq int64 `json:"lastSeq"`
+}
+
+// meetings/list: a page of this machine's meetings, newest first.
+type MeetingListRequest struct {
+	// The cursor of the page before.
+	Cursor *string `json:"cursor,omitzero"`
+
+	// At most 50; 50 when absent.
+	Limit *int64 `json:"limit,omitzero"`
+}
+
+// A meeting's notes (#7581): Markdown, at most 64 KB. The last 20 revisions are kept.
+type MeetingNotes struct {
+	MeetingID UUID `json:"meetingID"`
+
+	Markdown string `json:"markdown"`
+
+	// 1 for the first write; each write adds 1.
+	Revision int64 `json:"revision"`
+
+	UpdatedAt Date `json:"updatedAt"`
+
+	UpdatedBy MeetingAuthor `json:"updatedBy"`
+}
+
+// A page of meetings, newest first.
+type MeetingPage struct {
+	Meetings []Meeting `json:"meetings"`
+
+	// Pass it as the next request's cursor; absent on the last page.
+	Cursor *string `json:"cursor,omitzero"`
+}
+
+// meetings/read: a meeting with its notes and its action items.
+type MeetingRead struct {
+	Meeting Meeting `json:"meeting"`
+
+	// Absent before the first write.
+	Notes *MeetingNotes `json:"notes,omitzero"`
+
+	ActionItems []MeetingActionItem `json:"actionItems"`
+}
+
+// A meeting, by its id.
+type MeetingRequest struct {
+	MeetingID UUID `json:"meetingID"`
+}
+
+// A final piece of a meeting's words, from one stream (#7581). At most 6,000 a meeting (a 4-hour cap), 1,500 characters of text each. Audio is never kept.
+type MeetingSegment struct {
+	// 1 for the first segment of the meeting; each next one adds 1.
+	Seq int64 `json:"seq"`
+
+	// The stream it was heard on: mic, or call:<bundle id>.
+	Source string `json:"source"`
+
+	// Seconds from the meeting's start.
+	AudioStart float64 `json:"audioStart"`
+
+	// Seconds from the meeting's start.
+	AudioEnd float64 `json:"audioEnd"`
+
+	Text string `json:"text"`
+
+	// The diarizer's slot in this segment's own stream: the speaker is (source, speakerIndex), so a slot of mic and one of call never collide (#7580).
+	SpeakerIndex *int64 `json:"speakerIndex,omitzero"`
+
+	// The diarizer will not change the speaker any more.
+	SpeakerSettled bool `json:"speakerSettled"`
+}
+
+// A page of segments, oldest first.
+type MeetingSegmentsPage struct {
+	Segments []MeetingSegment `json:"segments"`
+
+	// There are segments after the last of this page.
+	More bool `json:"more"`
+}
+
+// meetings/segments: the segments after a seq.
+type MeetingSegmentsRequest struct {
+	MeetingID UUID `json:"meetingID"`
+
+	// 0 for the first.
+	AfterSeq int64 `json:"afterSeq"`
+
+	// At most 200; 200 when absent.
+	Limit *int64 `json:"limit,omitzero"`
+}
+
+// meetings/setActionItem: a person's new or changed action item. Each field it changes is then the person's (editedByPerson).
+type MeetingSetActionItemRequest struct {
+	MeetingID UUID `json:"meetingID"`
+
+	Item MeetingActionItem `json:"item"`
+
+	// The updatedAt of the item the change was made to; absent for a new item. Refused (changedElsewhere) when the item changed since.
+	BaseUpdatedAt *Date `json:"baseUpdatedAt,omitzero"`
+}
+
+// meetings/setNotes: a person's notes. Refused (changedElsewhere) when the notes moved past baseRevision.
+type MeetingSetNotesRequest struct {
+	MeetingID UUID `json:"meetingID"`
+
+	Markdown string `json:"markdown"`
+
+	// The revision the change was made to; 0 before the first write.
+	BaseRevision int64 `json:"baseRevision"`
+}
+
+// meetings/setSpeaker: a name for a voice, for the whole meeting.
+type MeetingSetSpeakerRequest struct {
+	MeetingID UUID `json:"meetingID"`
+
+	// The voice's stream.
+	Source string `json:"source"`
+
+	// Its slot in that stream.
+	Index int64 `json:"index"`
+
+	// At most 100 characters; empty takes the name off.
+	Name string `json:"name"`
+}
+
+// meetings/setState: listen, pause or end. An ended meeting does not start again.
+type MeetingSetStateRequest struct {
+	MeetingID UUID `json:"meetingID"`
+
+	State MeetingState `json:"state"`
+}
+
+// A voice of a meeting: its stream and its slot there, and its name once the agent or a person gives one. Shown as Speaker <n> with no name.
+type MeetingSpeaker struct {
+	Source string `json:"source"`
+
+	Index int64 `json:"index"`
+
+	Name *string `json:"name,omitzero"`
+}
+
+// meetings/start: a new meeting, with a new session in the folder for its agent.
+type MeetingStartRequest struct {
+	Folder URL `json:"folder"`
+
+	// At most 200 characters; "Meeting" and the time when absent.
+	Title *string `json:"title,omitzero"`
+
+	// mic, and call:<bundle id> for a call app. 1 to 4.
+	Sources []string `json:"sources"`
+
+	// The session's runtime; auto when absent.
+	RuntimeID *string `json:"runtimeID,omitzero"`
+}
+
+// The meeting meetings/start made, and its session.
+type MeetingStarted struct {
+	Meeting Meeting `json:"meeting"`
+
+	AgentID UUID `json:"agentID"`
+}
+
+type MeetingState string
+
+const MeetingStateListening MeetingState = "listening"
+const MeetingStatePaused MeetingState = "paused"
+const MeetingStateEnded MeetingState = "ended"
 
 // The kernel's memory pressure (#4578): macOS kern.memorystatus_vm_pressure_level, or Linux PSI memory (warn when some avg10 is 10% or more, critical when full avg10 is 10% or more).
 type MemoryPressure string
@@ -11477,6 +11987,41 @@ type PagesChangedNotification struct {
 	Folders []string `json:"folders"`
 }
 
+type ParentNotice struct {
+	ID UUID `json:"id"`
+
+	About UUID `json:"about"`
+
+	Change ParentNoticeChange `json:"change"`
+
+	At Date `json:"at"`
+
+	// For a child's parent or noParent: the lead it worked under before the first change it has not been told yet, so a move there and back tells nothing.
+	Was *UUID `json:"was,omitzero"`
+
+	// Taken by a turn that a restart cut off: said again, with a note that it is.
+	Again *bool `json:"again,omitzero"`
+}
+
+// parent: the recipient now works under the lead about; noParent: it has no lead now; joined: about now works under the recipient; left: about no longer does.
+type ParentNoticeChange string
+
+const ParentNoticeChangeParent ParentNoticeChange = "parent"
+const ParentNoticeChangeNoParent ParentNoticeChange = "noParent"
+const ParentNoticeChangeJoined ParentNoticeChange = "joined"
+const ParentNoticeChangeLeft ParentNoticeChange = "left"
+
+// An outbox (#7538): pending goes with the next turn, in the same record write that takes its words; sent is what that turn took, until the runtime answers it.
+type ParentNotices struct {
+	Pending []ParentNotice `json:"pending,omitzero"`
+
+	More *int64 `json:"more,omitzero"`
+
+	SentWith *UUID `json:"sentWith,omitzero"`
+
+	Sent []ParentNotice `json:"sent,omitzero"`
+}
+
 // One name in the person's own pass-through list (#998, FR-011a), as runtime-environment.json has it.
 type PassThroughName struct {
 	// A variable's name, or a prefix ending in *.
@@ -12458,7 +13003,9 @@ const PolicyRuleNameMarketplacesAllowed PolicyRuleName = "marketplaces.allowed"
 const PolicyRuleNameMarketplacesCustomServers PolicyRuleName = "marketplaces.customServers"
 const PolicyRuleNameEnvironment PolicyRuleName = "environment"
 const PolicyRuleNameConnectorTools PolicyRuleName = "connectorTools"
-const PolicyRuleNameCommitTrailersMadeBy PolicyRuleName = "commitTrailers.Made-by"
+const PolicyRuleNameCommitTrailersManagedBy PolicyRuleName = "commitTrailers.Managed-by"
+const PolicyRuleNameCommitTrailersRuntime PolicyRuleName = "commitTrailers.Runtime"
+const PolicyRuleNameCommitTrailersModel PolicyRuleName = "commitTrailers.Model"
 const PolicyRuleNameCommitTrailersCost PolicyRuleName = "commitTrailers.Cost"
 const PolicyRuleNameCommitTrailersTokens PolicyRuleName = "commitTrailers.Tokens"
 const PolicyRuleNameCommitTrailersDuration PolicyRuleName = "commitTrailers.Duration"
@@ -12467,7 +13014,6 @@ const PolicyRuleNameCommitTrailersFixes PolicyRuleName = "commitTrailers.Fixes"
 const PolicyRuleNameCommitTrailersEpic PolicyRuleName = "commitTrailers.Epic"
 const PolicyRuleNameCommitTrailersRequestedBy PolicyRuleName = "commitTrailers.Requested-by"
 const PolicyRuleNameCommitTrailersApprovedBy PolicyRuleName = "commitTrailers.Approved-by"
-const PolicyRuleNameCommitTrailersCoAuthoredBy PolicyRuleName = "commitTrailers.Co-authored-by"
 
 // The rules a layer sets (#2957, data-model.md "PolicyRules"): the same shape on the organisation, your and a folder's layer (FR-002). Every field is optional: absent sets nothing.
 type PolicyRules struct {
@@ -12914,7 +13460,7 @@ type ProviderCarried struct {
 
 	Error *string `json:"error,omitzero"`
 
-	// Why it failed, for a client to say (#6072, W2b): denied (the person chose Deny), disconnected (the provider no longer takes the connection: it was removed there, or its refresh was refused), scope_missing (the person gave less than Agent Loops needs), account_inactive (the account can't make machines yet, such as no payment method), expired (the sign-in was not finished in time; start again).
+	// Why it failed, for a client to say (#6072, W2b): denied (the person chose Deny), disconnected (the provider no longer takes the connection: it was removed there, or its refresh was refused), scope_missing (the person gave less than Agent Loops needs), account_inactive (the account can't make machines yet, such as no payment method), expired (the sign-in was not finished in time; start again), setup_script_changed (#7157: the person's root.sh is not the text a client of their lock approved for new machines, so the make stopped).
 	Code *string `json:"code,omitzero"`
 }
 
@@ -14084,6 +14630,12 @@ type RequestSecretUse struct {
 
 	// The machine is Linux (#4058): the value opens only with the release key its control plane keeps, which the control plane gives only for an approval the person's client signed. An answer that allows the use carries approval; one without it is refused.
 	NeedsSignature *bool `json:"needsSignature,omitzero"`
+
+	// For pairing (#6875): the client id the terminal pairs with, which the approving window names in its addClient.
+	Client *string `json:"client,omitzero"`
+
+	// For pairing (#6875): the terminal's machine lock key (P-256, X9.63), which the approving window puts on the lock as an addClient.
+	Key Data `json:"key,omitzero"`
 }
 
 // A person's answer to a secret's use (#4015). once allows this use; session every use at this place until the session ends or is archived; always adds a grant for this place, for every session; hour (terminal only, #4179) allows every call of agents-secret NAME with no session's grant for one hour, kept in agentsd's memory only; deny refuses it. A terminal's use takes once, hour or deny. Only the control and device roles answer.
@@ -14092,6 +14644,9 @@ type RequestSecretUseAnswer struct {
 
 	// The answering client's signature of its answer (#4058), required when the request says needsSignature and the action is not deny: method secrets/approveUse, params the JSON text {"request":<the request's id>,"name","use","place","action"} as the request names them, and a LockSignature to this machine by the client's lock key. The machine checks it against its lock and sends it to the control plane, which gives the release key only for a fresh one it has not seen.
 	Approval *LockDelivery `json:"approval,omitzero"`
+
+	// For pairing (#6875): the client code that the approving window made with clients/startPairing for this Mac's control plane, required with once. agentsd gives it to the terminal that asked, and keeps it nowhere.
+	PairingCode *string `json:"pairingCode,omitzero"`
 }
 
 type RequestSource string
@@ -15018,7 +15573,7 @@ type SecretTerminalValue struct {
 	Words *string `json:"words,omitzero"`
 }
 
-// What agentsd does with a secret with Ask before use (#4015): fill types it into a page (fill_secret), ci sends it to GitHub (set_ci_secret), mcp adds it to an HTTP MCP server's header or URL on each request agentsd sends the server for a session (#4120). terminal (#4179) prints a secret that does not ask to `agents-secret NAME` run with no session's grant, such as from a terminal: agentsd cannot tell that caller from an agent that dropped its grant. account (#4163) is not a secret's use: manage_accounts reads an account with Ask before use; the request names the account, and Always Approve turns its Ask before use off. browser and screen (#4264) are not a secret's use either: an agent's lease of the browser or the screen on a machine whose Browser or Desktop control is ask; name is the browser or the screen, place the machine, app the app drive_screen names, and Always Approve sets the setting to always. workflow and connector (#4538) are not a secret's use either: an agent asks to turn on a workflow of its folder that is the person's to turn on (manage_workflows enable), or to approve a server waiting in its folder's .agents/mcp.json (manage_connectors approve); name is the workflow's id or the server's name, place the folder's name, digest the server's entry as the agent saw it. Their answers are once (Approve: agentsd makes the change as the person) and deny.
+// What agentsd does with a secret with Ask before use (#4015): fill types it into a page (fill_secret), ci sends it to GitHub (set_ci_secret), mcp adds it to an HTTP MCP server's header or URL on each request agentsd sends the server for a session (#4120). terminal (#4179) prints a secret that does not ask to `agents-secret NAME` run with no session's grant, such as from a terminal: agentsd cannot tell that caller from an agent that dropped its grant. account (#4163) is not a secret's use: manage_accounts reads an account with Ask before use; the request names the account, and Always Approve turns its Ask before use off. browser and screen (#4264) are not a secret's use either: an agent's lease of the browser or the screen on a machine whose Browser or Desktop control is ask; name is the browser or the screen, place the machine, app the app drive_screen names, and Always Approve sets the setting to always. workflow and connector (#4538) are not a secret's use either: an agent asks to turn on a workflow of its folder that is the person's to turn on (manage_workflows enable), or to approve a server waiting in its folder's .agents/mcp.json (manage_connectors approve); name is the workflow's id or the server's name, place the folder's name, digest the server's entry as the agent saw it. Their answers are once (Approve: agentsd makes the change as the person) and deny. pairing (#6875) is not a secret's use either: loops with no pairing asks this Mac's agentsd for one (clients/pairTerminal); name is the terminal's name, place the command that asked, client and key the client id and lock key it will pair with. Its answers are once (Approve, only from Agent Loops on this Mac, with pairingCode) and deny.
 type SecretUse string
 
 const SecretUseFill SecretUse = "fill"
@@ -15030,6 +15585,7 @@ const SecretUseBrowser SecretUse = "browser"
 const SecretUseScreen SecretUse = "screen"
 const SecretUseWorkflow SecretUse = "workflow"
 const SecretUseConnector SecretUse = "connector"
+const SecretUsePairing SecretUse = "pairing"
 
 // control/secretsLeft (#1760, FR-026): to the person's own clients, when one of their machines was removed with secrets on it.
 type SecretsLeft struct {
@@ -15388,6 +15944,27 @@ type SessionNotice struct {
 	Detail *string `json:"detail,omitzero"`
 }
 
+// Where a session is put in the tree (#7538): under the lead id, or at the top when id is absent.
+type SessionParent struct {
+	ID *UUID `json:"id,omitzero"`
+
+	SetAt Date `json:"setAt"`
+
+	SetBy SessionParentSetBy `json:"setBy"`
+}
+
+type SessionParentSetBy string
+
+const SessionParentSetByPerson SessionParentSetBy = "person"
+const SessionParentSetByAgent SessionParentSetBy = "agent"
+
+// under: under parentID; top: at the top, the starter ignored; starter: back under its starter (parent cleared).
+type SessionPlacement string
+
+const SessionPlacementUnder SessionPlacement = "under"
+const SessionPlacementTop SessionPlacement = "top"
+const SessionPlacementStarter SessionPlacement = "starter"
+
 // A session's priority (#5846): the same three levels as an issue's (ForgeItem.priority), in the order high, medium, none, low.
 type SessionPriority string
 
@@ -15575,6 +16152,18 @@ type SetPRCostCommentRequest struct {
 	PrCostComment PRCostComment `json:"prCostComment"`
 }
 
+// agents/setParent (#7538).
+type SetParentRequest struct {
+	AgentID UUID `json:"agentID"`
+
+	Placement SessionPlacement `json:"placement"`
+
+	ParentID *UUID `json:"parentID,omitzero"`
+
+	// The child's revision the client saw; a later one refuses with changedElsewhere.
+	ExpectedRevision *int64 `json:"expectedRevision,omitzero"`
+}
+
 type SetPinnedRequest struct {
 	Folder URL `json:"folder"`
 
@@ -15636,7 +16225,42 @@ type SetupApprove struct {
 	Approval LockRecord `json:"approval"`
 }
 
-// One set-up script on this machine (#7167): root (root.sh) or setup (setup.sh) in ~/.agents/machine-setup/. present: the file is there. text, hash and size are the file as it is now (hash: SHA-256 in lower-case hexadecimal); problem says why they are absent from a file that is there (over its limit, or unreadable). approvedText and approvedHash are the text a client approved last, and approvals the records in force for it, one a scope. changed: the file is not the approved text, so it is not used until a client approves it. nextSeq is the number to sign the next approval with.
+// setup/deliver (#7155, gate 1 of #7151, section 3): a machine of the person's lock, the sender, gives this machine a set-up script with its approval, signed for this machine. This machine takes it only by the four rules of section 3 (setupdelivery.go), keeps it in <root>/machine-setup.json, and runs it as its user, as the step user (Your set-up). made: an automatic send to a machine as it is made or claimed, with an approval of scope made, which a machine takes once.
+type SetupDeliver struct {
+	Script string `json:"script"`
+
+	Text string `json:"text"`
+
+	Approval LockRecord `json:"approval"`
+
+	Made *bool `json:"made,omitzero"`
+}
+
+// setup/rootAgain (#7159): read root.sh's result on this machine again.
+type SetupRootAgain struct {
+	// Then run the steps after Root set-up too, as Try Again does after it failed.
+	Rest bool `json:"rest"`
+}
+
+// setup/rootCommand (#7159): the command a person runs as root on a machine that cannot run root.sh by itself, such as their own server or a made machine whose root.sh failed. It runs the root.sh that a client approved for made machines, once, and leaves its result where Root set-up reads it.
+type SetupRootCommand struct {
+	// One line to paste in a terminal there: the script in base64, run with sudo.
+	Command string `json:"command"`
+
+	// The hash of the root.sh it runs.
+	Hash string `json:"hash"`
+}
+
+// setup/rootLog (#7159): this machine's root.log, from its last root.sh run, for Show Log.
+type SetupRootLog struct {
+	// The end of root.log, at most 64 KiB; empty when there is none.
+	Text string `json:"text"`
+
+	// The log is longer, and text is only its end.
+	Cut bool `json:"cut"`
+}
+
+// One set-up script on this machine (#7167): root (root.sh) or setup (setup.sh) in ~/.agents/machine-setup/. present: the file is there. text, hash and size are the file as it is now (hash: SHA-256 in lower-case hexadecimal); problem says why they are absent from a file that is there (over its limit, or unreadable). approvedText and approvedHash are the text a client approved last, and approvals the records in force for it, one a scope. changed: the file is not the approved text, so it is not used until a client approves it. nextSeq is the number to sign the next approval with. example is the ready-made example of this script, from the pinned agentloops-dev/dotagents (scripts/<name>.sh, #7461): what New root.sh and New setup.sh write; left out when this machine has no copy of the pinned tag yet.
 type SetupScript struct {
 	Name string `json:"name"`
 
@@ -15649,6 +16273,8 @@ type SetupScript struct {
 	Size *int64 `json:"size,omitzero"`
 
 	Problem *string `json:"problem,omitzero"`
+
+	Example *string `json:"example,omitzero"`
 
 	ApprovedText *string `json:"approvedText,omitzero"`
 
@@ -15671,6 +16297,27 @@ type SetupScriptApproval struct {
 // setup/scripts (#7167): this machine's two set-up scripts, root then setup, as a client reads them to approve one.
 type SetupScripts struct {
 	Scripts []SetupScript `json:"scripts"`
+
+	// The folder the scripts are in, ~/.agents/machine-setup/ of this machine's personal home, as an absolute path (#7512): Settings ▸ Machines ▸ Machine scripts opens it and writes an example there. Left out when the machine has no personal home (a scratch root), which has no scripts.
+	Folder *string `json:"folder,omitzero"`
+}
+
+// setup/send (#7155, gate 1 of #7151, section 3): Send Set-up. A client of the person's lock asks this machine, the sender, to send its setup.sh to the machine host and run it there. approval is a setup.script record of setup, scope m:<host>, of the file as it is now: the sender keeps it as setup/approve does, then sends the approved text, signed by this machine for host, through the control plane (machines/setupDeliver). It answers when host took it, which then runs it.
+type SetupSend struct {
+	// The machine's id, as the person's lock names it.
+	Host string `json:"host"`
+
+	Approval LockRecord `json:"approval"`
+}
+
+// setup/wanted (#7155): the control plane asks the machine that carries a provider whether it sends the person's setup.sh to a machine it made (or a warm pool's machine that a person claimed). It carries no text; the sender sends it only with an approval of scope made, and the target takes one such send.
+type SetupWanted struct {
+	Host string `json:"host"`
+}
+
+// setup/wanted's answer (#7416): sending says that the sender has a setup.sh approved for new machines, and sends it now.
+type SetupWantedAnswer struct {
+	Sending bool `json:"sending"`
 }
 
 type SharedInstructions struct {
@@ -16458,6 +17105,9 @@ type StartRequest struct {
 
 	// The line the control plane made when Auto picked this machine (#5375), "Auto chose Mac mini: you last started here.": the session's chat says it first. A client sends what sessions/previewStart gave in text.
 	AutoChose *string `json:"autoChose,omitzero"`
+
+	// Puts the new session under this lead at once (#7538), with the checks of agents/setParent: a live session on this host labelled lead, within the depth and child limits.
+	ParentID *UUID `json:"parentID,omitzero"`
 }
 
 // The agent on another machine that started a session with start_session (#2887). The control plane writes machine and who; the asking host writes agent.
@@ -16727,6 +17377,31 @@ type TeamWorkflowRuns struct {
 // console/teamWorkflows' answer (#1804, M6): every bot, for an admin.
 type TeamWorkflows struct {
 	Bots []TeamBot `json:"bots"`
+}
+
+// clients/pairTerminal's answer: the code, once a person approved it; else the open request it waits on, and the words to say while it waits.
+type TerminalPairingReply struct {
+	// A one-use client code, as loops auth login takes it.
+	Code *string `json:"code,omitzero"`
+
+	Request *UUID `json:"request,omitzero"`
+
+	Words *string `json:"words,omitzero"`
+}
+
+// clients/pairTerminal (#6875): loops with no pairing on this Mac asks for one.
+type TerminalPairingRequest struct {
+	// The terminal's name, as it pairs: loops on <host name>.
+	Name string `json:"name"`
+
+	// The client id it pairs with. The same id again waits on the same request.
+	Client string `json:"client"`
+
+	// Its machine lock key (P-256, X9.63).
+	Key Data `json:"key"`
+
+	// The name of the program that asked, as it says it: the request's place. agentsd cannot check it.
+	Command *string `json:"command,omitzero"`
 }
 
 type TimeBucket struct {
@@ -17919,6 +18594,9 @@ type WarmPool struct {
 	// Why the pool stopped making, in the provider's words.
 	StoppedBecause *string `json:"stoppedBecause,omitzero"`
 
+	// The script the pool waits for the person to review (#7157): root when the machine that carries its provider refused a make because root.sh is not the text a client of the person's lock approved for new machines (code setup_script_changed). The pool is stopped until a pool/set with reviewed. Read-only.
+	Review *string `json:"review,omitzero"`
+
 	// Why a pool that is keeping makes no machine now: no machine that has its projects is online (#6890).
 	WaitingBecause *string `json:"waitingBecause,omitzero"`
 
@@ -18026,6 +18704,9 @@ type WarmPoolSet struct {
 	ReplaceAfter *float64 `json:"replaceAfter,omitzero"`
 
 	Hours *WarmPoolHours `json:"hours,omitzero"`
+
+	// The person approved the pool's changed root.sh (#7157): the pool makes machines again, and replaces its unclaimed machines made before now, which ran the older text.
+	Reviewed *bool `json:"reviewed,omitzero"`
 }
 
 // keeping: the pool makes and replaces. off-hours: outside its hours. stopped: three makes failed in a row, see stoppedBecause. empty: minReady is 0.
@@ -18180,6 +18861,8 @@ type WorkTimeline struct {
 
 	Partial *bool `json:"partial,omitzero"`
 
+	Schedule *WorkTimelineSchedule `json:"schedule,omitzero"`
+
 	// What was read (#7029): one entry per repo, as forge:name (github:example/shop). Two machines with the same scopes give the same epics, so a client asks one of them. Absent when a repo could not be read, and from an earlier daemon.
 	Scopes []string `json:"scopes,omitzero"`
 }
@@ -18253,7 +18936,7 @@ type WorkTimelineRelease struct {
 	URL *string `json:"url,omitzero"`
 }
 
-// work/timeline (#4172): the epics of a project (its id, from a folder's .agents/folder.json) that overlap from to to. With first, the answer can be partial (#7027): ask again without it for all of it.
+// work/timeline (#4172): the epics of a project (its id, from a folder's .agents/folder.json) that overlap from to to. With first, the answer can be partial (#7027): ask again without it for all of it. With onHold (#7335), the open epics on hold come too, each with its children and with no forecast, after the others in the order of forge/next; with none, an epic on hold is left out and its children are not read. Either way they are not in the forecast's history.
 type WorkTimelineRequest struct {
 	Project string `json:"project"`
 
@@ -18262,6 +18945,53 @@ type WorkTimelineRequest struct {
 	To Date `json:"to"`
 
 	First *bool `json:"first,omitzero"`
+
+	OnHold *bool `json:"onHold,omitzero"`
+
+	// How many epics are worked at once in the schedule (#7525), 1 to 20: 3 when absent.
+	Places *int64 `json:"places,omitzero"`
+}
+
+// work/timeline's schedule (#7525, epic #7067): when each open epic starts and finishes if places epics are worked at once. A started epic holds a place from its start to its predicted finish, whatever blocks it. The others take the free places in the order of forge/next (level: epic), each no earlier than now and the predicted finish of its last open epic blocker; places that free at the same time go to the next in that order. readAt is the time of the read. incomplete says a list was cut short (more than 100 open epics, a repo not read): no row is dated then. Rows: the started epics, then those planned, by planned start, then those with no date; ties in the order of forge/next. Absent from a partial answer and from an earlier daemon.
+type WorkTimelineSchedule struct {
+	Places int64 `json:"places"`
+
+	ReadAt Date `json:"readAt"`
+
+	Incomplete *bool `json:"incomplete,omitzero"`
+
+	Rows []WorkTimelineScheduleRow `json:"rows"`
+}
+
+// Why an open epic has no date in the schedule (#7525): onHold, it is on hold (shown only with onHold); noIssues, it has no sub-issues; blockerOnHold, an open blocker is on hold; blockerNotEpic, an open blocker is not an epic; blockerNotRead, an open blocker epic is not in the read (another project, or more than the read gives); cycle, its blockers lead back to it; blockerUndated, an open blocker epic has no date; noForecast, there is too little history to forecast it; noPlace, no place frees (every place is held by a started epic with no forecast); incomplete, a list was cut short.
+type WorkTimelineScheduleReason string
+
+const WorkTimelineScheduleReasonOnHold WorkTimelineScheduleReason = "onHold"
+const WorkTimelineScheduleReasonNoIssues WorkTimelineScheduleReason = "noIssues"
+const WorkTimelineScheduleReasonBlockerOnHold WorkTimelineScheduleReason = "blockerOnHold"
+const WorkTimelineScheduleReasonBlockerNotEpic WorkTimelineScheduleReason = "blockerNotEpic"
+const WorkTimelineScheduleReasonBlockerNotRead WorkTimelineScheduleReason = "blockerNotRead"
+const WorkTimelineScheduleReasonCycle WorkTimelineScheduleReason = "cycle"
+const WorkTimelineScheduleReasonBlockerUndated WorkTimelineScheduleReason = "blockerUndated"
+const WorkTimelineScheduleReasonNoForecast WorkTimelineScheduleReason = "noForecast"
+const WorkTimelineScheduleReasonNoPlace WorkTimelineScheduleReason = "noPlace"
+const WorkTimelineScheduleReasonIncomplete WorkTimelineScheduleReason = "incomplete"
+
+// An open epic in the schedule (#7525). startedAt is its observed start, the earliest of its children's, and startSource where that came from: session (a session linked to the child in lineage), pullRequest (a pull request that closes the child opened) or closed (the child closed); both absent while it has not started. plannedStart is when a not-started epic takes a place. finish is its predicted finish: low to high the band, mid the P50; for a planned epic its forecast from its planned start. blockers are its open blockers, of every kind, for the arrows. reason says why it has no finish; absent when it has one.
+type WorkTimelineScheduleRow struct {
+	Epic LineageNode `json:"epic"`
+
+	StartedAt *Date `json:"startedAt,omitzero"`
+
+	StartSource *string `json:"startSource,omitzero"`
+
+	PlannedStart *Date `json:"plannedStart,omitzero"`
+
+	Finish *WorkTimelineForecast `json:"finish,omitzero"`
+
+	Blockers []LineageNode `json:"blockers,omitzero"`
+
+	Reason *WorkTimelineScheduleReason `json:"reason,omitzero"`
 }
 
 // A line of an epic in work/timeline (#4172): from its first child's start to its last child's close.
@@ -18308,6 +19038,12 @@ type Workflow struct {
 
 	// runs-on: (#1761, FR-034), which replaced hosts:: labels a machine must all have to run it: its id, its os (macos, linux), its provider, and its user's or bot's name. None runs on every machine of each person who turned it on.
 	RunsOn []string `json:"runsOn,omitzero"`
+
+	// to: (#6954): the sessions an agent: labelled workflow sends its words to. Present only on such a workflow, whose mode is new on the wire, so a client that does not know labelled still reads the list; a client that does shows it as labelled.
+	To *WorkflowTo `json:"to,omitzero"`
+
+	// deliver: (#6954), for agent: labelled. Absent is next-turn.
+	Deliver *WorkflowDeliver `json:"deliver,omitzero"`
 }
 
 type WorkflowApproval struct {
@@ -18334,6 +19070,21 @@ type WorkflowArchiveRequest struct {
 	Archived bool `json:"archived"`
 }
 
+// One active broadcast of an agent: labelled workflow (#6954).
+type WorkflowBroadcastStatus struct {
+	ID UUID `json:"id"`
+
+	StartedAt Date `json:"startedAt"`
+
+	EndsAt Date `json:"endsAt"`
+
+	// The sessions that match it now.
+	Reachable int64 `json:"reachable"`
+
+	// The sessions that were told.
+	Read int64 `json:"read"`
+}
+
 type WorkflowCause struct {
 	ByHand *struct{} `json:"byHand,omitzero"`
 
@@ -18355,6 +19106,13 @@ type WorkflowClaim struct {
 type WorkflowClaimed struct {
 	Won bool `json:"won"`
 }
+
+// How an agent: labelled workflow's words reach a session (#6954). next-turn: with its next turn, and an idle session is not started. steer: into a running turn at once, else with its next turn. wake: also starts an idle session. steer and wake reach 20 sessions at most at once; the rest hear it with their next turn.
+type WorkflowDeliver string
+
+const WorkflowDeliverNextTurn WorkflowDeliver = "next-turn"
+const WorkflowDeliverSteer WorkflowDeliver = "steer"
+const WorkflowDeliverWake WorkflowDeliver = "wake"
 
 type WorkflowEnableRequest struct {
 	Folder URL `json:"folder"`
@@ -18670,6 +19428,9 @@ type WorkflowSummary struct {
 
 	// Where this machine's approval came from when it is another machine's of the same person (#5462), such as "Approved by you on Studio, 2026-11-14".
 	ApprovedFrom *string `json:"approvedFrom,omitzero"`
+
+	// An agent: labelled workflow's broadcasts that are active (#6954), at most 10, the newest first. Who read each is not sent.
+	Broadcasts []WorkflowBroadcastStatus `json:"broadcasts,omitzero"`
 }
 
 // UnmarshalJSON reads a field that is missing as its default.
@@ -18681,6 +19442,21 @@ func (v *WorkflowSummary) UnmarshalJSON(b []byte) error {
 	}
 	*v = WorkflowSummary(p)
 	return nil
+}
+
+// to: (#6954, the spike #6952): a session matches when it is in the workflow's folder, has every label of labels, none of notLabels, and the runtime and account when they are given.
+type WorkflowTo struct {
+	// Each a session label the session must have. At least one.
+	Labels []string `json:"labels"`
+
+	// not-labels: a session with any of them does not match.
+	NotLabels []string `json:"notLabels,omitzero"`
+
+	// The runtime that ran the session, also when Auto chose it.
+	Runtime *string `json:"runtime,omitzero"`
+
+	// An account profile's id, or default for the runtime's own sign-in.
+	Account *string `json:"account,omitzero"`
 }
 
 type WorkflowTrigger WorkflowTriggerStored

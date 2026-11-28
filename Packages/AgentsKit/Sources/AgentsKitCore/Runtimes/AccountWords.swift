@@ -24,4 +24,15 @@ public enum AccountWords {
         if let unusable = row.unusable { return "Not usable: \(unusable)" }
         return row.state.isOut ? row.memberLine(now: now) : fallback
     }
+
+    /// An account named with its runtime, as the Runtimes rows name it: "Claude · Personal" (#7459).
+    public static func continueTitle(_ runtimeID: String, account: String) -> String {
+        "\(PoolWords.runtimeName(runtimeID)) · \(account)"
+    }
+
+    /// The button under "Its allowance ran out" for another account (#7459).
+    public static func continueOn(_ title: String) -> String { "Continue on \(title)" }
+
+    /// Its help: what it does, and that nothing else changes accounts.
+    public static let continueOnHelp = "Carries on this chat on that account."
 }

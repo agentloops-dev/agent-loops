@@ -82,6 +82,15 @@ func (d *Daemon) offerRelay(o wire.RelayOffer) error {
 	if !lentRuntimes[o.Runtime] {
 		return Invalid("relay/offer: %s's sign-in is not lent", o.Runtime)
 	}
+	if o.Runtime == "claude" && d.storedClaudeSignIn() != "" {
+		// This server has its own sign-in, which wins (#7470): the lend is not opened.
+		log.Printf("relay: claude's lent sign-in is not opened: this server has its own")
+		return nil
+	}
+	if o.Runtime == "codex" && d.ownCodexSignIn() {
+		log.Printf("relay: codex's lent sign-in is not opened: this server has its own")
+		return nil
+	}
 	if err := d.openRelay(o); err != nil {
 		return err
 	}
@@ -129,6 +138,7 @@ func (d *Daemon) openRelay(o wire.RelayOffer) error {
 			return err
 		}
 	}
+	d.releaseSignInHolds(o.Runtime) // a lend is a sign-in too: what waited for one goes (#7609)
 	d.goJob("relay gate", func() {
 		for {
 			c, err := ln.Accept()
@@ -206,6 +216,10 @@ func (d *Daemon) keepRelay(runtime string, k *keptRelay) error {
 // connected; the lender's kept hash answers the kept stand-in (#7170).
 func (d *Daemon) reopenRelays() {
 	for runtime, k := range d.keptRelays() {
+		if runtime == "claude" && d.storedClaudeSignIn() != "" || runtime == "codex" && d.ownCodexSignIn() {
+			d.dropRelay(runtime, "this server has its own sign-in")
+			continue
+		}
 		if err := d.openRelay(wire.RelayOffer{Runtime: runtime, StandIn: k.StandIn, CaCertificate: k.CaCertificate}); err != nil {
 			log.Printf("relay: %s's lent sign-in could not be opened again: %v", runtime, err)
 			continue
@@ -346,8 +360,35 @@ func ownCodexSignIn() bool {
 	if codexHome == "" {
 		codexHome = filepath.Join(home, ".codex")
 	}
+	return codexSignInIn(codexHome)
+}
+
+func codexSignInIn(codexHome string) bool {
 	_, err := os.Stat(filepath.Join(codexHome, "auth.json"))
 	return err == nil
+}
+
+// ownCodexSignIn reads this server's sign-in from the daemon-owned home. The Mac keeps its
+// own Codex home, and added accounts have their own folders.
+func (d *Daemon) ownCodexSignIn() bool {
+	if os.Getenv("OPENAI_API_KEY") != "" || macToolsHome != "" || d.Store == nil {
+		return ownCodexSignIn()
+	}
+	return codexSignInIn(filepath.Join(d.Store.Loc.Root, "runtimes", "codex", "home"))
+}
+
+func (d *Daemon) ensureCodexHome() (string, error) {
+	if d.Store == nil {
+		return os.Getenv("CODEX_HOME"), nil
+	}
+	home := filepath.Join(d.Store.Loc.Root, "runtimes", "codex", "home")
+	if err := os.MkdirAll(home, 0o700); err != nil {
+		return "", err
+	}
+	if err := os.Chmod(home, 0o700); err != nil { //nolint:gosec // G302: a folder needs its x bit; 0700 is owner only
+		return "", err
+	}
+	return home, nil
 }
 
 // signedIn says whether this machine has Claude's own sign-in.

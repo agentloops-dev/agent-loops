@@ -228,3 +228,26 @@
 .control-move-steps .step-done { background: var(--line-vouched); color: var(--paper-ink); }
 .control-move-steps .step-current { background: var(--line-accent); color: var(--paper-ink); }
 .control-move-steps .step-failed { background: var(--line-failure); color: var(--paper-ink); }
+/* The control plane as a machine (#6592, as the window's ControlPlanePage): its level, four tiles, then Memory, Process and Store. */
+.control-plane-head { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; margin-bottom: 12px; }
+.control-freshness { display: inline-flex; align-items: center; gap: 8px; }
+.control-freshness .spinner { width: 10px; height: 10px; }
+.control-figures { display: flex; flex-direction: column; gap: 14px; }
+.control-level { display: flex; align-items: center; gap: 8px; font-weight: 600; margin: 0; }
+.control-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--paper-rule); flex: none; }
+.control-dot.vouched { background: var(--tint-vouched); }
+.control-dot.warning { background: var(--tint-warning); }
+.control-dot.failure { background: var(--tint-failure); }
+.control-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; }
+.control-tile { display: flex; flex-direction: column; gap: 4px; padding: 12px; background: var(--paper-well); border-radius: var(--radius-card); }
+.control-tile-value { font-size: 1.25rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+.control-section { display: flex; flex-direction: column; gap: 4px; font-variant-numeric: tabular-nums; }
+.control-none { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 28px 0; text-align: center; }
+.control-row-line { display: inline-flex; align-items: center; gap: 5px; font-variant-numeric: tabular-nums; }
+.control-row-line .control-dot { width: 7px; height: 7px; }
+/* The whole line when the column is wide, else the level and its main figure (#7366). */
+.control-row-fit { display: block; overflow: hidden; contain: inline-size; }
+.control-row-line { white-space: nowrap; position: relative; }
+/* The whole line, out of sight, while the short one shows: measured to know when it fits again. */
+.control-row-measure { position: absolute; visibility: hidden; }
+.machines-list .spinner { width: 10px; height: 10px; }

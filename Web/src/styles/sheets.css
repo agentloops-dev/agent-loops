@@ -19,6 +19,7 @@ dialog.sheet:has(.settings-sheet) { width: min(760px, calc(100vw - 32px)); max-h
 .project-folders .path { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .not-committed-paths { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
 .not-committed-paths code { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: block; }
+.settings-grid button.link { font: inherit; cursor: pointer; border: none; background: none; padding: 0; color: var(--accent); box-shadow: none; }
 .switch-row { display: flex; gap: 8px; align-items: center; }
 .settings-sheet .sheet-actions { display: flex; gap: 8px; justify-content: flex-end; }
 .settings-sheet .sheet-actions.start { justify-content: flex-start; }
@@ -37,6 +38,9 @@ dialog.sheet:has(.settings-sheet) { width: min(760px, calc(100vw - 32px)); max-h
 .sheet-body .sheet-note { margin: 0; }
 /* A secret's Description (#4167): the sheet's own font, not a textarea's monospace. */
 .sheet-body textarea { font: inherit; resize: vertical; }
+/* A card's optional billing address (#5569). */
+.sheet-body .card-address { display: flex; flex-direction: column; gap: 10px; margin: 0; padding: 8px 0 0; border: none; border-top: 1px solid var(--paper-rule); }
+.sheet-body .card-address legend { padding: 0; font-size: 0.8125rem; font-weight: 600; }
 .sheet-note.failure { color: var(--tint-failure); opacity: 1; }
 /* The Add Folder sheet's Project (#2671). */
 .new-folder-project { display: flex; flex-direction: column; gap: 4px; margin-top: 10px; }

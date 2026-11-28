@@ -901,7 +901,7 @@
     "annotations": {
       "readOnlyHint": true
     },
-    "description": "The machines this control plane's hosts run on, from every machine provider: each machine's state, the host it is linked to and that host's state, and, for a provider that can make machines, the choices a new one takes. Then every machine of the person's by name and state, made by a provider or not, where start_session with machine can start a session.",
+    "description": "The machines this control plane's hosts run on, from every machine provider: each machine's state, the host it is linked to and that host's state, its public addresses (IPv4 and IPv6, from the provider's record), and, for a provider that can make machines, the choices a new one takes. Then every machine of the person's by name and state, made by a provider or not, where start_session with machine can start a session.",
     "inputSchema": {
       "properties": {
         "description": {
@@ -1351,7 +1351,7 @@
     "annotations": {
       "readOnlyHint": true
     },
-    "description": "The trailer lines for a commit by this session, by the commit trailers rule of this folder's policy (Made-by, Session, Fixes, Epic, Requested-by, Approved-by, Cost, Tokens, Duration, Co-authored-by; each on or off by the policy, and one with no value is left out). With pr, the lines for that pull request's squash message: Fixes in place of Refs, its approvers, and the totals of every session on it. Write the lines as they come, as the last paragraph of the message: for a squash, in the file you give gh pr merge --auto --squash --body-file. Never type a trailer by hand.",
+    "description": "The trailer lines for a commit by this session, by the commit trailers rule of this folder's policy (Managed-by, Runtime, Model, Session, Fixes, Epic, Requested-by, Approved-by, Cost, Tokens, Duration; each on or off by the policy, and one with no value is left out; a Co-authored-by is the runtime's own, never one of these). With pr, the lines for that pull request's squash message: Fixes in place of Refs, its approvers, and the totals of every session on it. Write the lines as they come, as the last paragraph of the message: for a squash, in the file you give gh pr merge --auto --squash --body-file. Never type a trailer by hand.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -1552,6 +1552,145 @@
         "name",
         "folder"
       ]
+    }
+  },
+  {
+    "name": "meeting_notes",
+    "title": "Meeting notes",
+    "annotations": {
+      "destructiveHint": false,
+      "openWorldHint": false
+    },
+    "description": "Keep the notes of the meeting this session listens to: only a meeting's session has this tool. The app sends you the meeting's words as prompts, a line a segment: \"[<seq>] Speaker <n> (<name>): <words>\".\n\n- read: the meeting, its speakers (by the n of \"Speaker <n>\"), the notes with their revision, the action items, and up to 200 segments after afterSeq (more says there are others).\n- write_notes: the whole notes as Markdown, over baseRevision, the revision read gave (0 before the first). Refused over 64 KB: make them shorter. Refused when the notes moved since: read them again.\n- add_actions: items, each with its text, owner and due as spoken, the quote it comes from word for word, and the seqs of the lines the quote is in. An item whose quote is not in those lines is refused; the others are kept.\n- update_action: one item by its id: its state (proposed, approved, dismissed, filed), the issue you filed for it (state goes to filed), text, owner or due. Refused on a field the person edited: leave it as they made it.\n- set_speaker: name Speaker <n> (index n) for the whole meeting, when the meeting says who they are.\n\nAsk with one question card before you file any issue, file it with the forge tools you have, then record it here with update_action.",
+    "inputSchema": {
+      "properties": {
+        "action": {
+          "enum": [
+            "read",
+            "write_notes",
+            "add_actions",
+            "update_action",
+            "set_speaker"
+          ],
+          "type": "string"
+        },
+        "afterSeq": {
+          "description": "read: the segments after this seq; 0 or absent for the first.",
+          "type": "integer"
+        },
+        "baseRevision": {
+          "description": "write_notes: the notes' revision that read gave.",
+          "type": "integer"
+        },
+        "description": {
+          "description": "Why you are making this call, in one short sentence for the person.",
+          "type": "string"
+        },
+        "due": {
+          "description": "update_action: when, as spoken; empty for no date.",
+          "type": "string"
+        },
+        "id": {
+          "description": "update_action: the action item's id.",
+          "type": "string"
+        },
+        "index": {
+          "description": "set_speaker: the n of \"Speaker <n>\".",
+          "type": "integer"
+        },
+        "issue": {
+          "description": "update_action: the issue filed for the item.",
+          "properties": {
+            "forge": {
+              "description": "The forge, as github (the default).",
+              "type": "string"
+            },
+            "number": {
+              "type": "integer"
+            },
+            "repo": {
+              "description": "owner/name",
+              "type": "string"
+            },
+            "url": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "repo",
+            "number",
+            "url"
+          ],
+          "type": "object"
+        },
+        "items": {
+          "description": "add_actions: 1 to 20 items.",
+          "items": {
+            "properties": {
+              "due": {
+                "description": "When, as spoken (\"by Friday\").",
+                "type": "string"
+              },
+              "owner": {
+                "description": "Who does it, as spoken.",
+                "type": "string"
+              },
+              "quote": {
+                "description": "The meeting's words it comes from, word for word.",
+                "type": "string"
+              },
+              "segmentSeqs": {
+                "description": "The seqs of the lines the quote is in, at most 20.",
+                "items": {
+                  "type": "integer"
+                },
+                "type": "array"
+              },
+              "text": {
+                "description": "What is to be done; at most 500 characters.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "text",
+              "quote",
+              "segmentSeqs"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "markdown": {
+          "description": "write_notes: the whole notes.",
+          "type": "string"
+        },
+        "name": {
+          "description": "set_speaker: the speaker's name; empty to take it away.",
+          "type": "string"
+        },
+        "owner": {
+          "description": "update_action: who does it; empty for nobody.",
+          "type": "string"
+        },
+        "state": {
+          "description": "update_action: the item's new state.",
+          "enum": [
+            "proposed",
+            "approved",
+            "dismissed",
+            "filed"
+          ],
+          "type": "string"
+        },
+        "text": {
+          "description": "update_action: the item's new text.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "action"
+      ],
+      "type": "object"
     }
   }
 ]

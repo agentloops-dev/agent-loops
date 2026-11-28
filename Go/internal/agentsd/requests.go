@@ -655,6 +655,16 @@ func (d *Daemon) answerLostForm(req wire.ElicitationRequest, action wire.AnswerE
 		}
 		said = answers(req.Mode.Form.Value, content, req.Message)
 	}
+	// A card for a sign-in made here (#7471): Accept is Done, and the agent is not prompted.
+	signIn := d.signInCardOf(req.ID)
+	if signIn != "" && action == wire.AnswerElicitationRequestActionAccept {
+		code, _ := text(value(content[signInCodeField]))
+		if err := d.answerSignInCard(signIn, action, code); err != nil {
+			return err
+		}
+		// The code is used once and is nobody's to read again: not in the record.
+		content, said = map[string]wire.JSONValue{}, nil
+	}
 	if d.heldForm(req.ID) {
 		// Not lost: an answer that came first is ending it (#6475).
 		return &Error{Code: wire.FailureNoSuchAgent, Message: "That form has already been answered."}
@@ -668,6 +678,13 @@ func (d *Daemon) answerLostForm(req wire.ElicitationRequest, action wire.AnswerE
 	d.formDown(req.AgentID, req.ID) // a lost form's card is drawn (#4990): it goes now
 	d.record(req.AgentID, wire.TranscriptEntryKind{ElicitationAnswered: &wire.TranscriptEntryKindElicitationAnswered{ID: req.ID,
 		Summary: answeredSummary(action), Answers: said}})
+	if signIn != "" {
+		if action != wire.AnswerElicitationRequestActionAccept {
+			_ = d.answerSignInCard(signIn, action, "") // a stop has nothing to report
+		}
+		d.forgetSignInCard(req.ID)
+		return nil
+	}
 	// A dismissed lost form (#5295): the person's next message is the reply.
 	if action == wire.AnswerElicitationRequestActionCancel {
 		return nil

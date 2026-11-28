@@ -26,7 +26,7 @@ the Remote, the web page, in notifications, and in agentsd's replies to the agen
 - **A deploy** in Review: Approve or Deny.
 - **A change to a folder's policy file**: Approve, Keep <old value> or Show Change.
 - **A workflow that waits for this machine**: Approve or Deny.
-- **A machine that asks for this Mac's git access or sign-in**: Approve or Deny.
+- **A machine that asks for this Mac's sign-in**: Approve or Deny.
 - **Join, budget and policy requests** on the web console: Approve or Deny.
 - **The permission requests setting** for Cursor, Grok and OpenCode: **Request cards** or
   **Always Approve**.

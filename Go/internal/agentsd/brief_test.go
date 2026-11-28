@@ -282,6 +282,7 @@ var toolsBriefSkips = map[string]string{
 	"cancel_message": "message_session's refusal of a second message",
 	"list_stores":    "its own description: only work on the app's own stores uses it",
 	"list_resources": "lease_resource's description; the declared resources are in the brief",
+	"meeting_notes":  "meetingNotesBrief, said only to a meeting's session (#7583)",
 }
 
 // Every tool this host can list is named in the brief, or skipped above with a reason, so a

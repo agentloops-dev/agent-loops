@@ -16,6 +16,10 @@ struct MachineSetupSection<SignIn: View>: View {
     let onRetry: () -> Void
     /// Delete, once the person said yes.
     let onDelete: () -> Void
+    /// Copy Root Command… and Show Log on a failed Root set-up (#7159), behind the flag: the Mac
+    /// window's; the Remote has neither (Mac + web).
+    var onRootCommand: (() -> Void)?
+    var onRootLog: (() -> Void)?
     /// Under step 7, Sign in to runtimes.
     @ViewBuilder let signIn: () -> SignIn
 
@@ -44,6 +48,10 @@ struct MachineSetupSection<SignIn: View>: View {
                     }
                     HStack {
                         Button("Try Again", action: onRetry)
+                        if scriptsOn, failed.id == "root" {
+                            if let onRootCommand { Button("Copy Root Command…", action: onRootCommand) }
+                            if let onRootLog { Button("Show Log", action: onRootLog) }
+                        }
                         Button("Delete Machine…", role: .destructive) { deleting = true }
                     }
                     #if os(iOS)

@@ -22,10 +22,10 @@ const child = (n, { created, started, closed, waits, reason } = {}) => drop({
   startedAt: wire(started), closedAt: wire(closed), waitsForPerson: waits ? true : undefined,
 });
 const fc = (low, mid, high, waits) => drop({ low: wire(low), mid: wire(mid), high: wire(high), waits });
-// By default created with its first child, and closed with its last once all are.
+// By default created with its first child, and open: an epic closes only when `closed` says so, also when all its
+// children are closed (its lead closes it).
 const epic = (n, children, { forecast, feature = "work", reason, created, closed } = {}) => {
-  const closes = children.flatMap((c) => c.closedAt ?? []);
-  const closedAt = wire(closed) ?? (closes.length === children.length && closes.length > 0 ? Math.max(...closes) : undefined);
+  const closedAt = wire(closed);
   return drop({ item: item(n, { feature, state: closedAt === undefined ? "open" : "closed" }), stateReason: reason,
     createdAt: wire(created) ?? Math.min(...children.map((c) => c.createdAt), wire(0)), closedAt, children, segments: [], forecast });
 };
@@ -60,22 +60,23 @@ test("an epic with no children is not drawn, and an epic is one block (#7058)", 
     epic(2, [child(10, { started: -20, closed: -18 }), child(11, { started: -6, closed: -5 })]),
   ], releases: [] }, now);
   assert.deepEqual(lines.map((l) => l.id), ["github:alexec/Agents#2"]);
-  assert.equal(lines[0].how.how, "joined");
+  assert.equal(lines[0].how.how, "open");
   assert.deepEqual(lines[0].work, { start: h(-20), end: h(-5) });
   assert.equal(t.figures(lines[0]), "#2 · 2 of 2");
 });
 
-test("only an open epic has a ghost, to its predicted finish; none on hold is shown (#7058)", () => {
+test("only an open epic is drawn, with a ghost to its predicted finish; none on hold is shown (#7058, #7334)", () => {
   const forecast = fc(2, 5, 11);
   const held = (e) => ({ ...e, item: { ...e.item, onHold: true } });
   const timeline = { epics: [
-    // Created before its children and closed after them: its dates draw nothing.
+    // Closed: not drawn (#7334).
     epic(1, [child(10, { created: -20, started: -18, closed: -10 })], { created: -30, closed: -4 }),
     epic(2, [child(11, { started: -8, closed: -5 }), child(12)], { created: -9, forecast }),
     // Not started: the ghost only, from Now.
     epic(3, [child(13), child(14)], { created: -15, forecast }),
     // Not started, and nothing to forecast: nothing to draw.
     epic(4, [child(15)], { created: -15 }),
+    // Closed as not planned: not drawn either.
     epic(5, [child(16, { started: -12, closed: -7 })], { created: -14, closed: -6, reason: "not_planned" }),
     // On hold: never shown, open or closed.
     held(epic(6, [child(17, { started: -3 })], { forecast })),
@@ -83,23 +84,20 @@ test("only an open epic has a ghost, to its predicted finish; none on hold is sh
   ], releases: [] };
   const span = (a, b) => ({ start: h(a), end: h(b) });
   const lines = t.timelineLines(timeline, now);
-  assert.deepEqual(lines.map((l) => l.number), ["#1", "#2", "#3", "#5"]);
-  assert.deepEqual(lines.map((l) => l.work), [span(-18, -10), span(-8, -5), undefined, span(-12, -7)]);
-  assert.deepEqual(lines.map((l) => l.ghost), [undefined, span(-5, 5), span(0, 5), undefined]);
-  assert.deepEqual(lines.map((l) => l.from), [-18, -8, 0, -12].map(h));
-  assert.deepEqual(lines.map((l) => l.end), [-10, 5, 5, -7].map(h));
-  assert.deepEqual(lines.map((l) => l.how.how), ["joined", "forecast", "forecast", "dropped"]);
-  // The words say when the epic closed, not when its work stopped.
-  assert.equal(t.lineLine(lines[0], now), "#1 · 1 of 1 · closed 4 h ago");
+  assert.deepEqual(lines.map((l) => l.number), ["#2", "#3"]);
+  assert.deepEqual(lines.map((l) => l.work), [span(-8, -5), undefined]);
+  assert.deepEqual(lines.map((l) => l.ghost), [span(-5, 5), span(0, 5)]);
+  assert.deepEqual(lines.map((l) => l.from), [-8, 0].map(h));
+  assert.deepEqual(lines.map((l) => l.end), [5, 5].map(h));
+  assert.deepEqual(lines.map((l) => l.how.how), ["forecast", "forecast"]);
   // Nothing started, so nothing stopped.
-  assert.equal(t.stoppedAt(lines[2], now), undefined);
-  assert.equal(t.lastJoined(timeline, h(-1)), h(-4));
+  assert.equal(t.stoppedAt(lines[1], now), undefined);
   // A session in a turn: solid to Now, the ghost from there. One on an epic not started: still a ghost.
   const working = t.timelineLines(timeline, now, true, new Set([3, 5, 12].map((n) => `github:alexec/Agents#${n}`)));
-  assert.deepEqual(working.map((l) => l.working), [0, 1, 1, 0]);
-  assert.deepEqual([working[1].work, working[1].ghost, working[2].work], [span(-8, 0), span(0, 5), undefined]);
+  assert.deepEqual(working.map((l) => l.working), [1, 1]);
+  assert.deepEqual([working[0].work, working[0].ghost, working[1].work], [span(-8, 0), span(0, 5), undefined]);
   // Forecast off: the past only.
-  assert.deepEqual(t.timelineLines(timeline, now, false).map((l) => l.number), ["#1", "#2", "#5"]);
+  assert.deepEqual(t.timelineLines(timeline, now, false).map((l) => l.number), ["#2"]);
 });
 
 test("an open line is forecast, waits or stops at Now", () => {
@@ -146,9 +144,14 @@ test("a block is solid from started to stopped (#6043)", () => {
   assert.equal(t.hit({ x: axis.x(h(-10)), y: t.rowTop(filed.row) + 4 }, [filed], axis)?.number, "#2");
 });
 
-test("a dropped epic ends in a cross", () => {
-  const lines = t.timelineLines({ epics: [epic(8, [child(30, { started: -5, closed: -4 })], { reason: "not_planned" })], releases: [] }, now);
-  assert.deepEqual(lines.map((l) => l.how.how), ["dropped"]);
+test("a closed epic is not drawn, also one closed as not planned (#7334)", () => {
+  const lines = t.timelineLines({ epics: [
+    epic(8, [child(30, { started: -5, closed: -4 })], { closed: -3, reason: "not_planned" }),
+    epic(9, [child(31, { started: -5, closed: -4 })], { closed: -3 }),
+    epic(10, [child(32, { started: -5, closed: -4 })]),
+  ], releases: [] }, now);
+  // Open with all its children closed: drawn until its lead closes it.
+  assert.deepEqual(lines.map((l) => [l.number, l.how.how]), [["#10", "open"]]);
 });
 
 test("only the lines that overlap the window are drawn", () => {
@@ -250,9 +253,8 @@ test("a block's title is in it, or after it when it is too narrow, cut before th
   const timeline = { epics: [
     epic(19, [child(60, { started: -9, closed: -1 })]),
     epic(20, [child(61, { started: -24, closed: -23.5 })]),
-    epic(21, [child(62, { started: -20, closed: -19 })], { reason: "not_planned" }),
   ], releases: [] };
-  const [wide, narrow, dropped] = t.timelineLines(timeline, now);
+  const [wide, narrow] = t.timelineLines(timeline, now);
   // 8 h is 160 px: "Issue 19" fits, 6 px in.
   const inside = t.blockWords(wide, axis, measure);
   assert.deepEqual([inside.inside, inside.insideX, inside.outside], ["Issue 19", axis.x(wide.from) + 6, undefined]);
@@ -261,8 +263,6 @@ test("a block's title is in it, or after it when it is too narrow, cut before th
   assert.deepEqual([after.inside, after.outside, after.outsideX], [undefined, "Issue 20", axis.x(narrow.end) + 6]);
   assert.equal(t.blockWords(narrow, axis, measure, { next: h(-21.6) }).outside, "Iss…");
   assert.equal(t.blockWords(narrow, axis, measure, { next: h(-23.4) }).outside, undefined);
-  // Closed as not planned: "✕ closed as not planned" after the block.
-  assert.equal(t.blockWords(dropped, axis, measure).outside, "Issue 21  ✕ closed as not planned");
   // A block that starts before the left edge keeps its title at the edge, after ←, cut to what is left of the block.
   const edge = t.blockWords(wide, axis, measure, { left: axis.x(h(-4)) });
   assert.deepEqual([edge.arrow, edge.insideX, edge.inside], [true, axis.x(h(-4)) + 6, "← Issue…"]);
@@ -336,30 +336,28 @@ test("under 700 px the epics are a list, in the order they close", () => {
     epic(30, [child(1, { started: -5, closed: -2 })]),
     epic(31, [child(2, { started: -3, closed: -1 }), child(3)], { forecast: fc(2, 3, 5) }),
     epic(32, [child(4, { started: -2, waits: true }), child(5, { started: -2, waits: true })]),
-    epic(33, [child(6, { started: -4, closed: -3 })]),
+    // Closed: not in the list (#7334).
+    epic(33, [child(6, { started: -4, closed: -3 })], { closed: -3 }),
     epic(34, [child(7, { started: -1, closed: -0.5 }), child(8)], { forecast: fc(0.5, 1, 2) }),
   ], releases: [] };
   const rows = t.epicRows(t.timelineLines(timeline, now), t.rangeWindow("twoDays", now), now);
-  assert.deepEqual(rows.map((r) => r.line.number), ["#34", "#31", "#32", "#30", "#33"]);
+  assert.deepEqual(rows.map((r) => r.line.number), ["#34", "#31", "#32", "#30"]);
   assert.match(rows[0].line2, /^closes about .+ · .+–.+$/);
   // Nothing closed since they started 2 h ago, and no session is in a turn on them: the work stopped (#6043).
   assert.equal(rows[2].line2, "2 wait for you · stopped 2 h ago");
-  assert.match(rows[3].line2, /^joined /);
+  assert.equal(rows[3].line2, "open · stopped 2 h ago");
   assert.equal(rows[1].line.done, 1);
   assert.equal(rows[1].line.total, 2);
 });
 
-test("an empty window says when the last epic joined, and the week is a click away", () => {
+test("a window with only closed epics is empty, and the week is a click away (#7334)", () => {
   const timeline = { epics: [
-    epic(40, [child(1, { started: -100, closed: -96 })]),
-    epic(41, [child(2, { started: -80, closed: -50 })]),
+    epic(40, [child(1, { started: -10, closed: -6 })], { closed: -6 }),
+    epic(41, [child(2, { started: -8, closed: -5 })], { closed: -5, reason: "not_planned" }),
   ], releases: [] };
-  assert.equal(t.epicRows(t.timelineLines(timeline, now), t.rangeWindow("twoDays", now), now).length, 0);
-  assert.equal(t.lastJoined(timeline, h(-24)), h(-50));
-  assert.equal(t.lastJoined(timeline, h(-200)), undefined);
-  assert.equal(t.noEpicsWords("twoDays"), "No epic in these 2 days");
-  assert.equal(t.noEpicsWords("day"), "No epic in these 24 hours");
-  assert.match(t.lastJoinedWords(h(-96), now), /^The last one joined 4 ?d ago\.$/);
+  for (const r of t.timelineRanges) assert.equal(t.epicRows(t.timelineLines(timeline, now), t.rangeWindow(r, now), now).length, 0);
+  assert.equal(t.noEpicsWords("twoDays"), "No open epic in these 2 days");
+  assert.equal(t.noEpicsWords("day"), "No open epic in these 24 hours");
   assert.equal(t.showTheWeek, "Show the week");
   assert.equal(t.noProjectTitle, "No project to draw");
 });
@@ -380,7 +378,7 @@ test("the window is loading, not empty, until every read ended (#5925)", () => {
 
 test("a first answer keeps the forecasts on screen until its own come (#7027)", () => {
   const forecast = { low: wire(1), mid: wire(2), high: wire(3) };
-  const first = { epics: [epic(1, [child(2, { started: -2 })]), epic(3, [child(4, { started: -2 })]), epic(5, [child(6, { closed: -1 })])], releases: [], partial: true };
+  const first = { epics: [epic(1, [child(2, { started: -2 })]), epic(3, [child(4, { started: -2 })]), epic(5, [child(6, { closed: -1 })], { closed: -1 })], releases: [], partial: true };
   const shown = { epics: [epic(1, [child(2, { started: -2 })], { forecast }), epic(5, [child(6, { started: -2 })], { forecast })], releases: [] };
   assert.deepEqual(t.keepForecasts(first, shown).epics.map((e) => e.forecast), [forecast, undefined, undefined]);
   assert.equal(t.keepForecasts(first, null), first);
@@ -472,4 +470,39 @@ test("a read asks one machine per repo, and the next when one fails", () => {
   assert.deepEqual(r.next(), ["a"]);
   r.done("a", shop);
   assert.deepEqual(r.next(), ["b"]);
+});
+
+test("with the On hold toggle, an open epic on hold is drawn dimmed, below the rest, with no forecast (#7335)", () => {
+  const held = (e, priority) => ({ ...e, item: { ...e.item, onHold: true, ...priority ? { priority } : {} } });
+  const timeline = { epics: [
+    epic(40, [child(60, { started: -10 }), child(61)], { forecast: fc(2, 5, 11) }),
+    // On hold with work: its solid span, and no ghost or band though it has a forecast.
+    held(epic(41, [child(62, { started: -6, closed: -4 }), child(63)], { forecast: fc(2, 5, 11) }), "low"),
+    // On hold with no work yet, and no children: a mark at Now. High, so first of the held.
+    held(epic(42, []), "high"),
+    // Closed and on hold: never drawn.
+    held(epic(43, [child(64, { started: -6, closed: -4 })], { closed: -4 })),
+  ], releases: [] };
+  assert.deepEqual(t.timelineLines(timeline, now).map((l) => l.number), ["#40"], "off: none on hold");
+  const lines = t.layout(t.timelineLines(timeline, now, true, new Set(), true));
+  const by = Object.fromEntries(lines.map((l) => [l.number, l]));
+  assert.deepEqual(Object.keys(by).sort(), ["#40", "#41", "#42"]);
+  assert.deepEqual([by["#41"].how.how, by["#41"].ghost, by["#41"].band], ["held", undefined, undefined]);
+  assert.deepEqual(by["#41"].work, { start: h(-6), end: h(-4) });
+  assert.deepEqual([by["#42"].how.how, by["#42"].work, by["#42"].from, by["#42"].end], ["held", undefined, now, now]);
+  assert.equal(t.markWidth(by["#42"]), t.heldMarkWidth);
+  assert.equal(t.markWidth(by["#41"]), 0);
+  // Below the rest, a row each, in the order of forge/next: High before Low.
+  assert.deepEqual([by["#40"].row, by["#42"].row, by["#41"].row], [0, 1, 2]);
+  assert.deepEqual(t.bands(lines).map((b) => [b.words, b.row, b.rows]), [["None", 0, 1], ["On hold", 1, 2]]);
+  // The words: after the block, in the hover card and in the list.
+  const measure = (s) => s.length * 6;
+  assert.match(t.blockWords(by["#42"], axis, measure).outside, /On hold$/);
+  assert.equal(t.blockWords(by["#42"], axis, measure).outsideX, axis.x(now) + t.heldMarkWidth + 6);
+  assert.match(t.lineLine(by["#41"], now), /· On hold$/);
+  assert.ok(t.lineWords(by["#41"], undefined, now).includes("On hold"));
+  const rows = t.epicRows(lines, { start: h(-48), end: h(48) }, now);
+  assert.equal(rows.find((r) => r.line.number === "#42").line2, "On hold");
+  // A click on the mark opens the epic.
+  assert.equal(t.hit({ x: axis.x(now) + t.heldMarkWidth, y: t.rowTop(by["#42"].row) + 4 }, lines, axis)?.number, "#42");
 });

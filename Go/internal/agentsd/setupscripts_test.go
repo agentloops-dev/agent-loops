@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/machinelock"
 	"github.com/agentloops-dev/agent-loops/Go/internal/workspacecommands"
@@ -59,6 +60,10 @@ func TestASenderKeepsOnlyAClientsApprovalOfTheTextThere(t *testing.T) {
 	if len(scripts.Scripts) != 2 || scripts.Scripts[0].Present || !scripts.Scripts[1].Present || !scripts.Scripts[1].Changed ||
 		scripts.Scripts[1].NextSeq != 1 || *scripts.Scripts[1].Hash != scriptHash(text) {
 		t.Fatalf("%+v", scripts)
+	}
+	// #7512: the answer names the folder, so Settings ▸ Machines opens the one read here.
+	if scripts.Folder == nil || *scripts.Folder != filepath.Join(d.PersonalHome, ".agents", "machine-setup") {
+		t.Fatalf("folder: %v", scripts.Folder)
 	}
 	if _, _, err := d.approvedSetupScript("setup", machinelock.ScopeMade); codeOf(err) != wire.FailureSetupScriptChanged {
 		t.Fatalf("a script no client approved is used: %v", err)
@@ -127,6 +132,43 @@ func TestASenderKeepsOnlyAClientsApprovalOfTheTextThere(t *testing.T) {
 }
 
 // #7167: a script over its limit is not one to approve.
+// #7547: each try of a Send Set-up that waits gives the same approval again. It is taken, and
+// machine-setup-approved.json is not written again; a new approval is written.
+func TestTheSameApprovalAgainDoesNotWriteTheApprovals(t *testing.T) {
+	t.Parallel()
+	const text = "#!/bin/bash\nbrew install jq\n"
+	d, phone, _, state, _ := senderWith(t, text)
+	scope := machinelock.ScopeOf("h-2")
+	r := approvalOf(t, phone, state, "setup", scope, 1, text)
+	approve := func(r wire.LockRecord) {
+		t.Helper()
+		if _, err := d.approveSetupScript(wire.SetupApprove{Script: "setup", Approval: r}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	approve(r)
+	path := d.approvedSetupPath()
+	old := time.Unix(1_000_000, 0)
+	must(t, os.Chtimes(path, old, old))
+	written := func() bool {
+		t.Helper()
+		info, err := os.Stat(path)
+		must(t, err)
+		return !info.ModTime().Equal(old)
+	}
+	approve(r)
+	if written() {
+		t.Fatal("the same approval wrote the approvals again")
+	}
+	if _, _, err := d.approvedSetupScript("setup", scope); err != nil {
+		t.Fatalf("the approval is not in force: %v", err)
+	}
+	approve(approvalOf(t, phone, state, "setup", scope, 2, text))
+	if !written() {
+		t.Fatal("a new approval was not written")
+	}
+}
+
 func TestASetUpScriptOverItsLimitIsNotUsed(t *testing.T) {
 	t.Parallel()
 	text := strings.Repeat("#", 64<<10+1)
@@ -135,6 +177,13 @@ func TestASetUpScriptOverItsLimitIsNotUsed(t *testing.T) {
 	must(t, err)
 	if s.Scripts[1].Problem == nil || s.Scripts[1].Text != nil {
 		t.Fatalf("%+v", s.Scripts[1])
+	}
+	// #7548: it says its size and the limit, rounded up, and carries the size.
+	if got := *s.Scripts[1].Problem; got != "setup.sh is 65 KiB, over its limit of 64 KiB." {
+		t.Errorf("problem %q", got)
+	}
+	if s.Scripts[1].Size == nil || *s.Scripts[1].Size != 64<<10+1 {
+		t.Errorf("size %v", s.Scripts[1].Size)
 	}
 	if _, err := d.approveSetupScript(wire.SetupApprove{Script: "setup", Approval: approvalOf(t, phone, state, "setup", "made", 1, text)}); codeOf(err) != wire.FailureSetupScriptChanged {
 		t.Fatalf("%v", err)
@@ -230,5 +279,90 @@ func TestAMakeWithNoLockSendsNoRootScriptAndSaysWhy(t *testing.T) {
 	lines, sent, err := d.rootBootForMake()
 	if err != nil || lines != "" || sent == nil || !strings.Contains(sent.Problem, "needs your machine lock") {
 		t.Fatalf("%q %+v %v", lines, sent, err)
+	}
+}
+
+// #7157: a make that root.sh stopped carries the code setup_script_changed, so a warm pool waits
+// for a review; make_machine says a changed setup.sh on its card, and refuses before the card
+// for a changed root.sh, only on the machine that carries the provider.
+func TestAChangedScriptShowsBeforeAMake(t *testing.T) {
+	t.Parallel()
+	const text = "echo setup\n"
+	d, phone, _, state, write := senderWith(t, text)
+	if got := rootBootRefused(&Error{Code: wire.FailureSetupScriptChanged, Message: "root.sh changed"}); got.Code == nil || *got.Code != "setup_script_changed" ||
+		*got.Error != "root.sh changed" {
+		t.Fatalf("%+v", got)
+	}
+	if got := rootBootRefused(errors.New("no")); got.Code != nil {
+		t.Fatalf("%+v", got)
+	}
+	// Not the provider's carrier: nothing is said.
+	if note, err := d.scriptsBeforeMake("do"); note != "" || err != nil {
+		t.Fatalf("%q %v", note, err)
+	}
+	c := d.carried()
+	c.mu.Lock()
+	c.held["do"] = &carriedConnection{}
+	c.mu.Unlock()
+	note, err := d.scriptsBeforeMake("do")
+	if err != nil || !strings.Contains(note, "setup.sh is new or changed") {
+		t.Fatalf("a setup.sh no client approved: %q %v", note, err)
+	}
+	if _, err := d.approveSetupScript(wire.SetupApprove{Script: "setup", Approval: approvalOf(t, phone, state, "setup", "made", 1, text)}); err != nil {
+		t.Fatal(err)
+	}
+	if note, err := d.scriptsBeforeMake("do"); note != "" || err != nil {
+		t.Fatalf("nothing changed shows nothing: %q %v", note, err)
+	}
+	write("echo other\n")
+	if note, _ := d.scriptsBeforeMake("do"); !strings.Contains(note, "setup.sh") {
+		t.Fatalf("a changed setup.sh: %q", note)
+	}
+	write(text)
+	root := filepath.Join(d.PersonalHome, ".agents", "machine-setup", "root.sh")
+	must(t, os.WriteFile(root, []byte("apt-get install -y gh\n"), 0o600))
+	if _, err := d.scriptsBeforeMake("do"); codeOf(err) != wire.FailureSetupScriptChanged || !strings.Contains(err.Error(), "root.sh") {
+		t.Fatalf("a changed root.sh: %v", err)
+	}
+}
+
+// #7461: setup/scripts gives each script's example from the pinned dotagents copy, what New
+// root.sh and New setup.sh write: gh with apt, and a setup.sh that declares GH_TOKEN and gives
+// it to gh only on stdin. A copy of another commit gives none.
+func TestSetUpScriptsGiveThePinnedExamples(t *testing.T) {
+	t.Parallel()
+	d, _, _, _, _ := senderWith(t, "#!/bin/bash\necho hi\n")
+	scripts, err := d.setupScripts()
+	must(t, err)
+	for _, s := range scripts.Scripts {
+		if s.Example != nil {
+			t.Fatalf("%s: an example with no ready-made copy: %q", s.Name, *s.Example)
+		}
+	}
+	fixture := readyMadeFixture()
+	must(t, saveReadyMade(d.PersonalHome, fixture))
+	scripts, err = d.setupScripts()
+	must(t, err)
+	if len(scripts.Scripts) != 2 || scripts.Scripts[0].Example == nil || scripts.Scripts[1].Example == nil {
+		t.Fatalf("%+v", scripts)
+	}
+	root, setup := *scripts.Scripts[0].Example, *scripts.Scripts[1].Example
+	if root != fixture.Scripts["root"] || !strings.Contains(root, "apt-get -o DPkg::Lock::Timeout=300 install -y gh\n") {
+		t.Errorf("root.sh: %q", root)
+	}
+	if got, err := declaredSecrets(setup); err != nil || len(got) != 1 || got[0] != "GH_TOKEN" {
+		t.Errorf("setup.sh declares %v: %v", got, err)
+	}
+	if !strings.Contains(setup, "agents-secret GH_TOKEN | gh auth login --with-token\n") {
+		t.Errorf("setup.sh: %q", setup)
+	}
+
+	other := *fixture
+	other.Commit = strings.Repeat("b", 40) // another size too, so the cached read is not used
+	must(t, saveReadyMade(d.PersonalHome, &other))
+	scripts, err = d.setupScripts()
+	must(t, err)
+	if scripts.Scripts[0].Example != nil {
+		t.Errorf("an unpinned copy gave an example")
 	}
 }

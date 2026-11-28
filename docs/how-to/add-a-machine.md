@@ -128,6 +128,32 @@ changes. When you remove the server, the tunnel closes.
 What the control plane passes to ssh, and how each common `~/.ssh/config` option fares, is in
 [ssh options](../reference/ssh-options.md).
 
+### Send it your setup.sh
+
+Your own set-up, the tools and sign-ins you want on each machine, can go in `~/.agents/machine-setup/setup.sh` on this Mac. It needs your machine lock, and it is behind **Machine scripts**, a feature that is not ready yet, in Settings ▸ This app ▸ Features.
+
+1. On the machine's page, under **Your scripts**, press **Send Set-up…**.
+2. Read the script, then press **Approve and Send**. This Mac's lock key approves that text for that machine only.
+3. The machine runs it as its user, in its home folder, with `bash -e`, `AGENTS_SETUP=1`, `AGENTS_MACHINE` and `AGENTS_FROM_POOL`, for up to 10 minutes. It shows as the step **Your set-up**.
+
+A machine that a provider made, or that you claimed from a warm pool, gets it by itself when you approved it for new machines. On a machine that a provider made, **Send projects** starts only after **Your set-up** is done, so a project's script can use what setup.sh installed; when it fails, the projects wait for **Try Again**. While the new machine is not in your lock yet, **Your set-up** says *Waiting for this machine to be in your lock*: keep a device that can sign online. When the automatic send stops, the step fails and says why: use **Send Set-up…**. When setup.sh does not come in 15 minutes (the machine that sends it went offline or could not sign), the step fails and says so too; **Try Again** then asks that machine for it again. A machine from a warm pool got its projects before you claimed it, so they do not wait. **Run Again** runs the copy the machine has again, so write it to be safe to run again. When you change the file, the row says *changed on This Mac*: send it again. While a machine is offline, the send waits for it. Scripts are not secret: keep tokens in Secrets, not in a script.
+
+#### Secrets in setup.sh
+
+To use a secret, name it in a `# secrets:` line in the comments at the top of the script, at most 20 names:
+
+```bash
+#!/bin/bash
+# secrets: GH_TOKEN NPM_TOKEN
+gh auth login --with-token <<<"$(agents-secret GH_TOKEN)"
+```
+
+- The run gets `agents-secret` on its `PATH`. It gives only the names that the script declares, and only while the run goes on. Each read is recorded, with the place `setup.sh` and the script's hash.
+- A new machine has no copy of your secrets until one of your apps seals one for it. Until then the step waits, as **Needs you**, and says *Open Agent Loops to send GH_TOKEN to this machine.* The wait is not part of the 10 minutes.
+- A declared secret that is not one of yours, or that has **Ask before use**, fails the step before the script runs, and the step names it. Nothing asks while the script runs.
+- A project's `.agents/setup.sh` gets no secrets.
+- A tool that writes a token to its own file (`gh auth login`, `npm login`, `~/.netrc`) leaves it there, and every agent on that machine can read that file.
+
 ### Choose its folders
 
 Nothing on the server becomes a folder by itself (#656). Once it joins, Add a Machine lists each
@@ -179,25 +205,10 @@ server needs no browser: the web page opens the sign-in page in yours.
 The row then says **Signed in on this machine**. A server that uses this Mac's sign-in
 does not offer **Sign In…**.
 
-### Let the server use this Mac's git access
+### Git access on the server
 
-A private repository needs git access. If the server has no git credential helper of its
-own, its git asks this Mac for one, through the control plane, over https only.
-
-1. The first time the server's git needs access to a git server (for example
-   `github.com`), every window, phone and web page asks **Let devbox use this Mac's git
-   access for github.com?** Click **Allow**.
-
-   The clone, pull or push goes on. This Mac answers from its own git (the Keychain,
-   `gh auth git-credential` and the like). The credential is used for that one git command
-   and is not kept on the server or logged. A push uses the same approval.
-2. To take it back, open the server's page from **Machines** in the sidebar, and under
-   **Git access** choose **Stop Lending Git Access for github.com**. On a phone or the web page, it is
-   **Settings ▸ Git access**.
-
-Git fails at once, and says why, when this Mac is not connected or has no git access to that
-git server. A server with ssh agent forwarding, or a credential helper of its own, uses its
-own access and asks nothing.
+A private repository needs git access on the server itself: a credential helper of its own,
+or ssh agent forwarding. The server does not use this Mac's git access.
 
 ### Add another Mac
 
@@ -229,8 +240,8 @@ filled in. Once the server joins, it is linked to its workspace, so it can be st
 stopped from Agent Loops. See [Start workspaces from Agent Loops](start-machines-from-agents.md).
 
 **New Machine…** on a provider's card has **Clone these folders**: git URLs, one a line.
-Once the new workspace joins, it clones each one, with this Mac's git access when you allow
-it, and they appear under its heading.
+Once the new workspace joins, it clones each one, and they appear under its heading. A
+private repository needs git access on the workspace itself.
 
 ## When the server is offline
 

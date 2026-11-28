@@ -64,3 +64,7 @@ test("the workflow page's switch says what a run does (#1918)", () => {
   assert.equal(w.workflowContinueSentence(true), "A run whose allowance is spent waits, and carries on when it is back.");
   assert.equal(w.workflowContinueSentence(false), "A run whose allowance is spent stops until somebody chooses Continue.");
 });
+
+test("continue on: the button names the account (#7459)", () => {
+  assert.equal(w.continueOnAccount("Claude · Personal"), "Continue on Claude · Personal");
+});

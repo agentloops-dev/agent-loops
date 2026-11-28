@@ -16,6 +16,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/agentloops-dev/agent-loops/Go/internal/artifacts"
+	"github.com/agentloops-dev/agent-loops/Go/internal/blobstore"
 	"github.com/agentloops-dev/agent-loops/Go/internal/controllink"
 	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/apns"
 	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/maturity"
@@ -35,22 +37,14 @@ type Methods struct {
 	records  *records.Records
 	maturity *maturity.Records
 	router   *Router
+	// The artifacts' records and versions (#5953), in the organisation's store.
+	artifacts *artifacts.Store
 
 	mu sync.Mutex
 	// The web remote's listener as it stands (071 R3), set as it binds.
 	web *web.Status
-	// A host's git waiting on a person's answer, by host and git server (#1122).
-	gitAsks map[string]map[string]*gitAskWaiting
 	// Frozen for a handover (R16): records are not to change until it is done.
 	frozen bool
-	// How long a git command waits for a person, and the lender to read its access.
-	gitAskPatience  time.Duration
-	gitFillPatience time.Duration
-}
-
-type gitAskWaiting struct {
-	from    string
-	waiting []chan bool
 }
 
 func newMethods(s *Service) *Methods {
@@ -58,14 +52,17 @@ func newMethods(s *Service) *Methods {
 	s.startAudit()
 	// Each service uses the store for its organisation. A caller cannot select a store.
 	maturityRecords, _ := maturity.New(s.cfg.Store, maturity.RegisteredFeatureIDs())
-	return &Methods{s: s, records: s.records, maturity: maturityRecords, router: s.router, gitAsks: map[string]map[string]*gitAskWaiting{},
-		gitAskPatience: 120 * time.Second, gitFillPatience: 30 * time.Second}
+	return &Methods{s: s, records: s.records, maturity: maturityRecords, router: s.router,
+		artifacts: artifacts.New(blobstore.NewKeyed(s.cfg.Store, artifacts.Prefix), s.cfg.Store, artifacts.Prefix)}
 }
 
 // own is ControlMethods.own: the methods with no host named that are the control
 // plane's. Workspace methods join them once providers are ported. One a line, sorted, so
 // two features that each add one touch different lines (#2020).
 var own = methodSet(
+	"artifacts/get",
+	"artifacts/put",
+	"artifacts/versions",
 	"audit/export",
 	"audit/list",
 	"audit/setSinks",
@@ -127,7 +124,6 @@ var own = methodSet(
 	"machines/install",
 	"machines/joinRequests",
 	"machines/lastHeard",
-	"machines/lendGit",
 	"machines/lendSignIn",
 	"machines/list",
 	"messages/conversationsAll",
@@ -266,6 +262,7 @@ func (m *Methods) setFrozen(frozen bool) {
 // writes is ControlMethods.writes: what changes records, refused while frozen. One a
 // line, sorted (#2020).
 var writes = methodSet(
+	"artifacts/put",
 	"audit/setSinks",
 	"bots/make",
 	"bots/setCaps",
@@ -289,7 +286,6 @@ var writes = methodSet(
 	"machines/denyJoin",
 	"machines/detect",
 	"machines/install",
-	"machines/lendGit",
 	"machines/lendSignIn",
 	"machines/remove",
 	"machines/retrySetup",
@@ -390,6 +386,8 @@ func (m *Methods) Handle(method string, params json.RawMessage, from Caller) (an
 		return m.completeMaturity(ctx, params, from)
 	case "machines/list":
 		return m.hostList(from, params)
+	case "artifacts/get", "artifacts/put", "artifacts/versions":
+		return m.artifactsMethod(ctx, method, params, from)
 	case "clients/list", "devices/list":
 		return m.ownClients(from), nil
 	case "people/list", "people/invite", "people/setRole", "people/remove", "people/removePreview", "people/removeRequests",
@@ -535,8 +533,6 @@ func (m *Methods) Handle(method string, params json.RawMessage, from Caller) (an
 		return m.setFolderDetection(ctx, params)
 	case "machines/lendSignIn":
 		return m.lendSignIn(ctx, params, from)
-	case "machines/lendGit":
-		return m.lendGitTo(ctx, params, from)
 	case "machines/remove":
 		return m.removeMachine(ctx, params, from)
 	case "machines/retrySetup":
@@ -829,19 +825,6 @@ func (m *Methods) lendSignIn(ctx context.Context, params json.RawMessage, from C
 		record.SignInFrom = nil
 	}
 	if err := m.records.SaveHost(ctx, *record); err != nil {
-		return nil, err
-	}
-	m.s.announce("hostEnrolled", string(request.Host), from.Client)
-	return map[string]any{}, nil
-}
-
-// lendGitTo is machines/lendGit: one machine lends, or stops lending, its git access.
-func (m *Methods) lendGitTo(ctx context.Context, params json.RawMessage, from Caller) (any, error) {
-	request, err := require[wire.LendGit](params, "LendGit")
-	if err != nil {
-		return nil, err
-	}
-	if err := m.lendGit(ctx, request); err != nil {
 		return nil, err
 	}
 	m.s.announce("hostEnrolled", string(request.Host), from.Client)
@@ -1154,8 +1137,7 @@ func (m *Methods) hostRow(h records.MachineRecord) wire.ControlMachine {
 	state, _ := m.router.Described(h.ID)["state"].(string)
 	row := wire.ControlMachine{ID: wire.MachineRef(h.ID), Name: h.Name, Platform: h.Platform, Version: h.Version, State: state,
 		Reach: "dialOut", MachineID: h.MachineID, SignInFrom: hostIDs(m.sameUsers(h.ID, h.SignInFrom)),
-		GitFrom: hostIDs(m.sameUsers(h.ID, h.GitFrom)),
-		Owner:   optional(m.s.ownerOf(h.ID))}
+		Owner: optional(m.s.ownerOf(h.ID))}
 	row.Roles = machineRoles(h)
 	if raw, ok := h.Extra["implementation"]; ok {
 		var impl string
@@ -1169,12 +1151,6 @@ func (m *Methods) hostRow(h records.MachineRecord) wire.ControlMachine {
 	} else if m.router.Team() {
 		row.Missing = []string{wire.CapHostTeam1}
 	}
-	m.mu.Lock()
-	for server, ask := range m.gitAsks[h.ID] {
-		row.GitAsks = append(row.GitAsks, wire.GitAsk{Server: server, From: wire.MachineRef(ask.from)})
-	}
-	m.mu.Unlock()
-	sort.Slice(row.GitAsks, func(i, j int) bool { return row.GitAsks[i].Server < row.GitAsks[j].Server })
 	if n, ok := m.s.capacityOf(h.ID); ok {
 		level, at := n.level, wire.DateOf(n.at)
 		row.Capacity, row.LoadPerCore5, row.CapacityAt = &level, n.load5, &at
@@ -1507,7 +1483,6 @@ func samePushToken(a, b *records.PushToken) bool {
 var startsWork = methodSet(
 	"backups/commit",
 	"backups/upload",
-	"git/credential",
 	"links/check",
 	"machine/offerSecret",
 	"machine/pairWebPage",
@@ -1534,8 +1509,9 @@ func (m *Methods) HostSaid(host, method string, params json.RawMessage) (any, er
 		if err != nil {
 			return nil, err
 		}
-		// What this control plane can do, so the host asks only what it answers (#4100).
-		return wire.MachineHelloAnswer{Capabilities: capabilities()}, m.hello(ctx, host, hello)
+		// What this control plane can do, so the host asks only what it answers (#4100), and
+		// the public address its uplink comes from (#7493).
+		return m.helloAnswer(host), m.hello(ctx, host, hello)
 	case "attention/need":
 		m.s.heard(host, params)
 		return map[string]any{}, nil
@@ -1621,12 +1597,6 @@ func (m *Methods) HostSaid(host, method string, params json.RawMessage) (any, er
 		return m.machineProviders(host, method, params)
 	case "backups/stored", "backups/upload", "backups/commit", "backups/download":
 		return m.backupsSaid(host, method, params)
-	case "git/credential":
-		request, err := require[wire.GitCredentialRequest](params, "GitCredentialRequest")
-		if err != nil {
-			return nil, err
-		}
-		return m.gitCredential(ctx, host, request)
 	case "tunnel/open":
 		return m.openTunnel(ctx, host, params)
 	}
@@ -2014,23 +1984,10 @@ func sameHost(a, b records.MachineRecord) bool {
 	return string(x) == string(y)
 }
 
-// MARK: Git access lent between hosts (#1122)
+// MARK: Lends between hosts (FR-021)
 
-// isGitServer is GitCredentialRequest.isServer: a host name, and nothing else.
-func isGitServer(s string) bool {
-	if s == "" || len(s) > 253 {
-		return false
-	}
-	for _, c := range s {
-		if !(c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '.' || c == '-' || c == ':') {
-			return false
-		}
-	}
-	return true
-}
-
-// sameUser says two machines belong to the same user: only such a pair lends a sign-in or
-// git access (FR-021).
+// sameUser says two machines belong to the same user: only such a pair lends a sign-in
+// (FR-021).
 func (m *Methods) sameUser(a, b string) bool { return m.s.ownerOf(a) == m.s.ownerOf(b) }
 
 // sameUsers is a host's lends of only its own user's machines: one made before the team
@@ -2046,186 +2003,6 @@ func (m *Methods) sameUsers(host string, lends map[string]string) map[string]str
 		}
 	}
 	return out
-}
-
-// lendGit is machines/lendGit: kept for a yes, taken back for a no; either ends a waiting ask.
-func (m *Methods) lendGit(ctx context.Context, request wire.LendGit) error {
-	if !isGitServer(request.Server) {
-		return fail(invalidParams, "That is not a git server.")
-	}
-	host := string(request.Host)
-	record := m.records.Host(host)
-	if record == nil || m.records.Host(string(request.From)) == nil || !m.sameUser(host, string(request.From)) {
-		return fail(noSuchHost, "No such host.")
-	}
-	if err := m.refuseLendControlOnly(request.Host, request.From); err != nil {
-		return err
-	}
-	lends := map[string]string{}
-	for k, v := range record.GitFrom {
-		lends[k] = v
-	}
-	if request.Allowed {
-		lends[request.Server] = string(request.From)
-	} else {
-		delete(lends, request.Server)
-	}
-	before := *record
-	record.GitFrom = lends
-	if len(lends) == 0 {
-		record.GitFrom = nil
-	}
-	if !sameHost(before, *record) {
-		if err := m.records.SaveHost(ctx, *record); err != nil {
-			return err
-		}
-	}
-	m.mu.Lock()
-	asked := m.gitAsks[host][request.Server]
-	delete(m.gitAsks[host], request.Server)
-	m.mu.Unlock()
-	if asked != nil {
-		for _, w := range asked.waiting {
-			w <- request.Allowed
-		}
-	}
-	m.sayHostChanged(host)
-	return nil
-}
-
-// gitCredential is git/credential from a host's git: the lent credential, asked of the
-// lender only for a lend a person allowed. With none yet, every client is asked, and the
-// command waits for the answer. It fails at once while the lender is not connected.
-func (m *Methods) gitCredential(ctx context.Context, host string, request wire.GitCredentialRequest) (json.RawMessage, error) {
-	if request.Protocol != "https" || !isGitServer(request.Host) {
-		return nil, fail(invalidParams, "Only https git access is lent.")
-	}
-	server := request.Host
-	record := m.records.Host(host)
-	if record == nil {
-		return nil, fail(noSuchHost, "No such host.")
-	}
-	lender := record.GitFrom[server]
-	if lender != "" && !m.sameUser(host, lender) {
-		// Lent before the team tier by another user's machine: never theirs to use (FR-021).
-		lender = ""
-	}
-	if lender == "" {
-		mac := m.gitLender(host)
-		if mac == "" {
-			return nil, fail(hostOffline, "No Mac is connected to lend its git access for %s; it is lent only while that Mac is connected.", server)
-		}
-		if !m.askToLendGit(host, mac, server) {
-			return nil, fail(notPermitted, "%s may not use the git access of %s for %s.", record.Name, m.name(mac), server)
-		}
-		if r := m.records.Host(host); r != nil && m.sameUser(host, r.GitFrom[server]) {
-			lender = r.GitFrom[server]
-		}
-	}
-	if lender == "" {
-		return nil, fail(notPermitted, "%s may not use any git access for %s.", record.Name, server)
-	}
-	lenderName := m.name(lender)
-	if s, ok := m.router.State(lender); !ok || !s.online() {
-		return nil, fail(hostOffline, "%s is not connected; its git access is lent only while it is connected.", lenderName)
-	}
-	answer := m.router.Ask(lender, "git/fill", request, m.gitFillPatience)
-	if answer == nil {
-		return nil, fail(hostOffline, "%s did not answer for its git access to %s.", lenderName, server)
-	}
-	if len(answer.Result) > 0 {
-		var credential wire.GitCredential
-		if json.Unmarshal(answer.Result, &credential) == nil && credential.Password != "" {
-			return answer.Result, nil
-		}
-	}
-	return nil, fail(notPermitted, "%s has no git access to %s.", lenderName, server)
-}
-
-// gitLender is the Mac whose git access a host would use: the home host if it is a Mac,
-// else the first connected Mac. Never the host itself, and only a Mac of the host's own
-// user (FR-021).
-func (m *Methods) gitLender(host string) string {
-	var macs []string
-	for _, r := range m.records.Hosts() {
-		if r.ID == host || !strings.HasPrefix(r.Platform, "macOS") || !m.sameUser(host, r.ID) {
-			continue
-		}
-		if s, ok := m.router.State(r.ID); ok && s.online() {
-			macs = append(macs, r.ID)
-		}
-	}
-	if settings := m.records.Settings(); settings != nil && settings.HomeHost != nil {
-		for _, mac := range macs {
-			if mac == *settings.HomeHost {
-				return mac
-			}
-		}
-	}
-	sort.Strings(macs)
-	if len(macs) == 0 {
-		return ""
-	}
-	return macs[0]
-}
-
-// askToLendGit asks every client, through the host's row; true once a person allows it.
-func (m *Methods) askToLendGit(host, from, server string) bool {
-	answer := make(chan bool, 1)
-	m.mu.Lock()
-	if m.gitAsks[host] == nil {
-		m.gitAsks[host] = map[string]*gitAskWaiting{}
-	}
-	ask := m.gitAsks[host][server]
-	first := ask == nil
-	if first {
-		ask = &gitAskWaiting{from: from}
-		m.gitAsks[host][server] = ask
-	}
-	ask.waiting = append(ask.waiting, answer)
-	patience := m.gitAskPatience
-	m.mu.Unlock()
-	if first {
-		m.sayHostChanged(host)
-	}
-	select {
-	case allowed := <-answer:
-		return allowed
-	case <-time.After(patience):
-		m.mu.Lock()
-		gone := m.gitAsks[host][server]
-		delete(m.gitAsks[host], server)
-		m.mu.Unlock()
-		if gone != nil {
-			for _, w := range gone.waiting {
-				select {
-				case w <- false:
-				default:
-				}
-			}
-			m.sayHostChanged(host)
-		}
-		select {
-		case allowed := <-answer:
-			return allowed
-		default:
-			return false
-		}
-	}
-}
-
-func (m *Methods) name(host string) string {
-	if r := m.records.Host(host); r != nil {
-		return r.Name
-	}
-	return host
-}
-
-// sayHostChanged tells every client to list the host's row again.
-func (m *Methods) sayHostChanged(host string) {
-	if _, ok := m.router.State(host); ok {
-		m.router.BroadcastHost(host, "control/hostChanged", m.router.Described(host))
-	}
 }
 
 // readJoinFile is HostJoinFile.read: how this Mac's host's join stands, from its root's

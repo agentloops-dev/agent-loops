@@ -78,12 +78,16 @@ struct TurnView: View, Equatable {
     /// Whether **Continue in new session** is offered. A host that gains the capability
     /// draws the button: `Equatable` would otherwise keep the first set of buttons.
     var allowanceCanStart = false
+    /// The accounts **Continue on** offers (#7459), by name, so a change of them draws
+    /// this turn again.
+    var allowanceAccounts: [String] = []
 
     nonisolated static func == (a: TurnView, b: TurnView) -> Bool {
         a.turn == b.turn && a.detail == b.detail && a.focusedRun == b.focusedRun && a.fetched == b.fetched
             && a.fetchFailed == b.fetchFailed && a.hasEarlier == b.hasEarlier && a.isLive == b.isLive
             && a.row == b.row && a.isLastRow == b.isLastRow && a.allowanceLine == b.allowanceLine
             && a.allowanceAt == b.allowanceAt && a.allowanceCanStart == b.allowanceCanStart
+            && a.allowanceAccounts == b.allowanceAccounts
     }
 
     /// The outcome the turn draws: none while the steps it shows before it are on their way.
@@ -1026,7 +1030,8 @@ struct QuietLine: View {
     }
 }
 
-/// **Continue at** and **Continue in new session**, under the allowance line (#5919).
+/// **Continue at**, **Continue in new session** and a **Continue on Claude · Personal** for
+/// each other account that can take it (#7459), under the allowance line (#5919).
 /// The time is read again each minute. Both stay disabled while a press is in flight.
 private struct AllowanceOutButtons: View {
     let offer: AllowanceOutActions
@@ -1053,6 +1058,13 @@ private struct AllowanceOutButtons: View {
             Button(ContinueWhenBackWords.inNewSession) { run(startNew) }
                 .buttonStyle(.paper)
                 .help(ContinueWhenBackWords.inNewSessionHelp)
+                .disabled(busy)
+        }
+        // The person chooses the account: the app never changes it by itself (#7459).
+        ForEach(offer.accounts) { account in
+            Button(AccountWords.continueOn(account.choice.title)) { run(account.go) }
+                .buttonStyle(.paper)
+                .help(AccountWords.continueOnHelp)
                 .disabled(busy)
         }
     }

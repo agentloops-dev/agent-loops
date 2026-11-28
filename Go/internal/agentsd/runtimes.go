@@ -396,7 +396,8 @@ func (d *Daemon) withRuntimeOwnEnv(r *runtimeDef, dir string, account *wire.Acco
 		// the adapter sends as the session's plan: the plan strip and a first build's plan
 		// page read it. The person's own value, when set, is kept.
 		env = withClaudeTodoTools(env)
-		if rl := d.relayFor("claude"); rl != nil && account == nil {
+		// A sign-in made on this server wins over the Mac's relay (#7470, 056 D7 replaced).
+		if rl := d.relayFor("claude"); rl != nil && account == nil && d.storedClaudeSignIn() == "" {
 			env = without(env, "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX",
 				"ANTHROPIC_BASE_URL", "CLAUDE_CODE_OAUTH_TOKEN", "NODE_EXTRA_CA_CERTS")
 			env = append(env, "ANTHROPIC_BASE_URL=https://127.0.0.1:"+strconv.Itoa(rl.port), "CLAUDE_CODE_OAUTH_TOKEN="+rl.standIn,
@@ -408,7 +409,14 @@ func (d *Daemon) withRuntimeOwnEnv(r *runtimeDef, dir string, account *wire.Acco
 			}
 		}
 	case "codex":
-		if rl := d.relayFor("codex"); rl != nil && account == nil {
+		if account == nil && macToolsHome == "" {
+			home, err := d.ensureCodexHome()
+			if err != nil {
+				return nil, err
+			}
+			env = append(without(env, "CODEX_HOME"), "CODEX_HOME="+home)
+		}
+		if rl := d.relayFor("codex"); rl != nil && account == nil && !d.ownCodexSignIn() {
 			env = without(env, "OPENAI_API_KEY", "CODEX_HOME", "CODEX_CA_CERTIFICATE")
 			env = append(env, "CODEX_HOME="+filepath.Join(root, "runtimes", "codex-relay-home"), "CODEX_CA_CERTIFICATE="+rl.caFile)
 		}
@@ -473,7 +481,7 @@ func (d *Daemon) needsSignIn(runtimeID string) error {
 			return nil
 		}
 	case "codex":
-		if ownCodexSignIn() {
+		if d.ownCodexSignIn() {
 			return nil
 		}
 	default:
@@ -569,12 +577,6 @@ var toolPolicyFiles = map[string][]policyFile{
 // falls back to its stock profile and every tool comes back.
 var grokRemoved = []string{"scheduler_create", "scheduler_delete", "scheduler_list", "workflow", "monitor", "send_feedback"}
 
-// claudeNoAttribution is Claude Code's --settings for each session (#6371): no commit
-// attribution of its own (attribution.commit, and includeCoAuthoredBy before it), so its
-// commits get no Co-authored-by that the commitTrailers rule turns off, and no second copy
-// of the one git/trailers writes. Flag settings sit over the person's and the project's.
-const claudeNoAttribution = `{"attribution":{"commit":""},"includeCoAuthoredBy":false}`
-
 // sessionMeta is the _meta on session/new, session/load and session/fork: Claude's tools
 // and Grok's tools the app takes away, Grok's as a profile (ToolPolicyCatalog.swift), and
 // Grok's rules with the app's tools written out (grokRules).
@@ -583,8 +585,7 @@ func sessionMeta(runtimeID string) map[string]any {
 	case "claude":
 		return map[string]any{"claudeCode": map[string]any{"options": map[string]any{"disallowedTools": []string{
 			"Workflow", "CronCreate", "CronList", "CronDelete", "ScheduleWakeup", "Monitor", "RemoteTrigger", "PushNotification",
-			"EnterWorktree", "ExitWorktree"},
-			"extraArgs": map[string]any{"settings": claudeNoAttribution}}}}
+			"EnterWorktree", "ExitWorktree"}}}}
 	case "grok":
 		return map[string]any{"agentProfile": map[string]any{"disallowedTools": grokRemoved, "name": "agents-app",
 			"description": "An agent hosted by the Agent Loops app."}, "rules": grokRules()}

@@ -43,7 +43,7 @@ case "$1 $2" in
 "login --device-auth")
   printf '\033[1mFollow these steps\033[0m\n1. Open this link\n   \033[94mhttps://auth.openai.com/codex/device\033[0m\n2. Enter this one-time code \033[90m(expires in 15 minutes)\033[0m\n   \033[94mABCD-EFGH1\033[0m\n'
   while [ ! -f "$HOME/entered" ]; do sleep 0.1; done
-  mkdir -p "$HOME/.codex" && echo '{}' > "$HOME/.codex/auth.json"
+  home=${CODEX_HOME:-$HOME/.codex}; mkdir -p "$home" && echo '{}' > "$home/auth.json"
   echo 'Successfully logged in' ;;
 "login --with-api-key")
   read k
@@ -152,6 +152,33 @@ func TestSigningClaudeInOnAServer(t *testing.T) {
 	c.call(t, 10, "runtimes/signInKey", map[string]any{"runtimeID": "claude", "key": " sk-ant-api03-xyz "})
 	if got := d.storedClaudeSignIn(); got != "ANTHROPIC_API_KEY=sk-ant-api03-xyz" {
 		t.Fatalf("kept %q", got)
+	}
+}
+
+func TestAServersCodexUsesItsPrivateHome(t *testing.T) {
+	fakeRuntimes(t)
+	fakeSignInTools(t)
+	d, _ := start(t, t.TempDir())
+	defer d.Shutdown()
+	asAServer(t)
+
+	got, err := d.withRuntimeOwnEnv(runtimeByID("codex"), t.TempDir(), nil, []string{"CODEX_HOME=/outside"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := filepath.Join(d.Store.Loc.Root, "runtimes", "codex", "home")
+	if !strings.Contains(strings.Join(got, "\n"), "CODEX_HOME="+want) {
+		t.Fatalf("Codex home not isolated: %q", got)
+	}
+	info, err := os.Stat(want)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0o700 {
+		t.Fatalf("Codex home mode %o, want 700", info.Mode().Perm())
+	}
+	if ownCodexSignIn() {
+		t.Fatal("the daemon-owned sign-in was confused with ~/.codex")
 	}
 }
 
@@ -270,7 +297,11 @@ func TestSignInTestsRunOnlyTheFakes(t *testing.T) {
 	home := fakeSignInTools(t)
 	asAServer(t)
 	for _, id := range []string{"claude", "codex"} {
-		cmd, err := runtimeTool(id, (&Daemon{}).signInEnvironment(runtimeByID(id)), "login")
+		env, err := (&Daemon{}).signInEnvironment(runtimeByID(id))
+		if err != nil {
+			t.Fatal(err)
+		}
+		cmd, err := runtimeTool(id, env, "login")
 		if err != nil {
 			t.Fatalf("%s: %v", id, err)
 		}

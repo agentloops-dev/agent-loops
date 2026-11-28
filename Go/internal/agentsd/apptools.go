@@ -113,6 +113,7 @@ func appToolCalls() []appTool {
 		{"set_environment_gate", (*Daemon).setEnvironmentGate},
 		{"make_app_repository", (*Daemon).makeAppRepository},
 		{"make_public_repository", (*Daemon).makePublicRepository},
+		{meetingNotesName, (*Daemon).meetingNotes},
 	}
 }
 
@@ -419,16 +420,36 @@ func offeredTools(movesItself, bot, desktopControl, checks bool) []json.RawMessa
 		// A bot's machine has no ask tools: nobody answers there (#1761, FR-032). A host
 		// with no agents-drive beside it, or with desktop control Off, has no drive_screen
 		// (#3004, host.desktop-control/1, FR-004). Only a session in the person's home
-		// folder, as the Daily checks' is, has check_folders (#3355).
-		if !done[name] || name == "move_worktree" && !movesItself || askTools[name] && bot ||
+		// folder, as the Daily checks' is, has check_folders (#3355). meeting_notes is added
+		// by appToolsList, for a meeting's session only (#7583).
+		if !done[name] || name == meetingNotesName || name == "move_worktree" && !movesItself || askTools[name] && bot ||
 			name == "drive_screen" && !desktopControl || name == "check_folders" && !checks {
 			continue
+		}
+		if alwaysLoadedTools[name] {
+			t["_meta"] = alwaysLoadMeta
 		}
 		b, _ := json.Marshal(t)
 		out = append(out, b)
 	}
 	return out
 }
+
+// alwaysLoadedTools are the tools nearly every lane calls. tools/list marks them so that
+// Claude Code keeps their schemas in the prompt and does not defer them behind tool search.
+// Without the mark, a lane called them before it loaded them and was refused, about 61
+// times on 2026-11-26 (#5187). Other runtimes ignore `_meta`.
+var alwaysLoadedTools = map[string]bool{
+	"set_session_labels": true,
+	"lease_resource":     true,
+	"release_resource":   true,
+	"wait_for_event":     true,
+	"message_session":    true,
+	"commit_trailers":    true,
+}
+
+// alwaysLoadMeta is Claude Code's per-tool mark: a tool with it is never deferred.
+var alwaysLoadMeta = json.RawMessage(`{"anthropic/alwaysLoad":true}`)
 
 // appToolsHandle is AppService.handle: one MCP request.
 func (d *Daemon) appToolsHandle(ctx context.Context, g *appGrant, method string, params json.RawMessage) (any, *Error) {
@@ -467,6 +488,11 @@ func (d *Daemon) appToolsHandle(ctx context.Context, g *appGrant, method string,
 // machine's browser tools.
 func (d *Daemon) appToolsList(g *appGrant) map[string]any {
 	tools := offeredTools(g.movesItself, d.isBot(), d.offersDriveScreen(), d.inPersonalHome(g.agent))
+	if _, ok := d.meetingOfAgent(g.agent); ok {
+		if t, ok := meetingNotesTool(); ok {
+			tools = append(tools, t)
+		}
+	}
 	// The machine's browser, driven through Playwright's own tools (#3534).
 	if d.offersBrowser() {
 		list, _ := browserTools()

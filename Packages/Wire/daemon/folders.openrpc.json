@@ -33,8 +33,39 @@
       "description": "Write a file an agent may read, whole (#415). With `base`, refused with fileChanged when the file changed on disk since the edit began (#1858), so nobody's change is written over unseen."
     },
     {
+      "name": "autopilot/resume",
+      "x-capability": "autopilot/1",
+      "tags": [
+        {
+          "name": "web"
+        }
+      ],
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "schema/files.schema.json#/definitions/AutopilotResumeRequest"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema/files.schema.json#/definitions/AutopilotStatus"
+        }
+      },
+      "description": "Resume a paused epic or issue in a folder (#5905): its paused row is dropped, autopilot.resumed is raised, and the loop looks again. An item that is not paused is left as it is."
+    },
+    {
       "name": "autopilot/set",
       "x-capability": "autopilot/1",
+      "tags": [
+        {
+          "name": "web"
+        }
+      ],
       "paramStructure": "by-name",
       "params": [
         {
@@ -56,6 +87,11 @@
     {
       "name": "autopilot/status",
       "x-capability": "autopilot/1",
+      "tags": [
+        {
+          "name": "web"
+        }
+      ],
       "paramStructure": "by-name",
       "params": [
         {
@@ -1911,27 +1947,6 @@
         "name": "result",
         "schema": {
           "$ref": "schema/files.schema.json#/definitions/FolderSummary"
-        }
-      }
-    },
-    {
-      "name": "git/fill",
-      "x-capability": "git/1",
-      "description": "Asked by the control plane on the lending host's channel 0, for a lend a person allowed (#1122).",
-      "paramStructure": "by-name",
-      "params": [
-        {
-          "name": "params",
-          "required": true,
-          "schema": {
-            "$ref": "schema/org.schema.json#/definitions/GitCredentialRequest"
-          }
-        }
-      ],
-      "result": {
-        "name": "result",
-        "schema": {
-          "$ref": "schema/org.schema.json#/definitions/GitCredential"
         }
       }
     },

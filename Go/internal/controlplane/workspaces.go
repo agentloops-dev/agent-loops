@@ -82,10 +82,11 @@ func (s *Service) makeProviders() *providers.Providers {
 				}
 				return *shown.Command, host, nil
 			},
-			SetupStep: s.madeStep,
-			MadeFor:   s.madeFor,
-			Setup:     func(host string) *wire.MachineSetup { return s.machineSetup(context.Background(), host) },
-			BackUp:    s.backUpBeforeDelete,
+			SetupStep:    s.madeStep,
+			SetupNotSent: s.setupNotSent,
+			MadeFor:      s.madeFor,
+			Setup:        func(host string) *wire.MachineSetup { return s.machineSetup(context.Background(), host) },
+			BackUp:       s.backUpBeforeDelete,
 			Capacity: func(host string) (wire.CapacityLevel, *float64, time.Time, bool) {
 				n, ok := s.capacityOf(host)
 				return n.level, n.load5, n.at, ok

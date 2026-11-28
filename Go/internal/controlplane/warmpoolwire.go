@@ -99,6 +99,7 @@ func (b poolsBackend) Bind(person, provider, workspace string, stopWhenIdle *int
 		return "", err
 	}
 	b.s.setupChanged(context.Background(), host.ID)
+	b.s.setupAsked(context.Background(), host.ID, b.s.setupWanted(context.Background(), host.ID))
 	return host.ID, nil
 }
 
@@ -241,10 +242,23 @@ func cleanFolder(folder string) string {
 // setupWork is machine/setupWork: what the set-up of host has left (#6890, #6896).
 func (s *Service) setupWork(ctx context.Context, host string) (wire.MachineSetupWork, error) {
 	none := wire.MachineSetupWork{Done: true, Projects: []wire.MachineSetupProject{}}
-	if s.pools == nil {
-		return none, nil
-	}
 	stored, _, err := s.readMachineSetup(ctx, host)
+	if err == nil && stored != nil && stored.userNeverBegan(time.Now()) {
+		// Its sender said nothing more (#7544): it fails, with words, and the wait ends.
+		s.endUserNeverBegan(ctx, host)
+		stored, _, err = s.readMachineSetup(ctx, host)
+	}
+	if err == nil && stored != nil && stored.waitUser(time.Now()) {
+		// Your set-up first (#7416): the host asks again.
+		return wire.MachineSetupWork{WaitUser: new(true), Projects: []wire.MachineSetupProject{}}, nil
+	}
+	if err == nil && stored != nil && stored.userFailed() {
+		// It failed (#7546): the projects do not start, and the host asks again when it runs again.
+		return wire.MachineSetupWork{UserFailed: new(true), Projects: []wire.MachineSetupProject{}}, nil
+	}
+	if s.pools == nil {
+		return madeWork(stored, none), nil
+	}
 	if err != nil {
 		return none, fail(storeUnavailable, "The machine's set-up could not be read: %v", err)
 	}
@@ -258,11 +272,23 @@ func (s *Service) setupWork(ctx context.Context, host string) (wire.MachineSetup
 		return none, fail(storeUnavailable, "The warm pools could not be read: %v", err)
 	}
 	if p == nil {
-		return none, nil
+		return madeWork(stored, none), nil
 	}
 	work := wire.MachineSetupWork{Pool: true}
 	work.Projects, err = s.setupProjects(ctx, p.Owner, host, p.Projects)
 	return work, err
+}
+
+// madeWork is machine/setupWork for a machine that no pool made: none, or the step its host runs
+// when no installer asks for its projects (#7559).
+func madeWork(stored *storedSetup, none wire.MachineSetupWork) wire.MachineSetupWork {
+	if stored == nil {
+		return none
+	}
+	if from := stored.madeNext(); from != nil {
+		return wire.MachineSetupWork{From: from, Projects: []wire.MachineSetupProject{}}
+	}
+	return none
 }
 
 // startPools starts the reconcile loop, on a control plane that has providers.

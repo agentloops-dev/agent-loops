@@ -2,6 +2,7 @@ package controlplane
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -356,5 +357,238 @@ func TestMachineSetupTimesAgeOut(t *testing.T) {
 	}
 	if got := st.wire(later, s.readSetupTimes(ctx, st)).Steps[0].Slower; got != nil {
 		t.Fatal("slower with no times left")
+	}
+}
+
+// #7528: a made machine's Your set-up, sent by itself, says why while the sender tries again,
+// and fails with the reason when it gives up, so its projects do not wait with no words. A step
+// that began on the machine keeps what the machine says.
+func TestYourSetUpSaysWhyItsAutomaticSendFailed(t *testing.T) {
+	t.Parallel()
+	p := startPlane(t, store.NewMemory(), controllink.NewPrivateKey())
+	ctx := context.Background()
+	const made = "notsent"
+	for _, id := range setupSteps[:4] {
+		p.s.madeStep(made, rep(id, wire.MachineSetupStateRunning))
+		p.s.madeStep(made, rep(id, wire.MachineSetupStateDone))
+	}
+	notInLock := &providers.Failure{Code: wire.FailureNotInLock, Message: "This machine is not in your lock."}
+	// No Your set-up in the set-up: nothing changes.
+	p.s.setupNotSent(made, "mac", notInLock, true)
+	if stored, _, _ := p.s.readMachineSetup(ctx, made); stored.index(wire.MachineSetupStepIDUser) >= 0 {
+		t.Fatalf("a set-up with no Your set-up got one: %+v", stored.Steps)
+	}
+	p.s.setupAsked(ctx, made, true)
+	user := func() storedSetupStep {
+		t.Helper()
+		stored, _, err := p.s.readMachineSetup(ctx, made)
+		if err != nil || stored == nil {
+			t.Fatal(err)
+		}
+		return *stored.step(wire.MachineSetupStepIDUser)
+	}
+	p.s.setupNotSent(made, "mac", notInLock, false)
+	if u := user(); u.State != wire.MachineSetupStateNeedsYou || !strings.Contains(u.Detail, "lock") {
+		t.Fatalf("while the sender tries again: %+v", u)
+	}
+	p.s.setupNotSent(made, "mac", notInLock, true)
+	u := user()
+	if u.State != wire.MachineSetupStateFailed || !strings.Contains(u.Error, "mac could not send setup.sh: This machine is not in your lock. Use Send Set-up") {
+		t.Fatalf("after the last try: %+v", u)
+	}
+	// Send Set-up then reaches it, and it runs: a send that fails after does not change it.
+	hash := strings.Repeat("a", 64)
+	if err := p.s.setupStep(ctx, made, wire.MachineSetupReport{Step: wire.MachineSetupStepIDUser, State: wire.MachineSetupStateRunning, Hash: &hash}); err != nil {
+		t.Fatal(err)
+	}
+	p.s.setupNotSent(made, "mac", &providers.Failure{Code: providers.CodeHostOffline, Message: "notsent is offline."}, false)
+	if u := user(); u.State != wire.MachineSetupStateRunning || u.Error != "" {
+		t.Fatalf("a failed send changed a running Your set-up: %+v", u)
+	}
+
+	// Any other refusal fails the step at once: the sender does not try it again.
+	const other = "refused"
+	for _, id := range setupSteps[:4] {
+		p.s.madeStep(other, rep(id, wire.MachineSetupStateRunning))
+		p.s.madeStep(other, rep(id, wire.MachineSetupStateDone))
+	}
+	p.s.setupAsked(ctx, other, true)
+	p.s.setupNotSent(other, "mac", &providers.Failure{Code: providers.CodeHostOffline, Message: "refused did not answer"}, false)
+	stored, _, _ := p.s.readMachineSetup(ctx, other)
+	if u := stored.step(wire.MachineSetupStepIDUser); u.State != wire.MachineSetupStateFailed || !strings.Contains(u.Error, "refused did not answer. Use") {
+		t.Fatalf("an offline target: %+v", u)
+	}
+}
+
+// #7544: the sender said it sends a made machine's setup.sh, then said nothing more (it stopped,
+// could not sign, or lost its link). After userSendPatience, machine/setupWork fails Your set-up
+// with words and ends the host's wait. A step that began, or one still in time, waits on. A
+// setup.sh that comes after still runs.
+func TestYourSetUpThatNeverBeganFailsWithWords(t *testing.T) {
+	t.Parallel()
+	p := startPlane(t, store.NewMemory(), controllink.NewPrivateKey())
+	ctx := context.Background()
+	made := func(host string) {
+		t.Helper()
+		for _, id := range setupSteps[:4] {
+			p.s.madeStep(host, rep(id, wire.MachineSetupStateRunning))
+			p.s.madeStep(host, rep(id, wire.MachineSetupStateDone))
+		}
+		p.s.setupAsked(ctx, host, true)
+	}
+	askedAgo := func(host string, ago time.Duration) {
+		t.Helper()
+		_, err := p.s.changeMachineSetup(ctx, host, false, func(st *storedSetup) error {
+			at := time.Now().Add(-ago)
+			st.UserAskedAt = &at
+			return nil
+		})
+		must(t, err)
+	}
+	user := func(host string) storedSetupStep {
+		t.Helper()
+		stored, _, err := p.s.readMachineSetup(ctx, host)
+		if err != nil || stored == nil {
+			t.Fatal(err)
+		}
+		return *stored.step(wire.MachineSetupStepIDUser)
+	}
+	work := func(host string) wire.MachineSetupWork {
+		t.Helper()
+		got, err := p.s.setupWork(ctx, host)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return got
+	}
+
+	const silent = "silent"
+	made(silent)
+	if got := work(silent); got.WaitUser == nil || !*got.WaitUser {
+		t.Fatalf("in time, the host does not wait: %+v", got)
+	}
+	askedAgo(silent, userSendPatience)
+	got := work(silent)
+	if got.UserFailed == nil || !*got.UserFailed || got.WaitUser != nil {
+		t.Fatalf("after the limit, the host still waits: %+v", got)
+	}
+	if u := user(silent); u.State != wire.MachineSetupStateFailed || !strings.Contains(u.Error, "setup.sh did not come in 15 minutes") || !strings.Contains(u.Error, "Use Send Set-up") {
+		t.Fatalf("no words: %+v", u)
+	}
+	stored, _, _ := p.s.readMachineSetup(ctx, silent)
+	if projects := stored.step(wire.MachineSetupStepIDProjects); projects.Detail != notStartedWords {
+		t.Fatalf("the projects do not say why: %+v", projects)
+	}
+	// setup.sh comes after all: it runs, and the host waits for it again.
+	hash := strings.Repeat("a", 64)
+	must(t, p.s.setupStep(ctx, silent, wire.MachineSetupReport{Step: wire.MachineSetupStepIDUser, State: wire.MachineSetupStateRunning, Hash: &hash}))
+	if got := work(silent); got.WaitUser == nil || !*got.WaitUser || user(silent).State != wire.MachineSetupStateRunning {
+		t.Fatalf("a late setup.sh: %+v %+v", got, user(silent))
+	}
+
+	// One that waits for the lock, as the sender said (#7528), and then hears no more, fails too.
+	const locked = "locked"
+	made(locked)
+	p.s.setupNotSent(locked, "mac", &providers.Failure{Code: wire.FailureNotInLock, Message: "This machine is not in your lock."}, false)
+	askedAgo(locked, userSendPatience+time.Minute)
+	if got := work(locked); got.UserFailed == nil || user(locked).State != wire.MachineSetupStateFailed {
+		t.Fatalf("a Your set-up that waits for the lock for ever: %+v %+v", got, user(locked))
+	}
+
+	// One that began on the machine is never failed by the limit: it has its own.
+	const began = "began"
+	made(began)
+	must(t, p.s.setupStep(ctx, began, wire.MachineSetupReport{Step: wire.MachineSetupStepIDUser, State: wire.MachineSetupStateNeedsYou, Hash: &hash}))
+	askedAgo(began, time.Hour)
+	if got := work(began); got.WaitUser == nil || user(began).State != wire.MachineSetupStateNeedsYou {
+		t.Fatalf("a Your set-up that began was failed: %+v %+v", got, user(began))
+	}
+}
+
+// #7544: a record from before userAskedAt counts from the compare step's end.
+func TestYourSetUpWithNoAskTimeCountsFromTheCompare(t *testing.T) {
+	t.Parallel()
+	now := time.Now()
+	st := newStoredSetup(now.Add(-time.Hour))
+	runSteps(t, st, now.Add(-time.Hour), setupSteps[:4]...)
+	st.Expect, st.UserAsked = "123456", true
+	must(t, st.add(wire.MachineSetupStepIDUser))
+	if !st.userNeverBegan(now) {
+		t.Fatal("an old record never ends its wait")
+	}
+	if st.userNeverBegan(now.Add(-time.Hour)) {
+		t.Fatal("it ended in time")
+	}
+	st.UserLate = true
+	if st.userNeverBegan(now) {
+		t.Fatal("a late Your set-up, which the projects do not wait for, was failed")
+	}
+}
+
+// #7545: Try Again on a Your set-up that never got a script asks its sender again, as the
+// automatic send does, and does not refuse as Run Again's setup/run would. A sender that does
+// not send it fails the step again, with words; a step that ran a script keeps the refusal.
+func TestTryAgainOnAYourSetUpWithNoScriptAsksTheSenderAgain(t *testing.T) {
+	t.Parallel()
+	p := startPlane(t, store.NewMemory(), controllink.NewPrivateKey())
+	ctx := context.Background()
+	made := func(host string) {
+		t.Helper()
+		for _, id := range setupSteps[:4] {
+			p.s.madeStep(host, rep(id, wire.MachineSetupStateRunning))
+			p.s.madeStep(host, rep(id, wire.MachineSetupStateDone))
+		}
+		p.s.setupAsked(ctx, host, true)
+	}
+	stored := func(host string) *storedSetup {
+		t.Helper()
+		st, _, err := p.s.readMachineSetup(ctx, host)
+		if err != nil || st == nil {
+			t.Fatal(err)
+		}
+		return st
+	}
+
+	const silent = "silent"
+	made(silent)
+	_, err := p.s.changeMachineSetup(ctx, silent, false, func(st *storedSetup) error {
+		at := time.Now().Add(-userSendPatience - time.Minute)
+		st.UserAskedAt = &at
+		return nil
+	})
+	must(t, err)
+	p.s.endUserNeverBegan(ctx, silent)
+	if u := stored(silent).step(wire.MachineSetupStepIDUser); u.State != wire.MachineSetupStateFailed {
+		t.Fatalf("not failed after 15 minutes: %+v", u)
+	}
+	before := time.Now()
+	if err := p.s.retrySetup(ctx, silent); err != nil {
+		t.Fatalf("Try Again refused: %v", err)
+	}
+	st := stored(silent)
+	if st.UserAskedAt == nil || st.UserAskedAt.Before(before) {
+		t.Fatalf("the sender was not asked again: %v", st.UserAskedAt)
+	}
+	// This plane has no sender for the machine, so nothing is sent: the step says so.
+	if u := st.step(wire.MachineSetupStepIDUser); u.State != wire.MachineSetupStateFailed ||
+		!strings.Contains(u.Error, "setup.sh was not sent again") || !strings.Contains(u.Error, "Use Send Set-up") {
+		t.Fatalf("a sender that does not send: %+v", u)
+	}
+	// The other steps are as they were.
+	for _, id := range setupSteps[:4] {
+		if s := st.step(id); s.State != wire.MachineSetupStateDone {
+			t.Fatalf("Try Again changed %s: %+v", id, s)
+		}
+	}
+
+	// A Your set-up that ran a script and failed runs on the machine: Run Again, not this.
+	const ran = "ran"
+	made(ran)
+	hash := strings.Repeat("b", 64)
+	for _, state := range []wire.MachineSetupState{wire.MachineSetupStateRunning, wire.MachineSetupStateFailed} {
+		must(t, p.s.setupStep(ctx, ran, wire.MachineSetupReport{Step: wire.MachineSetupStepIDUser, State: state, Hash: &hash}))
+	}
+	if err := p.s.retrySetup(ctx, ran); err == nil || !strings.Contains(err.Error(), "Run Again") {
+		t.Fatalf("a script that ran: %v", err)
 	}
 }

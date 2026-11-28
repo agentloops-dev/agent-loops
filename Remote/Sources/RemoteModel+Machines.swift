@@ -330,35 +330,6 @@ extension RemoteModel {
             .call(DaemonAPI.Method.machineUsage, DaemonAPI.Empty(), returning: DaemonAPI.MachineUsageState.self)
     }
 
-    /// A host's git asking to use a Mac's git access (#1122), not answered here yet. Any
-    /// client may answer it; the control plane takes the first answer.
-    var gitLendAsk: GitLendAsk? {
-        GitLendAsk.first(in: controlHosts, thisMac: nil, answered: gitAsksAnswered)
-    }
-
-    /// Approve or Deny on the ask.
-    func answerGitLend(_ ask: GitLendAsk, allowed: Bool) async {
-        gitAsksAnswered.insert(ask.id)
-        await lendGit(host: ask.host, from: ask.from, server: ask.server, allowed: allowed)
-    }
-
-    /// Said to the control plane; Settings ▸ Git access takes one back with `allowed` false.
-    func lendGit(host: MachineRef, from: MachineRef, server: String, allowed: Bool) async {
-        guard let control = controlPlane else {
-            problem = "The control plane isn’t answering, so that was not changed."
-            return
-        }
-        do {
-            _ = try await control.call(DaemonAPI.Method.hostsLendGit,
-                                       DaemonAPI.LendGit(host: host, from: from, server: server, allowed: allowed))
-            if !allowed, let index = controlHosts.firstIndex(where: { $0.id == host }) {
-                controlHosts[index].gitFrom?[server] = nil
-            }
-        } catch {
-            problem = sentence(for: error)
-        }
-    }
-
     /// Ask whether a control plane is on the other end, and follow its other hosts if so.
     /// A bridge with no control plane answers `control/status` with methodNotFound, and
     /// nothing more happens.
@@ -483,7 +454,6 @@ extension RemoteModel {
               let listed = try? await control.call(DaemonAPI.Method.hostsList, returning: [DaemonAPI.ControlMachine].self)
         else { return }
         controlHosts = listed
-        gitAsksAnswered.formIntersection(GitLendAsk.waiting(in: listed))
         controlHome = status.homeHost
         controlStatus = status
         let onHomeMac = ControlPlaneReach.onHomeMac(status, hosts: listed)

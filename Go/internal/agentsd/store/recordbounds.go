@@ -48,6 +48,13 @@ func boundedRecord(a *wire.Agent) ([]byte, error) {
 		{"suggested prompts", func() { c.SuggestedPrompts = nil }},
 		{"MCP servers", func() { c.McpServers = nil }},
 		{"report", func() { c.Report = nil }},
+		{"parent notices", func() {
+			if c.ParentNotices != nil {
+				n := *c.ParentNotices
+				n.Pending = nil
+				c.ParentNotices = &n
+			}
+		}},
 		{"labels", func() { c.Labels = nil }},
 		{"directories", func() { c.AdditionalDirectories = nil }},
 		{"costs", func() { c.CostToDate = nil }},

@@ -60,12 +60,13 @@ var clientSigned = methodSet([]string{wire.CallAgentsStart.Name, wire.CallAgents
 
 // machineSigned is what another of the person's machines may ask (D7): the steps of
 // start_session (#2887, #2927), of send and bring_back (#2929, #2947), and of move_session
-// (#3717), and the bot's key (#3950). Not terminals, nor any other file.
+// (#3717), the bot's key (#3950), and a set-up script (#7155). Not terminals, nor any other file.
 var machineSigned = methodSet([]string{
 	wire.CallAgentsStart.Name, "agents/fromStarter", "agents/endedElsewhere", wire.CallAgentsMoveIn.Name,
 	"folders/receiveState", "folders/receiveUpload", "folders/receive", wire.CallFoldersReceiveSeed.Name,
 	"folders/sendFacts", "folders/sendPack", "folders/sendRead",
 	wire.CallConnectionsBotTake.Name, wire.CallConnectionsBotDrop.Name,
+	wire.CallSetupDeliver.Name,
 })
 
 // registerLockHello serves lock/hello, so the host says host.lock/3. A checked connection

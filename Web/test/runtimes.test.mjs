@@ -162,6 +162,27 @@ test("account choices: the default, the own sign-in, what is sent and why a sess
   assert.equal(r.defaultAccountName, "Your Own Sign-In");
 });
 
+test("continue choices: the other accounts a chat whose allowance ran out can go on with (#7459)", () => {
+  const row = (accountID, status, extra = {}) => ({ credentialKey: accountID ? `claude:account:${accountID}` : "claude:sign-in",
+    ...(accountID ? { accountID } : {}), state: { status, since: 0 }, ...extra });
+  const list = [
+    { id: "work", runtimeID: "claude", name: "Work", reach: { signIn: { folder: "/w" } }, addedAt: 0, signedIn: true },
+    { id: "personal", runtimeID: "claude", name: "Personal", reach: { signIn: { folder: "/p" } }, addedAt: 0, signedIn: true },
+    { id: "new", runtimeID: "claude", name: "New", reach: { signIn: { folder: "/n" } }, addedAt: 0, signedIn: false },
+    { id: "spent", runtimeID: "claude", name: "Spent", reach: { signIn: { folder: "/s" } }, addedAt: 0, signedIn: true },
+  ];
+  const allowances = { at: 0, rows: [row(undefined, { available: {} }), row("work", { out: {} }), row("personal", { available: {} }),
+    row("new", { available: {} }), row("spent", { out: {} })] };
+  assert.deepEqual(r.continueChoices("claude", "work", list, null, allowances),
+    [{ accountID: "default", title: "Claude · Your Own Sign-In" }, { accountID: "personal", title: "Claude · Personal" }]);
+  // On its own sign-in: only the added ones.
+  assert.deepEqual(r.continueChoices("claude", undefined, list, null, allowances).map((c) => c.accountID), ["personal"]);
+  // The organisation refuses the own sign-in; nothing is known yet.
+  const policy = { runtimes: { claude: { reach: ["orgKey"] } } };
+  assert.deepEqual(r.continueChoices("claude", "work", list, policy, allowances).map((c) => c.accountID), ["personal"]);
+  assert.deepEqual(r.continueChoices("claude", "work", list, null, undefined), []);
+});
+
 test("account words: Remove counts the sessions it stops and says it can't be undone (#2264)", () => {
   assert.equal(r.removeMessage(0, "the Mac"), "Nothing is running on it. Its sign-in is deleted from the Mac. This can’t be undone.");
   assert.equal(r.removeMessage(2, "the Mac"), "This stops 2 sessions mid-conversation. Its sign-in is deleted from the Mac. This can’t be undone.");

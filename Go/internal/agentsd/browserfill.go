@@ -46,7 +46,7 @@ var fillSecretTool = json.RawMessage(`{"name":"fill_secret","title":"Fill a secr
 	`"inputSchema":{"type":"object","properties":{` +
 	`"secret":{"type":"string","description":"The secret's name, as in Settings ▸ Secrets, e.g. GITLAB_PASSWORD."},` +
 	`"element":{"type":"string","description":"The field, in words, for the person: e.g. \"Password field\"."},` +
-	`"part":{"type":"string","enum":["number","expiry","exp_month","exp_year","cvc","name","zip"],"description":"For a card secret only: which part goes in this field. expiry is MM/YY, exp_month MM, exp_year YYYY, zip the billing postal code."},` +
+	`"part":{"type":"string","enum":["number","expiry","exp_month","exp_year","cvc","name","zip","line1","line2","city","state","country"],"description":"For a card secret only: which part goes in this field. expiry is MM/YY, exp_month MM, exp_year YYYY. name is the name on the card, also the billing name; line1, line2, city, state, zip and country are the billing address, each in its own field."},` +
 	`"target":{"type":"string","description":"Exact target element reference from the page snapshot, or a unique element selector"},` +
 	`"submit":{"type":"boolean","description":"Whether to press Enter after the fill."}},` +
 	`"required":["secret","target"],"additionalProperties":false},` +
@@ -113,7 +113,8 @@ type secretFill struct {
 }
 
 // cardParts are a card secret's parts as fill_secret names them (#3531).
-var cardParts = []string{"number", "expiry", "exp_month", "exp_year", "cvc", "name", "zip"}
+// The billing address parts (#5569) are optional: a card can have only the ZIP.
+var cardParts = []string{"number", "expiry", "exp_month", "exp_year", "cvc", "name", "zip", "line1", "line2", "city", "state", "country"}
 
 // cardSecret is a card secret's value: one JSON object, as Settings ▸ Secrets writes it.
 type cardSecret struct {
@@ -122,6 +123,12 @@ type cardSecret struct {
 	CVC    string `json:"cvc"`
 	Name   string `json:"name"`
 	Zip    string `json:"zip"`
+	// The billing address (#5569), each part optional.
+	Line1   string `json:"line1"`
+	Line2   string `json:"line2"`
+	City    string `json:"city"`
+	State   string `json:"state"`
+	Country string `json:"country"`
 }
 
 // parseCard is value's parts, or false when value is not a card.
@@ -138,7 +145,8 @@ func parseCard(value string) (map[string]string, bool) {
 		year = "20" + year
 	}
 	return map[string]string{"number": c.Number, "expiry": c.Expiry, "exp_month": month, "exp_year": year,
-		"cvc": c.CVC, "name": c.Name, "zip": c.Zip}, true
+		"cvc": c.CVC, "name": c.Name, "zip": c.Zip,
+		"line1": c.Line1, "line2": c.Line2, "city": c.City, "state": c.State, "country": c.Country}, true
 }
 
 // fillSecretValue is what the call fills, read from the session's own secrets (#3548) or

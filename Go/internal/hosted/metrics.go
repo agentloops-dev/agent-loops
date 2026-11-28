@@ -145,7 +145,9 @@ func (s *Service) countAccounts(ctx context.Context) (*accountCounts, error) {
 	}
 	for i := range list {
 		state := "active"
-		if list[i].Suspended != nil {
+		if idlePaused(&list[i]) {
+			state = "paused-idle"
+		} else if list[i].Suspended != nil {
 			state = "suspended"
 		}
 		plan := PlanOf(&list[i])

@@ -25,7 +25,7 @@
 # Then it prints the address, and stops until both names point at it (deploy/cloudflare/dns.sh):
 # Let's Encrypt allows only a few failed tries an hour. Run it again after that, and it copies
 # deploy/compose.public.yaml and the secrets to /opt/agents on the VM, has the VM pull the
-# release's image, ghcr.io/agentloops-dev/agents-control:<version> (#2140), which carries the Linux host
+# release's image, ghcr.io/<the repo's owner>/agents-control:<version> (#2140, #5472), which carries the Linux host
 # for servers that join, and starts the control plane and Caddy there. --build is for a commit
 # no release has: it builds the binaries (linux/amd64) and the web page here, with this machine's
 # own Go and Node and no Docker, sends them to the VM, and the VM's Docker builds the image from
@@ -81,6 +81,8 @@ done
 [[ -z $seal_key || -s $seal_key ]] || die "$seal_key is not a key file"
 # Look before anything is made in the cloud.
 pick_version
+image_of_repo "$root"
+say "image: $image:$tag"
 # With --build, Go and Node build here (Go/scripts/go.sh and scripts/web.sh); Docker is the VM's.
 ((!build || dry_run)) || "$root/Go/scripts/go.sh" version >/dev/null ||
 	die "--build needs Go here: brew install go"
@@ -263,7 +265,7 @@ tar_skip=(--exclude deploy/secrets/vapid-key)
 ((${#apns[@]})) || tar_skip+=(--exclude deploy/secrets/apns-key)
 {
 	printf '%s=%s\n' AGENTS_DOMAIN "$domain" AGENTS_VIEWS_DOMAIN "$views_domain" ACME_EMAIL "$email" \
-		AGENTS_VERSION "$tag"
+		AGENTS_VERSION "$tag" AGENTS_IMAGE "$image"
 	if [[ -f $stage/deploy/.env ]]; then cat "$stage/deploy/.env"; fi
 } >"$stage/deploy/.env.new"
 rm -f "$stage/deploy/.env" "$stage/deploy/make-secrets.sh"
@@ -309,7 +311,7 @@ fi
 if ((!build)); then
 	say "== the image, pulled on the VM: $image:$tag"
 	vm_ssh "$compose pull --quiet control" ||
-		die "the VM could not pull $image:$tag: is the package public (github.com/orgs/agentloops-dev/packages/container/package/agents-control)? Or give --build"
+		die "the VM could not pull $image:$tag: is the package public (github.com/${image#ghcr.io/}: its owner's Packages)? Or give --build"
 fi
 
 say "== the control plane and Caddy"

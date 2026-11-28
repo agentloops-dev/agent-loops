@@ -1,16 +1,17 @@
 ---
 diataxis: how-to
 devices: [mac, iphone, ipad, server]
-description: When a chat's allowance runs out, let it carry on when the allowance is back, or continue the work in a new session on Auto.
+description: When a chat's allowance runs out, let it carry on when the allowance is back, continue it on another account of the same runtime, or continue the work in a new session on Auto.
 ---
 
 # Keep going when a runtime runs out
 
 Plans such as Claude Max, ChatGPT and Copilot come with a generous allowance, and then stop
 you for a few hours. When a chat's allowance runs out, the chat stops on its runtime and says
-so. To go on later, let the chat carry on by itself when the allowance is back. To go on now,
-choose **Continue in new session**. That starts a new session on Auto in the same worktree,
-asks it to read this chat, and archives this chat.
+so. To go on later, let the chat carry on by itself when the allowance is back. To go on now
+in the same chat, choose another account of its runtime, such as **Continue on Claude ·
+Personal**. Or choose **Continue in new session**. That starts a new session on Auto in the
+same worktree, asks it to read this chat, and archives this chat.
 
 ## Before you start
 
@@ -22,7 +23,7 @@ asks it to read this chat, and archives this chat.
 
 The turn ends, and a note in the conversation says so: **Claude's allowance ran out, until
 07:00.** The time is there only when the runtime gave one. The conversation also ends with
-the line **Its allowance ran out**, and the two buttons are under that line. The chat moves
+the line **Its allowance ran out**, and the buttons are under that line. The chat moves
 to **Needs you**, with **Its allowance ran out** under its name. Nothing else happens: no
 other runtime is started, and the chat does not carry on until you ask it to.
 
@@ -42,6 +43,26 @@ runtime is back.
 If the allowance is still out when the chat tries, the chat waits again, for the next time.
 To stop waiting, choose **Cancel** in the chat. A message you send, **Stop** or **Archive**
 also cancels it. The wait is kept over a restart of the Mac.
+
+## Continue on another account
+
+When the chat's runtime has another account on this Mac, for example **Claude · Work** is out
+and **Claude · Personal** is not, there is a button for each other account that can take the
+chat: **Continue on Claude · Personal**. Your runtime's own sign-in is **Claude · Your Own
+Sign-In**. An account shows only when it is signed in, its allowance is not out, and your
+organisation allows it. See [More than one account](../reference/runtimes.md#more-than-one-account).
+
+1. Under the line **Its allowance ran out**, choose **Continue on Claude · Personal**.
+2. The chat goes on as the same conversation, on that account. The conversation says
+   **Continued on Claude · Personal.**, and the prompt bar names the account.
+
+The app does this only when you choose it: it never changes a chat's account by itself. It moves
+the runtime's record of this conversation into that account's folder, and never a sign-in or
+a token. When it cannot find the record, it starts a new session on that account in the same
+worktree, which reads this chat, and archives this chat, as **Continue in new session** does.
+
+The turn costs that account's allowance. A chat on a server has no other account to choose: only
+this Mac's runtimes take added accounts.
 
 ## Continue in a new session
 

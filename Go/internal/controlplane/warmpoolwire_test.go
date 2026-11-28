@@ -248,3 +248,60 @@ func TestAPoolMachineThatIsNotLinkedYetHasItsProjects(t *testing.T) {
 		t.Fatalf("%+v", work)
 	}
 }
+
+// #7546: a failed Your set-up ends the host's wait: machine/setupWork says userFailed, not
+// waitUser, and gives no projects to get. When it runs again, the host waits for it again.
+func TestAFailedYourSetUpStopsTheProjects(t *testing.T) {
+	t.Parallel()
+	p, _, made, _ := poolPlane(t)
+	ctx := context.Background()
+	for _, state := range []wire.MachineSetupState{wire.MachineSetupStateRunning, wire.MachineSetupStateFailed} {
+		must(t, p.s.setupStep(ctx, made, rep(wire.MachineSetupStepIDUser, state)))
+	}
+	work, err := p.s.setupWork(ctx, made)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if work.UserFailed == nil || !*work.UserFailed || work.WaitUser != nil || len(work.Projects) != 0 {
+		t.Fatalf("%+v", work)
+	}
+	stored, _, _ := p.s.readMachineSetup(ctx, made)
+	if projects := stored.step(wire.MachineSetupStepIDProjects); projects.State != wire.MachineSetupStateWaiting || projects.Detail != notStartedWords {
+		t.Fatalf("%+v", projects)
+	}
+	must(t, p.s.setupStep(ctx, made, rep(wire.MachineSetupStepIDUser, wire.MachineSetupStateRunning)))
+	if work, err = p.s.setupWork(ctx, made); err != nil || work.WaitUser == nil || !*work.WaitUser || work.UserFailed != nil {
+		t.Fatalf("%+v %v", work, err)
+	}
+}
+
+// #7559: a machine that no pool made, whose Your set-up is done after it failed, is told to run
+// its projects: its installer may be gone. A pool's machine is not, nor one whose projects began.
+func TestAMadeMachineRunsItsProjectsAfterYourSetUpRanAgain(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	pooled, _, inPool, _ := poolPlane(t)
+	p, _, made, pool := poolPlane(t)
+	must(t, p.s.cfg.Store.Delete(ctx, warmPoolKey(pool.ID)))
+	for _, plane := range []struct {
+		p    *plane
+		host string
+	}{{pooled, inPool}, {p, made}} {
+		for _, state := range []wire.MachineSetupState{wire.MachineSetupStateRunning, wire.MachineSetupStateFailed,
+			wire.MachineSetupStateRunning, wire.MachineSetupStateDone} {
+			must(t, plane.p.s.setupStep(ctx, plane.host, rep(wire.MachineSetupStepIDUser, state)))
+		}
+	}
+	if work, err := pooled.s.setupWork(ctx, inPool); err != nil || !work.Pool || work.From != nil || len(work.Projects) != 1 {
+		t.Fatalf("the pool's machine: %+v %v", work, err)
+	}
+	work, err := p.s.setupWork(ctx, made)
+	if err != nil || work.Pool || work.Claimed || work.Done || work.From == nil || *work.From != wire.MachineSetupStepIDProjects ||
+		work.WaitUser != nil || work.UserFailed != nil {
+		t.Fatalf("%+v %v", work, err)
+	}
+	must(t, p.s.setupStep(ctx, made, rep(wire.MachineSetupStepIDProjects, wire.MachineSetupStateRunning)))
+	if work, err = p.s.setupWork(ctx, made); err != nil || !work.Done || work.From != nil {
+		t.Fatalf("once the projects began: %+v %v", work, err)
+	}
+}

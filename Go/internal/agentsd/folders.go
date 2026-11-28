@@ -833,6 +833,10 @@ func (d *Daemon) registerFolders() {
 		r.Folder = store.FolderURL(folderOf(r.Folder))
 		return d.setAutopilot(c, r)
 	})
+	On(d, wire.CallAutopilotResume, func(ctx context.Context, c *Client, r wire.AutopilotResumeRequest) (wire.AutopilotStatus, error) {
+		r.Folder = store.FolderURL(folderOf(r.Folder))
+		return d.resumeAutopilot(r)
+	})
 	On(d, wire.CallAutopilotStatus, func(ctx context.Context, c *Client, r wire.AutopilotRequest) (wire.AutopilotStatus, error) {
 		r.Folder = store.FolderURL(folderOf(r.Folder))
 		return d.autopilotStatus(r)

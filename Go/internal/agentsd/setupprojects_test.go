@@ -25,6 +25,8 @@ type setupPlane struct {
 	refused error
 	packs   []wire.SendPackRequest
 	said    []wire.MachineSetupReport
+	// asked counts machine/setupWork.
+	asked int
 }
 
 func (p *setupPlane) ask(_ context.Context, method string, params any) (json.RawMessage, error) {
@@ -32,6 +34,7 @@ func (p *setupPlane) ask(_ context.Context, method string, params any) (json.Raw
 	defer p.mu.Unlock()
 	switch method {
 	case wire.CallMachineSetupWork.Name:
+		p.asked++
 		return json.Marshal(p.work)
 	case wire.CallMachineSetupStep.Name:
 		p.said = append(p.said, params.(wire.MachineSetupReport))
@@ -238,5 +241,155 @@ func TestAClaimedMachinesHostRunsTheStepsThatWait(t *testing.T) {
 		if len(p.said) != 0 {
 			t.Fatalf("said again: %+v", p.said)
 		}
+	})
+}
+
+// #7416: the projects step waits while the control plane says that Your set-up is on its way or
+// runs, and says its first line only when it goes on.
+func TestTheProjectsWaitForYourSetUp(t *testing.T) {
+	t.Parallel()
+	d, p, _, here := setupMachine(t)
+	defer d.Shutdown()
+	p.set(func() { p.work.WaitUser = new(true) })
+	var said []string
+	var saidMu sync.Mutex
+	done := make(chan wire.MachineSetupProjects, 1)
+	go func() {
+		done <- d.getSetupProjects(context.Background(), time.Second, 5*time.Millisecond, func(line string) {
+			saidMu.Lock()
+			defer saidMu.Unlock()
+			said = append(said, line)
+		})
+	}()
+	// It asks again while it waits.
+	waitFor(t, "asked three times", func() bool {
+		p.mu.Lock()
+		defer p.mu.Unlock()
+		return p.asked >= 3
+	})
+	select {
+	case got := <-done:
+		t.Fatalf("the projects did not wait: %s", mustJSON(got))
+	default:
+	}
+	saidMu.Lock()
+	if len(said) != 0 {
+		t.Fatalf("the step said %q while it waited", said)
+	}
+	saidMu.Unlock()
+	p.set(func() { p.work.WaitUser = nil })
+	got := <-done
+	if got.Problem != nil || len(got.Folders) != 1 || got.Folders[0] != here {
+		t.Fatalf("%s", mustJSON(got))
+	}
+	saidMu.Lock()
+	defer saidMu.Unlock()
+	if len(said) == 0 || said[0] != "Looking for projects" {
+		t.Fatalf("%q", said)
+	}
+}
+
+// #7546: while Your set-up has failed, the projects step does not start and stops asking; a run
+// of setup.sh here wakes it, and it goes on once the control plane says the run went well.
+func TestAFailedYourSetUpHoldsTheProjectsUntilItRunsAgain(t *testing.T) {
+	t.Parallel()
+	d, p, _, here := setupMachine(t)
+	defer d.Shutdown()
+	p.set(func() { p.work.UserFailed = new(true) })
+	done := make(chan wire.MachineSetupProjects, 1)
+	go func() {
+		done <- d.getSetupProjects(context.Background(), time.Second, 5*time.Millisecond, func(string) {})
+	}()
+	waitFor(t, "asked once", func() bool {
+		p.mu.Lock()
+		defer p.mu.Unlock()
+		return p.asked >= 1
+	})
+	select {
+	case got := <-done:
+		t.Fatalf("the projects began after Your set-up failed: %s", mustJSON(got))
+	default:
+	}
+	// Run Again: setup.sh begins here, which wakes the step at once; it asks while the run goes
+	// on, and goes on once the control plane says the run went well.
+	d.userSetupMu.Lock()
+	d.userSetupRuns = true
+	d.userSetupChangedLocked()
+	d.userSetupMu.Unlock()
+	waitFor(t, "asked again when setup.sh began", func() bool {
+		p.mu.Lock()
+		defer p.mu.Unlock()
+		return p.asked >= 3
+	})
+	d.userSetupMu.Lock()
+	d.userSetupRuns = false
+	d.userSetupMu.Unlock()
+	p.set(func() { p.work.UserFailed = nil })
+	got := <-done
+	if got.Problem != nil || len(got.Folders) != 1 || got.Folders[0] != here {
+		t.Fatalf("%s", mustJSON(got))
+	}
+}
+
+// #7559: on a machine that no pool made, whose installer is gone (a reboot while Your set-up had
+// failed), a Run Again that goes well has the host run the projects step itself. While an
+// installer asks for the projects, the host leaves the step to it.
+func TestARunAgainAfterTheInstallerIsGoneStartsTheProjects(t *testing.T) {
+	t.Parallel()
+	d, p, _, _ := setupMachine(t)
+	defer d.Shutdown()
+	d.installerPatience = 50 * time.Millisecond
+	file := filepath.Join(d.Store.Loc.Root, hostsetup.ReportsFile)
+	rep, err := hostsetup.NewReporter(d.Store.Loc.Root)
+	must(t, err)
+	rep.Say(wire.MachineSetupStepIDUser, wire.MachineSetupStateFailed, "", "exit 1")
+	p.set(func() { p.work = wire.MachineSetupWork{UserFailed: new(true), Projects: []wire.MachineSetupProject{}} })
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go d.forwardSetupReports(ctx, file, time.Millisecond)
+	waitFor(t, "asked once", func() bool {
+		p.mu.Lock()
+		defer p.mu.Unlock()
+		return p.asked >= 1
+	})
+	projectsSaid := func() bool {
+		said := false
+		p.set(func() {
+			for _, r := range p.said {
+				said = said || r.Step == wire.MachineSetupStepIDProjects
+			}
+		})
+		return said
+	}
+	// An installer that still asks for the projects keeps the step.
+	from := wire.MachineSetupStepIDProjects
+	p.set(func() { p.work = wire.MachineSetupWork{From: &from, Projects: []wire.MachineSetupProject{}} })
+	d.projectsAskedAt.Store(time.Now().Add(time.Hour).UnixNano())
+	d.userSetupMu.Lock()
+	d.userSetupChangedLocked()
+	d.userSetupMu.Unlock()
+	asked := 0
+	p.set(func() { asked = p.asked })
+	waitFor(t, "asked again when setup.sh ended", func() bool {
+		p.mu.Lock()
+		defer p.mu.Unlock()
+		return p.asked > asked
+	})
+	if projectsSaid() {
+		t.Fatal("the host ran the projects beside an installer that asks for them")
+	}
+	// No installer asks: the host runs the projects step, and the ones after it.
+	d.projectsAskedAt.Store(time.Now().Add(-time.Hour).UnixNano())
+	d.userSetupMu.Lock()
+	d.userSetupChangedLocked()
+	d.userSetupMu.Unlock()
+	waitFor(t, "the projects step", func() bool {
+		done := false
+		p.set(func() {
+			for _, r := range p.said {
+				done = done || r.Step == wire.MachineSetupStepIDProjects && r.State == wire.MachineSetupStateDone
+			}
+		})
+		return done
 	})
 }

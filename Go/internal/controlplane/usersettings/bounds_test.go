@@ -160,3 +160,29 @@ func TestTheSweepDeletesRemovedSecrets(t *testing.T) {
 	}
 	must(t, b.SetSecret(ctx, "ana", set, map[string]bool{"m:A": true}))
 }
+
+// A tombstone is never over tombstoneMost (#7480): the sweep and secretRoom count a record
+// over it as a live secret without reading it.
+func TestATombstoneIsUnderTombstoneMost(t *testing.T) {
+	longest := secretRecord{Name: "S" + strings.Repeat("_", 63), Version: 1<<63 - 1, Updated: time.Unix(1<<35, 0).UTC().Format(time.RFC3339), Going: true}
+	if !secretName.MatchString(longest.Name) {
+		t.Fatal(longest.Name)
+	}
+	data, err := records.Encode(longest)
+	must(t, err)
+	if len(data) > tombstoneMost {
+		t.Fatalf("a tombstone takes %d bytes, over %d", len(data), tombstoneMost)
+	}
+	// And a live secret with the smallest value, sealed to one recipient, is still counted as
+	// live when it is under tombstoneMost: secretRoom reads it.
+	ctx := context.Background()
+	b := localBook(t, store.NewMemory())
+	box := newRecipient(t, "m:box")
+	for i := range MaxSecrets {
+		must(t, b.SetSecret(ctx, "sam", sealed(t, "sam", fmt.Sprintf("S_%d", i), 1, "x", box), allowing(box)))
+	}
+	if err := b.SetSecret(ctx, "sam", sealed(t, "sam", "ONE_MORE", 1, "x", box), allowing(box)); !errors.Is(err, ErrInvalid) {
+		t.Fatal(err)
+	}
+	must(t, b.SetSecret(ctx, "sam", sealed(t, "sam", "S_0", 2, "x", box), allowing(box)))
+}

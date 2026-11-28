@@ -44,7 +44,12 @@
     {
       "name": "host.secret-grants/1",
       "by": "host",
-      "description": "A use of a secret with Ask before use (fill_secret, set_ci_secret) waits on a person's approval (#4015): a request of kind approve, answered Approve, Approve for This Session, Always Approve or Deny by the control and device roles. secrets/grants, secrets/addGrant and secrets/removeGrant keep the Always Approve places."
+      "description": "The host still takes secrets/grants, secrets/addGrant and secrets/removeGrant as 0.19.0 sent them. host.secret-grants/2 (#6875): SecretUse may be pairing."
+    },
+    {
+      "name": "host.secret-grants/2",
+      "by": "host",
+      "description": "A use of a secret with Ask before use (fill_secret, set_ci_secret) waits on a person's approval (#4015): a request of kind approve, answered Approve, Approve for This Session, Always Approve or Deny by the control and device roles. secrets/grants, secrets/addGrant and secrets/removeGrant keep the Always Approve places. host.secret-grants/2 (#6875): SecretUse may be pairing, which an older host does not know."
     },
     {
       "name": "host.session-secrets/1",
@@ -307,6 +312,26 @@
       "notYours": {
         "code": -32027,
         "message": "notYours"
+      },
+      "parentCycle": {
+        "code": -32114,
+        "message": "parentCycle"
+      },
+      "parentFull": {
+        "code": -32116,
+        "message": "parentFull"
+      },
+      "parentNotFound": {
+        "code": -32112,
+        "message": "parentNotFound"
+      },
+      "parentNotLead": {
+        "code": -32113,
+        "message": "parentNotLead"
+      },
+      "parentTooDeep": {
+        "code": -32115,
+        "message": "parentTooDeep"
       },
       "older": {
         "code": -32102,

@@ -41,6 +41,24 @@ struct MachineSetupWordsTests {
         #expect(MachineNeed.most(row: row, offline: false, runtimes: []) == .settingUp(setup(done: 3)))
     }
 
+    @Test func aFailedScriptLetsSessionsStartWithAWarning() throws {
+        func failing(_ id: String) -> DaemonAPI.MachineSetup {
+            .init(steps: [.init(id: "install", state: .done), .init(id: id, state: .failed, error: "exit 1"),
+                          .init(id: "smoke", state: .waiting)], startedAt: start)
+        }
+        let user = try #require(MachineSetupWords.failedScript(failing("user")))
+        #expect(user.id == "user")
+        #expect(MachineSetupWords.failedScript(failing("root"))?.id == "root")
+        // Another failed step still holds new sessions back.
+        #expect(MachineSetupWords.failedScript(failing("install")) == nil)
+        #expect(MachineSetupWords.failedScript(setup(done: 3)) == nil)
+        #expect(MachineSetupWords.failedScript(nil) == nil)
+        #expect(MachineSetupWords.startsDespiteFailure(user, machine: "vm-1")
+            == "Your set-up failed on vm-1. The session starts, but what setup.sh installs can be missing.")
+        #expect(MachineSetupWords.startsDespiteFailure(.init(id: "root", state: .failed), machine: "vm-1")
+            == "Root set-up failed on vm-1. The session starts, but what root.sh installs can be missing.")
+    }
+
     @Test func aStepSaysWhatItDoes() {
         let running = DaemonAPI.MachineSetupStep(id: "install", state: .running, detail: "Agents: 62 of 140 MB", slower: true)
         #expect(MachineSetupWords.line(running) == "Agents: 62 of 140 MB · Slower than usual")
@@ -87,5 +105,19 @@ struct MachineSetupWordsTests {
         let json = #"{"id":"root","state":"done","detail":"x","warning":true,"hash":"ab12"}"#
         let step = try JSONDecoder().decode(DaemonAPI.MachineSetupStep.self, from: Data(json.utf8))
         #expect(step.warning == true && step.hash == "ab12")
+    }
+
+    /// #7159: the root command sheet's words, and what its calls answer.
+    @Test func rootByHand() throws {
+        #expect(MachineSetupWords.rootFailedAdvice("dev-3").contains("Or copy a command that you run as root there, then press Try Again."))
+        #expect(MachineSetupWords.rootCommandLead("nas", failed: false).hasPrefix("No provider makes nas, so Agent Loops can’t be root there."))
+        #expect(MachineSetupWords.rootCommandLead("dev-3", failed: true) == "Run this as root, or with sudo, on dev-3:")
+        #expect(MachineSetupWords.rootSudoWarning("nas").contains("agents there can become root"))
+        let log = try JSONDecoder().decode(DaemonAPI.SetupRootLog.self, from: Data(#"{"text":"E: x\n","cut":true}"#.utf8))
+        #expect(log.cut && log.text == "E: x\n")
+        let command = try JSONDecoder().decode(DaemonAPI.SetupRootCommand.self, from: Data(#"{"command":"printf %s YQ== | base64 -d | sudo sh","hash":"ab"}"#.utf8))
+        #expect(command.command.hasSuffix("| sudo sh"))
+        let again = String(decoding: try JSONEncoder().encode(DaemonAPI.SetupRootAgain(rest: true)), as: UTF8.self)
+        #expect(again == #"{"rest":true}"#)
     }
 }

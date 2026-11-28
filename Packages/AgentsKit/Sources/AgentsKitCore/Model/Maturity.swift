@@ -54,7 +54,7 @@ public enum MaturityClient: String, CaseIterable, Sendable {
 public struct EarlyFeature: Sendable, Hashable, Identifiable {
     public let capability: String
     public let level: Maturity
-    /// The name of its feature, as Settings ▸ This app ▸ Early Features says it.
+    /// The name of its feature, as Settings ▸ This app ▸ Features says it.
     public let title: String
     public let issue: Int
     /// The clients that show it during a pilot; nil for every client of its tier.
@@ -107,7 +107,7 @@ public enum EarlyFeatures {
         parts.map { level(of: capability, said: $0, in: list) }.min() ?? level(of: capability, in: list)
     }
 
-    /// The rows of Settings ▸ This app ▸ Early Features on `client`: each capability that is not
+    /// The rows of Settings ▸ This app ▸ Features on `client`: each capability that is not
     /// GA and that this client shows, at the lowest level the parts say (#6579). One that every
     /// part says is GA leaves the list; one this client's list does not name has no title here, so
     /// it has no row.

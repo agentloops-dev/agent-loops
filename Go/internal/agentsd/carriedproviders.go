@@ -62,6 +62,13 @@ func (d *Daemon) carried() *carriedProviders {
 	return d.carriedHeld
 }
 
+// carries says this machine carries the provider id: it has its server running here.
+func (c *carriedProviders) carries(id string) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.held[id] != nil
+}
+
 // carriedMethods are the asks askedProvider answers on channel 0, which no client can send:
 // said in machine/hello as providers.carry/1 and, for providers/ssh keepAwake (#4637), /2,
 // so the control plane asks only a host that has them; providers/oauth (#6072) is /3.
@@ -107,6 +114,23 @@ func (d *Daemon) askedProvider(method string, params json.RawMessage) (any, bool
 }
 
 func carriedError(words string) wire.ProviderCarried { return wire.ProviderCarried{Error: &words} }
+
+// rootBootRefused is a make that root.sh stopped, with its code when root.sh is not the text a
+// client approved.
+func rootBootRefused(err error) wire.ProviderCarried {
+	words := err.Error()
+	var e *Error
+	if errors.As(err, &e) {
+		// The person's words, not the code before them.
+		words = e.Message
+	}
+	out := carriedError(words)
+	if failureCode(err) == wire.FailureSetupScriptChanged {
+		code := providers.SetupScriptChanged
+		out.Code = &code
+	}
+	return out
+}
 
 // carriedFailure is err as ProviderCarried says it, with its code when a client can act on it.
 func carriedFailure(err error) wire.ProviderCarried {
@@ -282,7 +306,7 @@ func (c *carriedProviders) call(request wire.ProviderCarry) wire.ProviderCarried
 		if c.rootBoot != nil {
 			var err error
 			if rootBoot, sent, err = c.rootBoot(); err != nil {
-				return carriedError(err.Error())
+				return rootBootRefused(err)
 			}
 		}
 		made, err := connection.CreateRooted(name, options, request.FirstBoot, rootBoot)

@@ -341,8 +341,6 @@ final class RemoteModel {
     /// What `machines/list` last said, so the folder list can name each host (058, frame H).
     /// Empty when this phone is not a client of a control plane.
     var controlHosts: [DaemonAPI.ControlMachine] = []
-    /// Git asks answered on this device, until the control plane's list drops them (#1122).
-    var gitAsksAnswered: Set<String> = []
     /// The host this phone's own connection reaches. Its folders are stamped `.mac`.
     var controlHome: MachineRef?
     /// Work's places (#3256), as the window keeps them: the list or the item's page open, and
@@ -357,7 +355,7 @@ final class RemoteModel {
     let userScope = UserScopeState()
     /// What `control/status` last said: its version and capabilities, for Settings (#1748).
     var controlStatus: DaemonAPI.ControlStatus?
-    /// What each part says of its levels, for Early Features (#6579): the control plane's and each
+    /// What each part says of its levels, for Features (#6579): the control plane's and each
     /// host's. None before the control plane's status arrives, and the Remote reads its own list.
     var partsMaturity: [[String: String]?] {
         guard let controlStatus else { return [] }
