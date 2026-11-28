@@ -9,6 +9,7 @@ const CapAgentsEditQueued1 = "agents.edit-queued/1"
 const CapAgentsExport1 = "agents.export/1"
 const CapAgentsFind1 = "agents.find/1"
 const CapAgentsMoveWorktree1 = "agents.move-worktree/1"
+const CapAgentsParent1 = "agents.parent/1"
 const CapAgentsSaid1 = "agents.said/1"
 const CapAgentsStartNow1 = "agents.start-now/1"
 const CapAgents1 = "agents/1"
@@ -318,6 +319,7 @@ var HostCapabilities = pairs([][2]string{
 	{"agents/setLevels", "auto/1"},
 	{"agents/setMuted", "mute/1"},
 	{"agents/setOption", "agents/1"},
+	{"agents/setParent", "agents.parent/1"},
 	{"agents/setPriority", "agents/1"},
 	{"agents/setSandbox", "agents/1"},
 	{"agents/setUnread", "agents/1"},

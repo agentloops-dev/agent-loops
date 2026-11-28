@@ -86,6 +86,11 @@ export const Failure = {
   orgRouteRemoved: -32100,
   orgSignInRequired: -32077,
   outsideScratchRoot: -32098,
+  parentCycle: -32114,
+  parentFull: -32116,
+  parentNotFound: -32112,
+  parentNotLead: -32113,
+  parentTooDeep: -32115,
   personSuspended: -32078,
   pinRefused: -32061,
   policyRefused: -32076,
@@ -344,6 +349,16 @@ export interface Agent {
   purpose?: AgentPurpose;
   startedByRun?: UUID;
   startedByAgent?: UUID;
+  /**
+   * The lead this session works under (#7538, spec 7535): absent, the tree follows startedByAgent;
+   * with no id, the session is at the top. startedByAgent stays the history of who started it.
+   */
+  parent?: SessionParent;
+  /**
+   * The daemon's own: the parent changes this session is told on its next turn (#7538). Clients
+   * ignore it.
+   */
+  parentNotices?: ParentNotices;
   chainDepth?: number;
   eventWait?: EventWait;
   worktree?: AgentWorktree;
@@ -11374,6 +11389,41 @@ export interface PagesChangedNotification {
   folders: string[];
 }
 
+export interface ParentNotice {
+  id: UUID;
+  about: UUID;
+  change: ParentNoticeChange;
+  at: WireDate;
+  /**
+   * For a child's parent or noParent: the lead it worked under before the first change it has not
+   * been told yet, so a move there and back tells nothing.
+   */
+  was?: UUID;
+  /** Taken by a turn that a restart cut off: said again, with a note that it is. */
+  again?: boolean;
+}
+
+/**
+ * parent: the recipient now works under the lead about; noParent: it has no lead now; joined: about
+ * now works under the recipient; left: about no longer does.
+ */
+export type ParentNoticeChange =
+  | "parent"
+  | "noParent"
+  | "joined"
+  | "left";
+
+/**
+ * An outbox (#7538): pending goes with the next turn, in the same record write that takes its
+ * words; sent is what that turn took, until the runtime answers it.
+ */
+export interface ParentNotices {
+  pending?: ParentNotice[];
+  more?: number;
+  sentWith?: UUID;
+  sent?: ParentNotice[];
+}
+
 /**
  * One name in the person's own pass-through list (#998, FR-011a), as runtime-environment.json has
  * it.
@@ -15084,6 +15134,28 @@ export interface SessionNotice {
 }
 
 /**
+ * Where a session is put in the tree (#7538): under the lead id, or at the top when id is absent.
+ */
+export interface SessionParent {
+  id?: UUID;
+  setAt: WireDate;
+  setBy: SessionParentSetBy;
+}
+
+export type SessionParentSetBy =
+  | "person"
+  | "agent";
+
+/**
+ * under: under parentID; top: at the top, the starter ignored; starter: back under its starter
+ * (parent cleared).
+ */
+export type SessionPlacement =
+  | "under"
+  | "top"
+  | "starter";
+
+/**
  * A session's priority (#5846): the same three levels as an issue's (ForgeItem.priority), in the
  * order high, medium, none, low.
  */
@@ -15276,6 +15348,15 @@ export interface SetOptionRequest {
 export interface SetPRCostCommentRequest {
   folder: URLString;
   prCostComment: PRCostComment;
+}
+
+/** agents/setParent (#7538). */
+export interface SetParentRequest {
+  agentID: UUID;
+  placement: SessionPlacement;
+  parentID?: UUID;
+  /** The child's revision the client saw; a later one refuses with changedElsewhere. */
+  expectedRevision?: number;
 }
 
 export interface SetPinnedRequest {
@@ -16181,6 +16262,11 @@ export interface StartRequest {
    * sessions/previewStart gave in text.
    */
   autoChose?: string;
+  /**
+   * Puts the new session under this lead at once (#7538), with the checks of agents/setParent: a
+   * live session on this host labelled lead, within the depth and child limits.
+   */
+  parentID?: UUID;
 }
 
 /**
@@ -19362,7 +19448,7 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   AddFolderRequest: { required: ["folder"], optional: ["project"] },
   Admitted: { required: [], optional: ["client", "host"] },
   AdoptRequest: { required: ["runtimeID", "sessionID", "cwd"], optional: [] },
-  Agent: { required: ["id", "runtimeID", "cwd", "state", "startOptions", "advertisedOptions", "availableCommands", "createdAt", "lastActivityAt"], optional: ["revision", "title", "labels", "priority", "prioritySet", "prioritySource", "runtimeSessionID", "runtimeKeepsCopy", "browserUsedAt", "isUnread", "isMuted", "reportSeenAt", "endedReason", "archivedReason", "usage", "lastTurnUsage", "costToDate", "costCeiling", "tokensToDate", "tokenCeiling", "plans", "background", "additionalDirectories", "mcpServers", "queuedPrompts", "suggestedPrompts", "startedByWorkflow", "purpose", "startedByRun", "startedByAgent", "chainDepth", "eventWait", "worktree", "pendingMove", "startingPoint", "startRequestID", "persona", "restartPickUps", "report", "outcomeAsked", "archiveRequest", "afterTurn", "archivedAt", "archiveWhy", "sandboxOverride", "effectiveSandbox", "pendingSandboxFailure", "desktopControlPause", "missingFolder", "listsLeftOut", "titleIsPersons", "runtimeTitle", "madeInRoot", "queuedStart", "branchedFrom", "movedFrom", "fileToSee", "continueWhenBack", "runningTool", "accountID", "auto", "clientPermission", "levels", "voiceHungUpAt", "goal", "project", "summary"] },
+  Agent: { required: ["id", "runtimeID", "cwd", "state", "startOptions", "advertisedOptions", "availableCommands", "createdAt", "lastActivityAt"], optional: ["revision", "title", "labels", "priority", "prioritySet", "prioritySource", "runtimeSessionID", "runtimeKeepsCopy", "browserUsedAt", "isUnread", "isMuted", "reportSeenAt", "endedReason", "archivedReason", "usage", "lastTurnUsage", "costToDate", "costCeiling", "tokensToDate", "tokenCeiling", "plans", "background", "additionalDirectories", "mcpServers", "queuedPrompts", "suggestedPrompts", "startedByWorkflow", "purpose", "startedByRun", "startedByAgent", "parent", "parentNotices", "chainDepth", "eventWait", "worktree", "pendingMove", "startingPoint", "startRequestID", "persona", "restartPickUps", "report", "outcomeAsked", "archiveRequest", "afterTurn", "archivedAt", "archiveWhy", "sandboxOverride", "effectiveSandbox", "pendingSandboxFailure", "desktopControlPause", "missingFolder", "listsLeftOut", "titleIsPersons", "runtimeTitle", "madeInRoot", "queuedStart", "branchedFrom", "movedFrom", "fileToSee", "continueWhenBack", "runningTool", "accountID", "auto", "clientPermission", "levels", "voiceHungUpAt", "goal", "project", "summary"] },
   AgentChanges: { required: ["epoch", "revision", "removed", "all"], optional: [] },
   AgentConfigEditorFile: { required: ["path", "content"], optional: [] },
   AgentConfigEditorRequest: { required: ["kind"], optional: ["folder"] },
@@ -20182,6 +20268,8 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   OutsideAccount: { required: ["service"], optional: ["description", "address", "username", "plan", "monthlyCostUsd", "card", "secret", "twoFactor", "issue", "made", "edited", "lastOp", "tokenExpires", "notes", "projects", "addedBy", "askBeforeUse"] },
   OutsideAccounts: { required: ["accounts"], optional: [] },
   PagesChangedNotification: { required: ["folder", "folders"], optional: [] },
+  ParentNotice: { required: ["id", "about", "change", "at"], optional: ["was", "again"] },
+  ParentNotices: { required: [], optional: ["pending", "more", "sentWith", "sent"] },
   PassThroughName: { required: ["name"], optional: ["runtime", "setBy"] },
   PassThroughState: { required: ["names"], optional: [] },
   PendingMove: { required: ["target", "removeLeft", "discardChanges", "askedBy", "askedAt"], optional: [] },
@@ -20488,6 +20576,7 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   SessionMoveIn: { required: ["upload", "folder", "from"], optional: ["carryOn"] },
   SessionMovedFrom: { required: ["machine", "at"], optional: [] },
   SessionNotice: { required: ["severity", "title"], optional: ["detail"] },
+  SessionParent: { required: ["setAt", "setBy"], optional: ["id"] },
   SessionSecret: { required: ["agentID", "title", "name", "setAt"], optional: ["created", "hint", "lastOp", "backedUp", "needsApproval", "description"] },
   SessionSecretRemoveRequest: { required: ["agentID", "name"], optional: [] },
   SessionSecretSetRequest: { required: ["agentID", "name", "value"], optional: ["needsApproval", "description"] },
@@ -20506,6 +20595,7 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   SetMutedRequest: { required: ["agentID", "muted"], optional: [] },
   SetOptionRequest: { required: ["agentID", "optionID", "value"], optional: [] },
   SetPRCostCommentRequest: { required: ["folder", "prCostComment"], optional: [] },
+  SetParentRequest: { required: ["agentID", "placement"], optional: ["parentID", "expectedRevision"] },
   SetPinnedRequest: { required: ["folder", "pinned"], optional: [] },
   SetPriorityRequest: { required: ["agentID"], optional: ["priority"] },
   SetProviderRequest: { required: ["runtimeID", "providerID"], optional: [] },
@@ -20597,7 +20687,7 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   SlashCommand: { required: ["name"], optional: ["description", "inputHint"] },
   SpendCaps: { required: [], optional: ["dailyUSD"] },
   StartOptions: { required: ["values", "extraArguments"], optional: [] },
-  StartRequest: { required: ["runtimeID", "cwd", "prompt", "attachments", "startOptions", "additionalDirectories", "mcpServers", "labels"], optional: ["draftID", "worktree", "requestID", "sandbox", "priority", "persona", "levels", "purpose", "accountID", "voice", "startedFrom", "startedVia", "autoChose"] },
+  StartRequest: { required: ["runtimeID", "cwd", "prompt", "attachments", "startOptions", "additionalDirectories", "mcpServers", "labels"], optional: ["draftID", "worktree", "requestID", "sandbox", "priority", "persona", "levels", "purpose", "accountID", "voice", "startedFrom", "startedVia", "autoChose", "parentID"] },
   StartedFrom: { required: ["machine", "agent", "who"], optional: [] },
   StartedMachinePreview: { required: ["host", "name", "state", "unpushed"], optional: ["unknown"] },
   StartingPoint: { required: ["repository", "commit"], optional: [] },

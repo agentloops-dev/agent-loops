@@ -37,6 +37,10 @@ type Store struct {
 	// (#4507). Kept true with agents, under mu.
 	inFolder map[string]map[wire.UUID]struct{}
 	indexed  map[wire.UUID]string
+	// under is each session's children by effective parent (parent.id, else the starter;
+	// #7538), and parentOf the parent each is filed under there. Kept true with agents.
+	under    map[wire.UUID]map[wire.UUID]struct{}
+	parentOf map[wire.UUID]wire.UUID
 	// live is the agents not archived, and liveIn each folder's, so the paths that need
 	// only those (the summary, approvals, idle, helper limits) skip the 99% that are
 	// archived (#4510). tallies is each folder's archived agents summed (ArchivedIn), made
@@ -80,6 +84,7 @@ func Open(root string) (*Store, error) {
 		}
 	}
 	s := &Store{Loc: loc, agents: map[wire.UUID]*wire.Agent{}, inFolder: map[string]map[wire.UUID]struct{}{}, indexed: map[wire.UUID]string{},
+		under: map[wire.UUID]map[wire.UUID]struct{}{}, parentOf: map[wire.UUID]wire.UUID{},
 		live: map[wire.UUID]struct{}{}, liveIn: map[string]map[wire.UUID]struct{}{}, tallies: map[string]ArchivedTally{}, stamps: map[wire.UUID]stamp{}, lines: map[wire.UUID]int{}, held: map[wire.UUID]*heldLines{}}
 	id, adopts := loadOrMakeRootID(loc.RootIdentity(), loc.Root)
 	s.RootID = id
@@ -384,6 +389,7 @@ func (s *Store) put(a *wire.Agent) {
 	f := AgentFolder(a)
 	file(s.inFolder, f, a.ID)
 	s.indexed[a.ID] = f
+	s.fileUnder(a)
 	if a.State == wire.AgentStateArchived {
 		delete(s.tallies, f)
 	} else {
@@ -399,6 +405,7 @@ func (s *Store) drop(id wire.UUID) {
 	}
 	delete(s.agents, id)
 	delete(s.live, id)
+	s.unfileUnder(id)
 	if _, ok := s.stamps[id]; ok {
 		delete(s.stamps, id)
 		s.summariesSoon()
