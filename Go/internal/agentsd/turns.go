@@ -105,6 +105,9 @@ type live struct {
 	denied string
 	// lastUpdate is when the runtime last sent a session/update (opencoderefusal.go).
 	lastUpdate atomic.Int64
+	// noticeTurn is the prompt entry of a turn that told parent notices (#7538), until the
+	// runtime answers it.
+	noticeTurn atomic.Pointer[wire.UUID]
 	// unprompted is whether the turn in flight is the runtime's own, begun with no prompt
 	// (unprompted.go, #4323), and quiet the timer that ends it when nothing more comes.
 	unprompted bool
@@ -359,7 +362,25 @@ func (d *Daemon) startFor(r wire.StartRequest, by startedBy) (wire.UUID, error) 
 	t := now()
 	a := d.newStartedAgent(r, by, path, options, pick, client, t)
 	a.Worktree = wt
-	if err := d.Store.Save(a); err != nil {
+	// Under a lead from the start (#7538): checked and saved under one hold of parentMu.
+	if r.ParentID != nil {
+		d.parentMu.Lock()
+		if err := d.startUnder(&a, *r.ParentID, t); err != nil {
+			d.parentMu.Unlock()
+			if wt != nil {
+				undoWorktree(*r.Worktree, wt)
+			}
+			return "", err
+		}
+	}
+	err = d.Store.Save(a)
+	if r.ParentID != nil {
+		if err == nil {
+			d.startedUnder(a, t)
+		}
+		d.parentMu.Unlock()
+	}
+	if err != nil {
 		if wt != nil {
 			undoWorktree(*r.Worktree, wt)
 		}
@@ -732,11 +753,11 @@ func (l *live) turn() bool {
 	if noSession && !l.open(ctx, a, false) {
 		return false
 	}
-	q, taken := l.takeTurnWords()
+	q, notices, taken := l.takeTurnWords()
 	if !taken {
 		return false
 	}
-	bs, from, branch, turnEntry := l.recordTurnPrompt(a, q)
+	bs, from, branch, turnEntry := l.recordTurnPrompt(a, q, notices.entry)
 	// The folder as the turn begins, for Undo These Changes (#3437); its end is the second.
 	snap := d.snapshotTurn(l.id, turnEntry)
 	defer l.keepTurnChanges(snap)
@@ -751,6 +772,11 @@ func (l *live) turn() bool {
 	l.holdBlockForTurn(from)
 	d.moveState(l.id, wire.AgentStateRunning, true, nil)
 	bs = l.turnPrefaceBlocks(bs, q, branch)
+	l.noticeTurn.Store(nil)
+	if notices.text != "" {
+		bs = append([]wire.ContentBlock{textBlock(notices.text)}, bs...)
+		l.noticeTurn.Store(&turnEntry)
+	}
 	bs, s, stopped := l.addTurnBrief(bs)
 	if stopped || s == nil {
 		l.endWithoutPrompt(ctx, stopped)
@@ -791,27 +817,45 @@ func (l *live) resetForTurn(cancel context.CancelFunc) (noSession, early bool) {
 	return noSession, early
 }
 
+// turnNotices is what a turn tells of parent changes (#7538), and the entry of its prompt.
+type turnNotices struct {
+	entry wire.UUID
+	text  string
+}
+
 // takeTurnWords takes the next turn's words off the queue, now the runtime is there to
-// take them. False when nothing may go now.
-func (l *live) takeTurnWords() (wire.QueuedPrompt, bool) {
+// take them, and the parent notices with them in the same write. False when nothing may go
+// now.
+func (l *live) takeTurnWords() (wire.QueuedPrompt, turnNotices, bool) {
 	d := l.d
 	var q wire.QueuedPrompt
 	taken := false
-	d.change(l.id, func(a *wire.Agent) { q, a.QueuedPrompts, taken = nextTurn(a.QueuedPrompts) })
+	tn := turnNotices{entry: store.NewUUID()}
+	var told []wire.ParentNotice
+	var more int64
+	d.change(l.id, func(a *wire.Agent) {
+		q, a.QueuedPrompts, taken = nextTurn(a.QueuedPrompts)
+		if taken {
+			told, more = takeNotices(a, tn.entry)
+		}
+	})
 	if !taken {
-		return q, false
+		return q, tn, false
+	}
+	if len(told) > 0 {
+		tn.text = d.noticeText(l.id, told, more)
 	}
 	d.change(l.id, func(a *wire.Agent) {
 		if a.PendingSandboxFailure != nil {
 			a.PendingSandboxFailure = nil
 		}
 	})
-	return q, true
+	return q, tn, true
 }
 
 // recordTurnPrompt puts the prompt in the transcript, unless it is one sent again. It
 // returns the prompt's blocks, who sent it, the branch's preface and the prompt's entry.
-func (l *live) recordTurnPrompt(a *wire.Agent, q wire.QueuedPrompt) ([]wire.ContentBlock, wire.PromptOrigin, *string, wire.UUID) {
+func (l *live) recordTurnPrompt(a *wire.Agent, q wire.QueuedPrompt, entry wire.UUID) ([]wire.ContentBlock, wire.PromptOrigin, *string, wire.UUID) {
 	d := l.d
 	bs := blocks(q)
 	from := q.From
@@ -833,11 +877,17 @@ func (l *live) recordTurnPrompt(a *wire.Agent, q wire.QueuedPrompt) ([]wire.Cont
 	// as it goes rather than kept on the queued prompt, which every client is sent on each
 	// change (#1851); before the prompt is recorded, so the record is the one it went on from.
 	branch := d.branchPreface(a)
-	turnEntry := store.NewUUID()
+	turnEntry := entry
 	if !resent {
 		d.recordEntry(l.id, turnEntry, wire.TranscriptEntryKind{UserMessage: um}, q.Sender)
 	} else if id, ok := d.lastPrompt(l.id); ok {
 		turnEntry = id
+		// The notices this turn took go with the prompt it sends again (#7538).
+		d.changeAgent(l.id, false, func(a *wire.Agent) {
+			if n := a.ParentNotices; n != nil && n.SentWith != nil && *n.SentWith == entry {
+				n.SentWith = &id
+			}
+		})
 	}
 	return bs, from, branch, turnEntry
 }
@@ -959,6 +1009,9 @@ func (l *live) promptRuntime(ctx context.Context, a *wire.Agent, s *acp.Session,
 	}
 	r, err := s.Prompt(promptCtx, acpBlocks(bs))
 	endPrompt()
+	if err == nil {
+		l.noticesAnswered()
+	}
 	// What the runtime begins from here is its own, not this prompt's (#4568).
 	l.mu.Lock()
 	l.answered = true
@@ -1519,6 +1572,7 @@ func configOptions(v any) []wire.ConfigOption {
 // Update turns one ACP session update into today's transcript records.
 func (l *live) Update(n sdk.SessionNotification) {
 	l.lastUpdate.Store(time.Now().UnixNano())
+	l.noticesAnswered()
 	u := n.Update
 	// The runtime working with no prompt in flight is a turn of its own (#4323).
 	if !beginsWork(u) || !l.beginUnprompted() {
@@ -2375,4 +2429,18 @@ func (l *live) open(ctx context.Context, a *wire.Agent, quiet bool) bool {
 		return false
 	}
 	return true
+}
+
+// noticesAnswered clears the parent notices a turn told, once the runtime answers the
+// prompt (#7538): its first update while prompted, or the end of the prompt.
+func (l *live) noticesAnswered() {
+	l.mu.Lock()
+	prompting := l.prompting
+	l.mu.Unlock()
+	if !prompting {
+		return
+	}
+	if turn := l.noticeTurn.Swap(nil); turn != nil {
+		l.d.clearSentNotices(l.id, *turn)
+	}
 }

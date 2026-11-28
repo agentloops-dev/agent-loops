@@ -187,6 +187,14 @@ func (d *Daemon) namingBrief(a *wire.Agent) string {
 		}
 		you += ", started by " + agentName(title)
 	}
+	// Under a lead (#7538): told here at its start, by a notice after.
+	if lead, ok := leadOf(a); ok {
+		var title *string
+		if l := d.Store.Agent(lead); l != nil {
+			title = l.Title
+		}
+		you += ", and you work under " + agentName(title) + " (session " + string(lead) + ")"
+	}
 	person := readPerson(filepath.Join(d.SettingsDir, "person.json"))
 	name, refer := personName(person.Name), `as "they"`
 	if person.Pronouns != nil && strings.TrimSpace(*person.Pronouns) != "" {

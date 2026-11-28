@@ -32,6 +32,12 @@
       "issue": 7327
     },
     {
+      "name": "session-parents",
+      "title": "Session parents",
+      "about": "Put a session under a lead or director: in New Session, and by a drag in the sidebar. On the Mac.",
+      "issue": 7535
+    },
+    {
       "name": "session-summary",
       "title": "Session summary",
       "about": "On the Mac: a session opens on its summary (what is going on, the goal and plan, the last turn and what waits for you), with the full chat one click away.",
