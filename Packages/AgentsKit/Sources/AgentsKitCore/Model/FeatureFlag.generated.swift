@@ -12,12 +12,18 @@ public enum FeatureFlag: String, CaseIterable, Sendable {
     case docs = "docs"
     /// Machine scripts (#7151).
     case machineScripts = "machine-scripts"
+    /// Meeting mode (#7327).
+    case meetingMode = "meeting-mode"
+    /// Session parents (#7535).
+    case sessionParents = "session-parents"
     /// Session summary (#7318).
     case sessionSummary = "session-summary"
     /// Store sizes (#6907).
     case storeSizes = "store-sizes"
     /// Suggested (#6572).
     case suggested = "suggested"
+    /// Timeline forecast (#7067).
+    case timelineForecast = "timeline-forecast"
     /// Work (#6572).
     case work = "work"
     /// Work in windows (#5480).
@@ -30,9 +36,12 @@ public enum FeatureFlag: String, CaseIterable, Sendable {
         case .dashboard: "Dashboard"
         case .docs: "Docs"
         case .machineScripts: "Machine scripts"
+        case .meetingMode: "Meeting mode"
+        case .sessionParents: "Session parents"
         case .sessionSummary: "Session summary"
         case .storeSizes: "Store sizes"
         case .suggested: "Suggested"
+        case .timelineForecast: "Timeline forecast"
         case .work: "Work"
         case .workWindows: "Work in windows"
         }
@@ -45,9 +54,12 @@ public enum FeatureFlag: String, CaseIterable, Sendable {
         case .dashboard: "The Dashboard on the Mac: each work item with its sessions. The window opens to it."
         case .docs: "Docs in the sidebar, and the Docs section on a work item's page. On the Mac and the web page."
         case .machineScripts: "On the Mac: your root.sh and setup.sh set up each new machine. A failed Root set-up shows its last lines and what to do."
+        case .meetingMode: "On the Mac: the app listens to a meeting, and an agent keeps the notes and files the action items."
+        case .sessionParents: "Put a session under a lead or director: in New Session, and by a drag in the sidebar. On the Mac."
         case .sessionSummary: "On the Mac: a session opens on its summary (what is going on, the goal and plan, the last turn and what waits for you), with the full chat one click away."
         case .storeSizes: "Reports ▸ Store sizes on the web page: how large each data store is, and how much of its limits it uses."
         case .suggested: "New Session ▸ Suggested: the epics with no lead."
+        case .timelineForecast: "On the Mac: Work ▸ Timeline draws the schedule as a Gantt: a row for each open epic, solid for the work so far, dashed to its predicted finish, or why it has no date."
         case .work: "Work in the sidebar: issues, pull requests, releases, deploys and the timeline."
         case .workWindows: "Open in New Window on Work's pages (Mac and iPad): an issue, a pull request or a release, and on the Mac a doc or a conversation of Messages, in a window of its own."
         }
@@ -60,9 +72,12 @@ public enum FeatureFlag: String, CaseIterable, Sendable {
         case .dashboard: 6572
         case .docs: 6572
         case .machineScripts: 7151
+        case .meetingMode: 7327
+        case .sessionParents: 7535
         case .sessionSummary: 7318
         case .storeSizes: 6907
         case .suggested: 6572
+        case .timelineForecast: 7067
         case .work: 6572
         case .workWindows: 5480
         }

@@ -8,7 +8,7 @@ description: Install your own packages on each new machine with root.sh, which r
 
 A new machine has none of your own tools. Two scripts of yours set it up: `root.sh`, which
 installs packages as root, and `setup.sh`, which sets up your tools and sign-ins as your user.
-They are an early feature: turn on **Machine scripts** in Settings ▸ This app ▸ Early Features
+They are not ready yet: turn on **Machine scripts** in Settings ▸ This app ▸ Features
 (epic #7151).
 
 ## Where the scripts are
@@ -38,19 +38,59 @@ boot. Do not put a token in a script.
 
 ## An example: `gh`
 
-`root.sh` installs the GitHub CLI from GitHub's own package source:
+The example is in the ready-made repository
+[`agentloops-dev/dotagents`](https://github.com/agentloops-dev/dotagents), as `scripts/root.sh`
+and `scripts/setup.sh` (#7461). Each release of Agent Loops pins one tag of it, as it does for
+the ready-made workflows, and **New root.sh** and **New setup.sh** write that tag's text. Once
+written, the file is yours: a newer tag does not change it.
+
+`root.sh` installs the GitHub CLI from GitHub's own package source. It does nothing when `gh`
+is there, and on a machine with no apt it only says so:
 
 ```sh
 #!/bin/bash
+# root.sh: runs once, as root, on each new machine's first boot, with bash -e.
+# It goes to the provider in clear: do not put a token here.
+# An example: the GitHub CLI, from GitHub's own package source.
+set -eu
+if command -v gh >/dev/null 2>&1; then
+  gh --version
+  exit 0
+fi
+if ! command -v apt-get >/dev/null 2>&1; then
+  echo "root.sh: no apt-get here; install gh with this machine's package manager" >&2
+  exit 0
+fi
 export DEBIAN_FRONTEND=noninteractive
 install -d -m 755 /etc/apt/keyrings
 curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
   -o /etc/apt/keyrings/githubcli-archive-keyring.gpg
+chmod 644 /etc/apt/keyrings/githubcli-archive-keyring.gpg
 echo "deb [signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
   > /etc/apt/sources.list.d/github-cli.list
 apt-get -o DPkg::Lock::Timeout=300 update
 apt-get -o DPkg::Lock::Timeout=300 install -y gh
 gh --version
+```
+
+`setup.sh` signs `gh` in with your secret `GH_TOKEN`, which it declares, and gives the token
+to `gh` on stdin only, so it is in no command line or log:
+
+```sh
+#!/bin/bash
+# secrets: GH_TOKEN
+# setup.sh: runs as your user on each new machine, after it joins, with bash -e.
+# It reads only the secrets named above, with agents-secret. Keep it safe to run again.
+# An example: sign gh in with the token GH_TOKEN from your Secrets.
+set -eu
+if ! command -v gh >/dev/null 2>&1; then
+  echo "setup.sh: gh is not installed; root.sh installs it" >&2
+  exit 1
+fi
+# The token goes from agents-secret to gh on stdin: it is never in a line or a log.
+agents-secret GH_TOKEN | gh auth login --with-token
+gh auth setup-git
+gh auth status
 ```
 
 Wait for the package lock (`DPkg::Lock::Timeout`): the machine's own first-boot updates can

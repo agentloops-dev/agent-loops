@@ -97,6 +97,9 @@ type Daemon struct {
 	shells    map[shellKey]*shell
 	// agentMu orders every read-change-save of an agent record.
 	agentMu sync.Mutex
+	// parentMu holds every check and write of a session parent on this host (#7538), so two
+	// moves cannot each pass the cycle check and make a cycle together.
+	parentMu sync.Mutex
 	pinState
 	viewCountBook
 	reviewBook
@@ -160,6 +163,7 @@ type Daemon struct {
 	idleBook
 	turnBook
 	summaryBook
+	meetingBook
 	findBook
 	optionBook
 	timeBook

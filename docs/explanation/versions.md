@@ -180,7 +180,7 @@ Each capability has a **maturity** (#6052): how ready its feature is.
 - Each client shows the badge, with its help line, where a person goes into the feature: the
   sidebar row, the menu item, the Settings section title, the page or sheet title
   (`MaturityBadge` on the three clients).
-- Settings ▸ This app ▸ **Early Features** has a switch for each feature in the list that this
+- Settings ▸ This app ▸ **Features** has a switch for each feature in the list that this
   client shows, on by default. A feature turned off shows nowhere on that person's clients
   (`EarlyFeatures.shows` in Swift, `showsFeature` on the web page). The switch is kept as
   `flag:<capability>` in the person's display settings, with the feature flags (#6254). When
@@ -204,9 +204,9 @@ host's level:
   does not know is read from the client's own list too.
 - When the two differ, the client shows the part's level. A feature that runs on one host shows
   that host's level (`EarlyFeatures.level(of:said:)`, `saidMaturity`). Where no one part runs it,
-  as in Early Features, the client shows the lowest level that the control plane and its hosts
+  as in Features, the client shows the lowest level that the control plane and its hosts
   say (`EarlyFeatures.lowest`, `lowestMaturity`), so a person is told the least ready one.
-  Early Features has rows only for capabilities in the client's own list, as only that list
+  Features has rows only for capabilities in the client's own list, as only that list
   has the title of each feature.
 
 ## Version numbers

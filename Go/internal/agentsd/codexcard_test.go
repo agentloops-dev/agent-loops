@@ -24,6 +24,9 @@ func TestAServersCodexSignsInFromACard(t *testing.T) {
 	defer d.Shutdown()
 	asAServer(t)
 	id := startAgent(t, c, 1, t.TempDir(), "")
+	// Its first turn ends before the control plane comes: a Claude turn queued with no
+	// sign-in would wait and show a Claude card of its own (#7609).
+	waitFor(t, "the first turn", func() bool { return len(d.Store.Agent(id).QueuedPrompts) == 0 })
 	d.SetTunneler(&fakeTunnels{})
 	lend(t, d, "codex", "stand-in")
 
@@ -58,7 +61,7 @@ func TestAServersCodexSignsInFromACard(t *testing.T) {
 	if len(d.pendingElicitations()) != 0 {
 		t.Fatal("the card stayed")
 	}
-	if !ownCodexSignIn() {
+	if !d.ownCodexSignIn() {
 		t.Fatal("not signed in")
 	}
 	if d.relayFor("codex") != nil {
@@ -98,6 +101,37 @@ func TestDismissingTheCodexCardStopsTheSignIn(t *testing.T) {
 	}
 }
 
+func TestExpiredCodexCardIsReplacedWithoutAnotherTurn(t *testing.T) {
+	fakeRuntimes(t)
+	fakeSignInTools(t)
+	setFor(t, &headlessSignInTime, 800*time.Millisecond)
+	d, c := start(t, t.TempDir())
+	defer d.Shutdown()
+	asAServer(t)
+	id := startAgent(t, c, 1, t.TempDir(), "")
+	d.raiseSignInCard(id, "codex")
+	first := theCard(t, d)
+
+	var replacement wire.ElicitationRequest
+	waitFor(t, "a replacement device-code card", func() bool {
+		for _, card := range d.pendingElicitations() {
+			if card.ID != first.ID {
+				replacement = card
+				return true
+			}
+		}
+		return false
+	})
+	if replacement.Mode.URL == nil || replacement.Mode.URL.Value != first.Mode.URL.Value {
+		t.Fatalf("replacement card %+v, first card %+v", replacement, first)
+	}
+	for _, card := range d.pendingElicitations() {
+		if card.ID == first.ID {
+			t.Fatal("expired card stayed open")
+		}
+	}
+}
+
 // theCard waits for the one card the daemon shows.
 func theCard(t *testing.T, d *Daemon) wire.ElicitationRequest {
 	t.Helper()
@@ -122,12 +156,12 @@ func TestAServersClaudeCardChecksBeforeTheLendCloses(t *testing.T) {
 	defer d.Shutdown()
 	asAServer(t)
 	id := startAgent(t, c, 1, t.TempDir(), "")
-	d.SetTunneler(&fakeTunnels{})
 
 	d.raiseSignInCard(id, "claude")
 	if len(d.pendingElicitations()) != 0 {
-		t.Fatal("a card for a Claude with no lend")
+		t.Fatal("a card for a Claude with no control plane and no lend")
 	}
+	d.SetTunneler(&fakeTunnels{})
 	lend(t, d, "claude", "agents-relay-claude")
 	d.raiseSignInCard(id, "claude")
 	card := theCard(t, d)

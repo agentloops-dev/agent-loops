@@ -24,7 +24,7 @@ test("a flag is on only when the Mac says the person turned it on, and a change 
   m.sendPreferencesWith(null);
 });
 
-test("the page's flags are Packages/Wire's (#6254); Early Features draws them (#6604)", async () => {
+test("the page's flags are Packages/Wire's (#6254); Features draws them (#6604)", async () => {
   const { featureFlags } = await load("src/protocol/flags.generated.ts");
   const wire = JSON.parse(readFileSync(new URL("../../Packages/Wire/feature-flags.json", import.meta.url), "utf8"));
   assert.deepEqual(featureFlags, wire.flags);

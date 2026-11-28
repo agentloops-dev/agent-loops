@@ -2540,6 +2540,10 @@
           "items": {
             "type": "string"
           }
+        },
+        "address": {
+          "type": "string",
+          "description": "The public IP address this machine's uplink comes from, as the control plane sees it (#7493): where a control plane that the machine's install puts behind NAT is reached, when the machine finds only a private address of its own. Absent when the uplink comes from a private or loopback address, and from an older control plane."
         }
       },
       "additionalProperties": false
@@ -5661,7 +5665,7 @@
     },
     "SetupScript": {
       "type": "object",
-      "description": "One set-up script on this machine (#7167): root (root.sh) or setup (setup.sh) in ~/.agents/machine-setup/. present: the file is there. text, hash and size are the file as it is now (hash: SHA-256 in lower-case hexadecimal); problem says why they are absent from a file that is there (over its limit, or unreadable). approvedText and approvedHash are the text a client approved last, and approvals the records in force for it, one a scope. changed: the file is not the approved text, so it is not used until a client approves it. nextSeq is the number to sign the next approval with.",
+      "description": "One set-up script on this machine (#7167): root (root.sh) or setup (setup.sh) in ~/.agents/machine-setup/. present: the file is there. text, hash and size are the file as it is now (hash: SHA-256 in lower-case hexadecimal); problem says why they are absent from a file that is there (over its limit, or unreadable). approvedText and approvedHash are the text a client approved last, and approvals the records in force for it, one a scope. changed: the file is not the approved text, so it is not used until a client approves it. nextSeq is the number to sign the next approval with. example is the ready-made example of this script, from the pinned agentloops-dev/dotagents (scripts/<name>.sh, #7461): what New root.sh and New setup.sh write; left out when this machine has no copy of the pinned tag yet.",
       "properties": {
         "name": {
           "type": "string",
@@ -5683,6 +5687,9 @@
           "type": "integer"
         },
         "problem": {
+          "type": "string"
+        },
+        "example": {
           "type": "string"
         },
         "approvedText": {

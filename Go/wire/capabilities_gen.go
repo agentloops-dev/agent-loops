@@ -9,6 +9,7 @@ const CapAgentsEditQueued1 = "agents.edit-queued/1"
 const CapAgentsExport1 = "agents.export/1"
 const CapAgentsFind1 = "agents.find/1"
 const CapAgentsMoveWorktree1 = "agents.move-worktree/1"
+const CapAgentsParent1 = "agents.parent/1"
 const CapAgentsSaid1 = "agents.said/1"
 const CapAgentsStartNow1 = "agents.start-now/1"
 const CapAgents1 = "agents/1"
@@ -174,6 +175,7 @@ const CapMarketplaces1 = "marketplaces/1"
 const CapMaturity1 = "maturity/1"
 const CapMcpToolLevels1 = "mcp.tool-levels/1"
 const CapMcp1 = "mcp/1"
+const CapMeetings1 = "meetings/1"
 const CapMessagesAll1 = "messages.all/1"
 const CapMessagesMarkRead1 = "messages.mark-read/1"
 const CapMessagesReply1 = "messages.reply/1"
@@ -317,6 +319,7 @@ var HostCapabilities = pairs([][2]string{
 	{"agents/setLevels", "auto/1"},
 	{"agents/setMuted", "mute/1"},
 	{"agents/setOption", "agents/1"},
+	{"agents/setParent", "agents.parent/1"},
 	{"agents/setPriority", "agents/1"},
 	{"agents/setSandbox", "agents/1"},
 	{"agents/setUnread", "agents/1"},
@@ -535,6 +538,15 @@ var HostCapabilities = pairs([][2]string{
 	{"mcp/sign-out", "mcp/1"},
 	{"mcp/tools", "mcp.tool-levels/1"},
 	{"mcp/verify", "mcp/1"},
+	{"meetings/append", "meetings/1"},
+	{"meetings/list", "meetings/1"},
+	{"meetings/read", "meetings/1"},
+	{"meetings/segments", "meetings/1"},
+	{"meetings/setActionItem", "meetings/1"},
+	{"meetings/setNotes", "meetings/1"},
+	{"meetings/setSpeaker", "meetings/1"},
+	{"meetings/setState", "meetings/1"},
+	{"meetings/start", "meetings/1"},
 	{"messages/conversations", "messages/1"},
 	{"messages/markAllRead", "messages.mark-read/1"},
 	{"messages/read", "messages/1"},
@@ -750,6 +762,7 @@ var HostCapabilities = pairs([][2]string{
 	{"live/frame", "live.frame/1"},
 	{"mcp/healthChanged", "mcp/1"},
 	{"mcp/hostedChanged", "mcp/1"},
+	{"meetings/changed", "meetings/1"},
 	{"modes/changed", "modes/1"},
 	{"move/changed", "sessions.moving/1"},
 	{"multiplier/changed", "multiplier/1"},
@@ -813,6 +826,7 @@ var HostNotifications = set([]string{
 	"live/frame",
 	"mcp/healthChanged",
 	"mcp/hostedChanged",
+	"meetings/changed",
 	"modes/changed",
 	"move/changed",
 	"multiplier/changed",

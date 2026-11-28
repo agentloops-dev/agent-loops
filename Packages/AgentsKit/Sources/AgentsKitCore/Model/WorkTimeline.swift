@@ -12,13 +12,16 @@ public extension DaemonAPI {
         public var first: Bool?
         /// The open epics on hold come too (#7335), with their children and no forecast, after the others.
         public var onHold: Bool?
+        /// How many epics the schedule works at once (#7525), 1 to 20: 3 when nil.
+        public var places: Int?
 
-        public init(project: String, from: Date, to: Date, first: Bool? = nil, onHold: Bool? = nil) {
+        public init(project: String, from: Date, to: Date, first: Bool? = nil, onHold: Bool? = nil, places: Int? = nil) {
             self.project = project
             self.from = from
             self.to = to
             self.first = first
             self.onHold = onHold
+            self.places = places
         }
     }
 
@@ -32,18 +35,72 @@ public extension DaemonAPI {
         public var errors: [String]?
         /// An answer to a first ask, from before the forecast's history was read (#7027): no forecast yet.
         public var partial: Bool?
+        /// When each open epic starts and finishes (#7525); nil in a partial answer and from an older host.
+        public var schedule: WorkTimelineSchedule?
         /// The repos it read, as `forge:name` (#7029); nil when one could not be read, and from an older host.
         public var scopes: [String]?
 
         public init(epics: [WorkTimelineEpic] = [], releases: [WorkTimelineRelease] = [], timeZone: String? = nil,
-                    backtest: WorkTimelineBacktest? = nil, errors: [String]? = nil, partial: Bool? = nil, scopes: [String]? = nil) {
+                    backtest: WorkTimelineBacktest? = nil, errors: [String]? = nil, partial: Bool? = nil,
+                    schedule: WorkTimelineSchedule? = nil, scopes: [String]? = nil) {
             self.epics = epics
             self.releases = releases
             self.timeZone = timeZone
             self.backtest = backtest
             self.errors = errors
             self.partial = partial
+            self.schedule = schedule
             self.scopes = scopes
+        }
+    }
+
+    /// The schedule (#7525): with `places` epics at once, a started epic holds a place until its predicted
+    /// finish; the others take free places in the order of forge/next, after their open epic blockers.
+    /// `incomplete`: a list was cut short, so no row is dated.
+    struct WorkTimelineSchedule: Codable, Sendable, Hashable {
+        public var places: Int
+        public var readAt: Date
+        public var incomplete: Bool?
+        public var rows: [WorkTimelineScheduleRow]
+
+        public init(places: Int, readAt: Date, incomplete: Bool? = nil, rows: [WorkTimelineScheduleRow] = []) {
+            self.places = places
+            self.readAt = readAt
+            self.incomplete = incomplete
+            self.rows = rows
+        }
+    }
+
+    /// Why an open epic has no date in the schedule (#7525).
+    enum WorkTimelineScheduleReason: String, Codable, Sendable, Hashable {
+        case onHold, noIssues, blockerOnHold, blockerNotEpic, blockerNotRead, cycle, blockerUndated, noForecast, noPlace,
+             incomplete
+    }
+
+    /// An open epic in the schedule (#7525): its observed start and where it came from (`session`,
+    /// `pullRequest` or `closed`), or its planned start; its predicted finish; its open blockers; and
+    /// `reason` when it has no finish: a `WorkTimelineScheduleReason`, kept as a string so a newer host's
+    /// reason does not fail the whole answer (`reasonKind` is nil for one this build does not know).
+    struct WorkTimelineScheduleRow: Codable, Sendable, Hashable {
+        public var epic: LineageNode
+        public var startedAt: Date?
+        public var startSource: String?
+        public var plannedStart: Date?
+        public var finish: WorkTimelineForecast?
+        public var blockers: [LineageNode]?
+        public var reason: String?
+
+        public var reasonKind: WorkTimelineScheduleReason? { reason.flatMap(WorkTimelineScheduleReason.init(rawValue:)) }
+
+        public init(epic: LineageNode, startedAt: Date? = nil, startSource: String? = nil, plannedStart: Date? = nil,
+                    finish: WorkTimelineForecast? = nil, blockers: [LineageNode]? = nil, reason: String? = nil) {
+            self.epic = epic
+            self.startedAt = startedAt
+            self.startSource = startSource
+            self.plannedStart = plannedStart
+            self.finish = finish
+            self.blockers = blockers
+            self.reason = reason
         }
     }
 
@@ -794,6 +851,8 @@ public enum WorkTimeline {
             if let e = t.errors, !e.isEmpty { out.errors = (out.errors ?? []) + e.filter { !(out.errors ?? []).contains($0) } }
         }
         out.releases.sort { $0.at < $1.at }
+        // Each machine's schedule of its repos, as one (#7526).
+        out.schedule = DaemonAPI.WorkTimelineSchedule.merged(timelines.compactMap(\.schedule))
         return out
     }
 
@@ -805,6 +864,8 @@ public enum WorkTimeline {
         for e in out.epics.indices where out.epics[e].closedAt == nil && out.epics[e].forecast == nil {
             out.epics[e].forecast = kept[out.epics[e].item.node.ref]
         }
+        // A first answer has no schedule either (#7526): the one on screen stays until it comes.
+        if out.schedule == nil { out.schedule = shown?.schedule }
         return out
     }
 

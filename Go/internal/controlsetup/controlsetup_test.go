@@ -262,18 +262,24 @@ func TestNoDomainGivesAnAddressAnotherMachineReaches(t *testing.T) {
 		public  bool
 		wantURL string
 		wantOut string
+		// seen is the public address a control plane saw the uplink come from (#7493).
+		seen netip.Addr
 	}{
-		{"public", Options{}, public, true, "https://203.0.113.7:8791", "reach this control plane at https://203.0.113.7:8791."},
-		{"private", Options{}, netip.MustParseAddr("10.0.0.4"), false, "https://10.0.0.4:8791", "private address"},
-		{"given", Options{Address: "plane.tail1234.ts.net", Port: 9001}, public, true, "https://plane.tail1234.ts.net:9001", "plane.tail1234.ts.net:9001"},
-		{"ipv6", Options{}, netip.MustParseAddr("2001:db8::7"), true, "https://[2001:db8::7]:8791", "[2001:db8::7]"},
-		{"none", Options{}, netip.Addr{}, false, "", "Install again with --address"},
+		{"public", Options{}, public, true, "https://203.0.113.7:8791", "reach this control plane at https://203.0.113.7:8791.", netip.Addr{}},
+		{"private", Options{}, netip.MustParseAddr("10.0.0.4"), false, "https://10.0.0.4:8791", "private address", netip.Addr{}},
+		{"given", Options{Address: "plane.tail1234.ts.net", Port: 9001}, public, true, "https://plane.tail1234.ts.net:9001", "plane.tail1234.ts.net:9001", netip.Addr{}},
+		{"ipv6", Options{}, netip.MustParseAddr("2001:db8::7"), true, "https://[2001:db8::7]:8791", "[2001:db8::7]", netip.Addr{}},
+		{"none", Options{}, netip.Addr{}, false, "", "Install again with --address", netip.Addr{}},
+		// A cloud VM behind NAT: its interfaces have only a private address (#7493).
+		{"behind NAT", Options{}, netip.MustParseAddr("10.128.0.5"), false, "https://198.51.100.9:8791", "takes 198.51.100.9, the public address its uplink came from", netip.MustParseAddr("198.51.100.9")},
+		{"none, seen", Options{}, netip.Addr{}, false, "https://198.51.100.9:8791", "reach this control plane at https://198.51.100.9:8791.", netip.MustParseAddr("198.51.100.9")},
+		{"own public first", Options{}, public, true, "https://203.0.113.7:8791", "reach this control plane at https://203.0.113.7:8791.", netip.MustParseAddr("198.51.100.9")},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			home, exe := setup(t)
 			var out bytes.Buffer
 			d := Deps{Systemd: func() bool { return true }, Run: (&fake{}).run, Out: &out,
-				Address: func() (netip.Addr, bool) { return c.ip, c.public }}
+				Address: func() (netip.Addr, bool) { return c.ip, c.public }, Seen: func() netip.Addr { return c.seen }}
 			c.o.Home, c.o.Executable = home, exe
 			if err := Install(context.Background(), c.o, d); err != nil {
 				t.Fatal(err)

@@ -1217,6 +1217,27 @@
       }
     },
     {
+      "name": "agents/setParent",
+      "x-capability": "agents.parent/1",
+      "description": "Puts a session under a live lead on this host, at the top, or back under its starter (#7538, spec 7535). Refused on a cycle (parentCycle), a depth over 6 (parentTooDeep), a lead with 100 live children (parentFull), a parent that is not a live lead (parentNotLead, parentNotFound) and a stale expectedRevision (changedElsewhere). The parent and the child are told on their next turns.",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "schema/sessions.schema.json#/definitions/SetParentRequest"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema/sessions.schema.json#/definitions/Agent"
+        }
+      }
+    },
+    {
       "name": "agents/setPriority",
       "x-capability": "agents/1",
       "tags": [

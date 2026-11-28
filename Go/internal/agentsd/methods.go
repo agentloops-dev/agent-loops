@@ -31,6 +31,7 @@ func (d *Daemon) register() {
 	d.registerReviews()
 	d.registerSuggestions()
 	d.registerSettings()
+	d.registerMeetings()
 	d.registerHost()
 	d.registerProblemReport()
 	d.registerBackups()

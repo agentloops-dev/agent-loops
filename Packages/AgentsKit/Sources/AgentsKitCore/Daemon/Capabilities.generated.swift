@@ -10,6 +10,7 @@ public enum Capability {
     public static let agentsExport1 = "agents.export/1"
     public static let agentsFind1 = "agents.find/1"
     public static let agentsMoveWorktree1 = "agents.move-worktree/1"
+    public static let agentsParent1 = "agents.parent/1"
     public static let agentsSaid1 = "agents.said/1"
     public static let agentsStartNow1 = "agents.start-now/1"
     public static let agents1 = "agents/1"
@@ -175,6 +176,7 @@ public enum Capability {
     public static let maturity1 = "maturity/1"
     public static let mcpToolLevels1 = "mcp.tool-levels/1"
     public static let mcp1 = "mcp/1"
+    public static let meetings1 = "meetings/1"
     public static let messagesAll1 = "messages.all/1"
     public static let messagesMarkRead1 = "messages.mark-read/1"
     public static let messagesReply1 = "messages.reply/1"
@@ -318,6 +320,7 @@ public enum Capability {
         "agents/setLevels": "auto/1",
         "agents/setMuted": "mute/1",
         "agents/setOption": "agents/1",
+        "agents/setParent": "agents.parent/1",
         "agents/setPriority": "agents/1",
         "agents/setSandbox": "agents/1",
         "agents/setUnread": "agents/1",
@@ -536,6 +539,15 @@ public enum Capability {
         "mcp/sign-out": "mcp/1",
         "mcp/tools": "mcp.tool-levels/1",
         "mcp/verify": "mcp/1",
+        "meetings/append": "meetings/1",
+        "meetings/list": "meetings/1",
+        "meetings/read": "meetings/1",
+        "meetings/segments": "meetings/1",
+        "meetings/setActionItem": "meetings/1",
+        "meetings/setNotes": "meetings/1",
+        "meetings/setSpeaker": "meetings/1",
+        "meetings/setState": "meetings/1",
+        "meetings/start": "meetings/1",
         "messages/conversations": "messages/1",
         "messages/markAllRead": "messages.mark-read/1",
         "messages/read": "messages/1",
@@ -751,6 +763,7 @@ public enum Capability {
         "live/frame": "live.frame/1",
         "mcp/healthChanged": "mcp/1",
         "mcp/hostedChanged": "mcp/1",
+        "meetings/changed": "meetings/1",
         "modes/changed": "modes/1",
         "move/changed": "sessions.moving/1",
         "multiplier/changed": "multiplier/1",

@@ -82,6 +82,43 @@ func TestCapacityRisesAtOnceAndFallsAfterTwoLooks(t *testing.T) {
 	}
 }
 
+// A load that hovers at the near line does not flap (#6953): busy starts above 2.0, and the
+// machine is ok again only after two looks under 1.5.
+func TestCapacityOscillatingLoadDoesNotFlap(t *testing.T) {
+	set := fakeCapacity(t)
+	d, _ := start(t, t.TempDir())
+	defer d.Shutdown()
+	ctx := context.Background()
+	look := func(load float64, want wire.CapacityLevel) {
+		t.Helper()
+		set(capacitySample{load1: load, load5: load, pressure: wire.MemoryPressureNormal})
+		d.checkCapacity(ctx)
+		if got := d.capacityLevel(); got != want {
+			t.Fatalf("after load %.2f: %s, want %s", load, got, want)
+		}
+	}
+	look(1.9, wire.CapacityLevelOk)
+	for range 5 {
+		look(2.1, wire.CapacityLevelNear)
+		look(1.9, wire.CapacityLevelNear)
+		look(1.6, wire.CapacityLevelNear)
+		look(1.5, wire.CapacityLevelNear)
+	}
+	if busy, ok := len(raised(d, "machine.busy")), len(raised(d, "machine.ok")); busy != 1 || ok != 0 {
+		t.Fatalf("%d machine.busy and %d machine.ok while the load hovered at the line", busy, ok)
+	}
+	// One look under 1.5 is not enough; a look at 1.5 or over starts the count again.
+	look(1.4, wire.CapacityLevelNear)
+	look(1.5, wire.CapacityLevelNear)
+	look(1.4, wire.CapacityLevelNear)
+	look(1.4, wire.CapacityLevelOk)
+	if n := len(raised(d, "machine.ok")); n != 1 {
+		t.Fatalf("%d machine.ok", n)
+	}
+	// Back at ok, a load between the lines stays ok.
+	look(1.9, wire.CapacityLevelOk)
+}
+
 // Each signal on its own gives its level (#4578).
 func TestCapacityTargetTakesTheWorstSignal(t *testing.T) {
 	t.Parallel()

@@ -86,6 +86,11 @@ export const Failure = {
   orgRouteRemoved: -32100,
   orgSignInRequired: -32077,
   outsideScratchRoot: -32098,
+  parentCycle: -32114,
+  parentFull: -32116,
+  parentNotFound: -32112,
+  parentNotLead: -32113,
+  parentTooDeep: -32115,
   personSuspended: -32078,
   pinRefused: -32061,
   policyRefused: -32076,
@@ -344,6 +349,16 @@ export interface Agent {
   purpose?: AgentPurpose;
   startedByRun?: UUID;
   startedByAgent?: UUID;
+  /**
+   * The lead this session works under (#7538, spec 7535): absent, the tree follows startedByAgent;
+   * with no id, the session is at the top. startedByAgent stays the history of who started it.
+   */
+  parent?: SessionParent;
+  /**
+   * The daemon's own: the parent changes this session is told on its next turn (#7538). Clients
+   * ignore it.
+   */
+  parentNotices?: ParentNotices;
   chainDepth?: number;
   eventWait?: EventWait;
   worktree?: AgentWorktree;
@@ -9257,6 +9272,13 @@ export interface MachineHello {
 export interface MachineHelloAnswer {
   /** The control plane's capabilities (#1748), as control/status says them to a client. */
   capabilities?: string[];
+  /**
+   * The public IP address this machine's uplink comes from, as the control plane sees it (#7493):
+   * where a control plane that the machine's install puts behind NAT is reached, when the machine
+   * finds only a private address of its own. Absent when the uplink comes from a private or
+   * loopback address, and from an older control plane.
+   */
+  address?: string;
 }
 
 /**
@@ -9984,6 +10006,278 @@ export type MaturityLevel =
   | "pilot"
   | "alpha"
   | "beta";
+
+/**
+ * A meeting (#7581, epic #7327): one per session, kept in the session's folder on the machine that
+ * runs it. Behind the flag meeting-mode.
+ */
+export interface Meeting {
+  id: UUID;
+  /** The meeting's session. */
+  agentID: UUID;
+  /** The folder the session works in. */
+  folder: URLString;
+  /** At most 200 characters. */
+  title: string;
+  state: MeetingState;
+  startedAt: WireDate;
+  /** When it ended; absent while it listens or is paused. */
+  endedAt?: WireDate;
+  /** What it listens to: mic, and call:<bundle id> for a call app. At most 4. */
+  sources: string[];
+  /**
+   * Each voice heard, by its stream and its slot there (#7580: one diarizer per stream). At most
+   * 64.
+   */
+  speakers: MeetingSpeaker[];
+  /** The seq of the last segment kept; 0 before the first. */
+  lastSeq: number;
+  /** The last seq sent to the session's agent as a prompt; 0 before the first. */
+  sentThroughSeq: number;
+  /** Its segments aged out (90 days): the notes and the action items stay. */
+  segmentsRemoved?: boolean;
+  updatedAt: WireDate;
+}
+
+/**
+ * An action item of a meeting (#7581). At most 100 a meeting, 2 KB each. Its quote is word for word
+ * in its segments, or the daemon refuses it.
+ */
+export interface MeetingActionItem {
+  id: UUID;
+  meetingID: UUID;
+  /** What is to be done; at most 500 characters. */
+  text: string;
+  /** Who does it, as spoken; at most 100 characters. */
+  owner?: string;
+  /** When, as spoken ("by Friday"); at most 100 characters. */
+  due?: string;
+  /** The due date as YYYY-MM-DD, when known. */
+  dueOn?: string;
+  /**
+   * The words of the meeting it comes from, word for word in the segments of segmentSeqs; at most
+   * 500 characters.
+   */
+  quote: string;
+  /** The segments the quote is in, at most 20. */
+  segmentSeqs: number[];
+  state: MeetingActionItemState;
+  issue?: MeetingActionItemIssue;
+  /** The fields a person changed: the agent may not change them. */
+  editedByPerson?: MeetingActionItemField[];
+  updatedAt: WireDate;
+}
+
+/** A field of an action item that a person can change. */
+export type MeetingActionItemField =
+  | "text"
+  | "owner"
+  | "due"
+  | "dueOn"
+  | "state"
+  | "issue";
+
+/** The issue an action item was filed as. */
+export interface MeetingActionItemIssue {
+  /** The forge, as github. */
+  forge: string;
+  /** owner/name */
+  repo: string;
+  number: number;
+  url: URLString;
+}
+
+export type MeetingActionItemState =
+  | "proposed"
+  | "approved"
+  | "dismissed"
+  | "filed";
+
+/**
+ * meetings/append: the listening client's final segments. A segment with a seq after the last is
+ * new and must follow it with no gap; one with an earlier seq is a changed speaker of that segment
+ * (its text is not changed).
+ */
+export interface MeetingAppendRequest {
+  meetingID: UUID;
+  /** At most 200. */
+  segments: MeetingSegment[];
+}
+
+/** What meetings/append kept. */
+export interface MeetingAppended {
+  /** The last seq kept. */
+  lastSeq: number;
+  /** The last seq sent to the agent. */
+  sentThroughSeq: number;
+}
+
+/** Who wrote a change. */
+export type MeetingAuthor =
+  | "agent"
+  | "person";
+
+/** meetings/changed: what changed in a meeting, sent to every client. */
+export interface MeetingChangedNotification {
+  meetingID: UUID;
+  meeting?: Meeting;
+  notes?: MeetingNotes;
+  /** The items that changed. */
+  actionItems?: MeetingActionItem[];
+  /** The last seq kept: a client reads the segments after its own. */
+  lastSeq: number;
+}
+
+/** meetings/list: a page of this machine's meetings, newest first. */
+export interface MeetingListRequest {
+  /** The cursor of the page before. */
+  cursor?: string;
+  /** At most 50; 50 when absent. */
+  limit?: number;
+}
+
+/** A meeting's notes (#7581): Markdown, at most 64 KB. The last 20 revisions are kept. */
+export interface MeetingNotes {
+  meetingID: UUID;
+  markdown: string;
+  /** 1 for the first write; each write adds 1. */
+  revision: number;
+  updatedAt: WireDate;
+  updatedBy: MeetingAuthor;
+}
+
+/** A page of meetings, newest first. */
+export interface MeetingPage {
+  meetings: Meeting[];
+  /** Pass it as the next request's cursor; absent on the last page. */
+  cursor?: string;
+}
+
+/** meetings/read: a meeting with its notes and its action items. */
+export interface MeetingRead {
+  meeting: Meeting;
+  /** Absent before the first write. */
+  notes?: MeetingNotes;
+  actionItems: MeetingActionItem[];
+}
+
+/** A meeting, by its id. */
+export interface MeetingRequest {
+  meetingID: UUID;
+}
+
+/**
+ * A final piece of a meeting's words, from one stream (#7581). At most 6,000 a meeting (a 4-hour
+ * cap), 1,500 characters of text each. Audio is never kept.
+ */
+export interface MeetingSegment {
+  /** 1 for the first segment of the meeting; each next one adds 1. */
+  seq: number;
+  /** The stream it was heard on: mic, or call:<bundle id>. */
+  source: string;
+  /** Seconds from the meeting's start. */
+  audioStart: number;
+  /** Seconds from the meeting's start. */
+  audioEnd: number;
+  text: string;
+  /**
+   * The diarizer's slot in this segment's own stream: the speaker is (source, speakerIndex), so a
+   * slot of mic and one of call never collide (#7580).
+   */
+  speakerIndex?: number;
+  /** The diarizer will not change the speaker any more. */
+  speakerSettled: boolean;
+}
+
+/** A page of segments, oldest first. */
+export interface MeetingSegmentsPage {
+  segments: MeetingSegment[];
+  /** There are segments after the last of this page. */
+  more: boolean;
+}
+
+/** meetings/segments: the segments after a seq. */
+export interface MeetingSegmentsRequest {
+  meetingID: UUID;
+  /** 0 for the first. */
+  afterSeq: number;
+  /** At most 200; 200 when absent. */
+  limit?: number;
+}
+
+/**
+ * meetings/setActionItem: a person's new or changed action item. Each field it changes is then the
+ * person's (editedByPerson).
+ */
+export interface MeetingSetActionItemRequest {
+  meetingID: UUID;
+  item: MeetingActionItem;
+  /**
+   * The updatedAt of the item the change was made to; absent for a new item. Refused
+   * (changedElsewhere) when the item changed since.
+   */
+  baseUpdatedAt?: WireDate;
+}
+
+/**
+ * meetings/setNotes: a person's notes. Refused (changedElsewhere) when the notes moved past
+ * baseRevision.
+ */
+export interface MeetingSetNotesRequest {
+  meetingID: UUID;
+  markdown: string;
+  /** The revision the change was made to; 0 before the first write. */
+  baseRevision: number;
+}
+
+/** meetings/setSpeaker: a name for a voice, for the whole meeting. */
+export interface MeetingSetSpeakerRequest {
+  meetingID: UUID;
+  /** The voice's stream. */
+  source: string;
+  /** Its slot in that stream. */
+  index: number;
+  /** At most 100 characters; empty takes the name off. */
+  name: string;
+}
+
+/** meetings/setState: listen, pause or end. An ended meeting does not start again. */
+export interface MeetingSetStateRequest {
+  meetingID: UUID;
+  state: MeetingState;
+}
+
+/**
+ * A voice of a meeting: its stream and its slot there, and its name once the agent or a person
+ * gives one. Shown as Speaker <n> with no name.
+ */
+export interface MeetingSpeaker {
+  source: string;
+  index: number;
+  name?: string;
+}
+
+/** meetings/start: a new meeting, with a new session in the folder for its agent. */
+export interface MeetingStartRequest {
+  folder: URLString;
+  /** At most 200 characters; "Meeting" and the time when absent. */
+  title?: string;
+  /** mic, and call:<bundle id> for a call app. 1 to 4. */
+  sources: string[];
+  /** The session's runtime; auto when absent. */
+  runtimeID?: string;
+}
+
+/** The meeting meetings/start made, and its session. */
+export interface MeetingStarted {
+  meeting: Meeting;
+  agentID: UUID;
+}
+
+export type MeetingState =
+  | "listening"
+  | "paused"
+  | "ended";
 
 /**
  * The kernel's memory pressure (#4578): macOS kern.memorystatus_vm_pressure_level, or Linux PSI
@@ -11093,6 +11387,41 @@ export type PRCostComment =
 export interface PagesChangedNotification {
   folder: URLString;
   folders: string[];
+}
+
+export interface ParentNotice {
+  id: UUID;
+  about: UUID;
+  change: ParentNoticeChange;
+  at: WireDate;
+  /**
+   * For a child's parent or noParent: the lead it worked under before the first change it has not
+   * been told yet, so a move there and back tells nothing.
+   */
+  was?: UUID;
+  /** Taken by a turn that a restart cut off: said again, with a note that it is. */
+  again?: boolean;
+}
+
+/**
+ * parent: the recipient now works under the lead about; noParent: it has no lead now; joined: about
+ * now works under the recipient; left: about no longer does.
+ */
+export type ParentNoticeChange =
+  | "parent"
+  | "noParent"
+  | "joined"
+  | "left";
+
+/**
+ * An outbox (#7538): pending goes with the next turn, in the same record write that takes its
+ * words; sent is what that turn took, until the runtime answers it.
+ */
+export interface ParentNotices {
+  pending?: ParentNotice[];
+  more?: number;
+  sentWith?: UUID;
+  sent?: ParentNotice[];
 }
 
 /**
@@ -14805,6 +15134,28 @@ export interface SessionNotice {
 }
 
 /**
+ * Where a session is put in the tree (#7538): under the lead id, or at the top when id is absent.
+ */
+export interface SessionParent {
+  id?: UUID;
+  setAt: WireDate;
+  setBy: SessionParentSetBy;
+}
+
+export type SessionParentSetBy =
+  | "person"
+  | "agent";
+
+/**
+ * under: under parentID; top: at the top, the starter ignored; starter: back under its starter
+ * (parent cleared).
+ */
+export type SessionPlacement =
+  | "under"
+  | "top"
+  | "starter";
+
+/**
  * A session's priority (#5846): the same three levels as an issue's (ForgeItem.priority), in the
  * order high, medium, none, low.
  */
@@ -14999,6 +15350,15 @@ export interface SetPRCostCommentRequest {
   prCostComment: PRCostComment;
 }
 
+/** agents/setParent (#7538). */
+export interface SetParentRequest {
+  agentID: UUID;
+  placement: SessionPlacement;
+  parentID?: UUID;
+  /** The child's revision the client saw; a later one refuses with changedElsewhere. */
+  expectedRevision?: number;
+}
+
 export interface SetPinnedRequest {
   folder: URLString;
   pinned: boolean;
@@ -15121,7 +15481,9 @@ export interface SetupRootLog {
  * is there (over its limit, or unreadable). approvedText and approvedHash are the text a client
  * approved last, and approvals the records in force for it, one a scope. changed: the file is not
  * the approved text, so it is not used until a client approves it. nextSeq is the number to sign
- * the next approval with.
+ * the next approval with. example is the ready-made example of this script, from the pinned
+ * agentloops-dev/dotagents (scripts/<name>.sh, #7461): what New root.sh and New setup.sh write;
+ * left out when this machine has no copy of the pinned tag yet.
  */
 export interface SetupScript {
   name: "root" | "setup";
@@ -15130,6 +15492,7 @@ export interface SetupScript {
   hash?: string;
   size?: number;
   problem?: string;
+  example?: string;
   approvedText?: string;
   approvedHash?: string;
   approvals: LockRecord[];
@@ -15899,6 +16262,11 @@ export interface StartRequest {
    * sessions/previewStart gave in text.
    */
   autoChose?: string;
+  /**
+   * Puts the new session under this lead at once (#7538), with the checks of agents/setParent: a
+   * live session on this host labelled lead, within the depth and child limits.
+   */
+  parentID?: UUID;
 }
 
 /**
@@ -17403,6 +17771,7 @@ export interface WorkTimeline {
   backtest?: WorkTimelineBacktest;
   errors?: string[];
   partial?: boolean;
+  schedule?: WorkTimelineSchedule;
   /**
    * What was read (#7029): one entry per repo, as forge:name (github:example/shop). Two machines
    * with the same scopes give the same epics, so a client asks one of them. Absent when a repo
@@ -17499,6 +17868,65 @@ export interface WorkTimelineRequest {
   to: WireDate;
   first?: boolean;
   onHold?: boolean;
+  /** How many epics are worked at once in the schedule (#7525), 1 to 20: 3 when absent. */
+  places?: number;
+}
+
+/**
+ * work/timeline's schedule (#7525, epic #7067): when each open epic starts and finishes if places
+ * epics are worked at once. A started epic holds a place from its start to its predicted finish,
+ * whatever blocks it. The others take the free places in the order of forge/next (level: epic),
+ * each no earlier than now and the predicted finish of its last open epic blocker; places that free
+ * at the same time go to the next in that order. readAt is the time of the read. incomplete says a
+ * list was cut short (more than 100 open epics, a repo not read): no row is dated then. Rows: the
+ * started epics, then those planned, by planned start, then those with no date; ties in the order
+ * of forge/next. Absent from a partial answer and from an earlier daemon.
+ */
+export interface WorkTimelineSchedule {
+  places: number;
+  readAt: WireDate;
+  incomplete?: boolean;
+  rows: WorkTimelineScheduleRow[];
+}
+
+/**
+ * Why an open epic has no date in the schedule (#7525): onHold, it is on hold (shown only with
+ * onHold); noIssues, it has no sub-issues; blockerOnHold, an open blocker is on hold;
+ * blockerNotEpic, an open blocker is not an epic; blockerNotRead, an open blocker epic is not in
+ * the read (another project, or more than the read gives); cycle, its blockers lead back to it;
+ * blockerUndated, an open blocker epic has no date; noForecast, there is too little history to
+ * forecast it; noPlace, no place frees (every place is held by a started epic with no forecast);
+ * incomplete, a list was cut short.
+ */
+export type WorkTimelineScheduleReason =
+  | "onHold"
+  | "noIssues"
+  | "blockerOnHold"
+  | "blockerNotEpic"
+  | "blockerNotRead"
+  | "cycle"
+  | "blockerUndated"
+  | "noForecast"
+  | "noPlace"
+  | "incomplete";
+
+/**
+ * An open epic in the schedule (#7525). startedAt is its observed start, the earliest of its
+ * children's, and startSource where that came from: session (a session linked to the child in
+ * lineage), pullRequest (a pull request that closes the child opened) or closed (the child closed);
+ * both absent while it has not started. plannedStart is when a not-started epic takes a place.
+ * finish is its predicted finish: low to high the band, mid the P50; for a planned epic its
+ * forecast from its planned start. blockers are its open blockers, of every kind, for the arrows.
+ * reason says why it has no finish; absent when it has one.
+ */
+export interface WorkTimelineScheduleRow {
+  epic: LineageNode;
+  startedAt?: WireDate;
+  startSource?: "session" | "pullRequest" | "closed";
+  plannedStart?: WireDate;
+  finish?: WorkTimelineForecast;
+  blockers?: LineageNode[];
+  reason?: WorkTimelineScheduleReason;
 }
 
 /**
@@ -19020,7 +19448,7 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   AddFolderRequest: { required: ["folder"], optional: ["project"] },
   Admitted: { required: [], optional: ["client", "host"] },
   AdoptRequest: { required: ["runtimeID", "sessionID", "cwd"], optional: [] },
-  Agent: { required: ["id", "runtimeID", "cwd", "state", "startOptions", "advertisedOptions", "availableCommands", "createdAt", "lastActivityAt"], optional: ["revision", "title", "labels", "priority", "prioritySet", "prioritySource", "runtimeSessionID", "runtimeKeepsCopy", "browserUsedAt", "isUnread", "isMuted", "reportSeenAt", "endedReason", "archivedReason", "usage", "lastTurnUsage", "costToDate", "costCeiling", "tokensToDate", "tokenCeiling", "plans", "background", "additionalDirectories", "mcpServers", "queuedPrompts", "suggestedPrompts", "startedByWorkflow", "purpose", "startedByRun", "startedByAgent", "chainDepth", "eventWait", "worktree", "pendingMove", "startingPoint", "startRequestID", "persona", "restartPickUps", "report", "outcomeAsked", "archiveRequest", "afterTurn", "archivedAt", "archiveWhy", "sandboxOverride", "effectiveSandbox", "pendingSandboxFailure", "desktopControlPause", "missingFolder", "listsLeftOut", "titleIsPersons", "runtimeTitle", "madeInRoot", "queuedStart", "branchedFrom", "movedFrom", "fileToSee", "continueWhenBack", "runningTool", "accountID", "auto", "clientPermission", "levels", "voiceHungUpAt", "goal", "project", "summary"] },
+  Agent: { required: ["id", "runtimeID", "cwd", "state", "startOptions", "advertisedOptions", "availableCommands", "createdAt", "lastActivityAt"], optional: ["revision", "title", "labels", "priority", "prioritySet", "prioritySource", "runtimeSessionID", "runtimeKeepsCopy", "browserUsedAt", "isUnread", "isMuted", "reportSeenAt", "endedReason", "archivedReason", "usage", "lastTurnUsage", "costToDate", "costCeiling", "tokensToDate", "tokenCeiling", "plans", "background", "additionalDirectories", "mcpServers", "queuedPrompts", "suggestedPrompts", "startedByWorkflow", "purpose", "startedByRun", "startedByAgent", "parent", "parentNotices", "chainDepth", "eventWait", "worktree", "pendingMove", "startingPoint", "startRequestID", "persona", "restartPickUps", "report", "outcomeAsked", "archiveRequest", "afterTurn", "archivedAt", "archiveWhy", "sandboxOverride", "effectiveSandbox", "pendingSandboxFailure", "desktopControlPause", "missingFolder", "listsLeftOut", "titleIsPersons", "runtimeTitle", "madeInRoot", "queuedStart", "branchedFrom", "movedFrom", "fileToSee", "continueWhenBack", "runningTool", "accountID", "auto", "clientPermission", "levels", "voiceHungUpAt", "goal", "project", "summary"] },
   AgentChanges: { required: ["epoch", "revision", "removed", "all"], optional: [] },
   AgentConfigEditorFile: { required: ["path", "content"], optional: [] },
   AgentConfigEditorRequest: { required: ["kind"], optional: ["folder"] },
@@ -19691,7 +20119,7 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   MachineForgeBoards: { required: ["machine", "machineName", "boards"], optional: [] },
   MachineForgeList: { required: ["machine", "machineName", "list"], optional: [] },
   MachineHello: { required: ["version", "platform", "machineID"], optional: ["host", "name", "implementation", "capabilities", "maturity", "control"] },
-  MachineHelloAnswer: { required: [], optional: ["capabilities"] },
+  MachineHelloAnswer: { required: [], optional: ["capabilities", "address"] },
   MachineInfo: { required: ["id", "name", "state"], optional: ["ssh", "addresses", "tunnel", "hostKeyRenews", "cost", "idleTimeoutMinutes", "host", "reason", "joining", "notJoined", "setup"] },
   MachineInstall: { required: ["destination"], optional: ["name", "key", "trust", "tunnel", "provider", "workspace"] },
   MachineJoinAsk: { required: ["name", "platform", "publicKey"], optional: ["version", "machineID", "person"] },
@@ -19747,6 +20175,27 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   MarketplacesListAnswer: { required: ["marketplaces"], optional: ["problem"] },
   MarketplacesListRequest: { required: [], optional: ["kind", "destination"] },
   MaturityCompletion: { required: ["featureId", "completionId", "buildId", "success", "completed", "eligible", "backgroundRefresh"], optional: ["sessionId"] },
+  Meeting: { required: ["id", "agentID", "folder", "title", "state", "startedAt", "sources", "speakers", "lastSeq", "sentThroughSeq", "updatedAt"], optional: ["endedAt", "segmentsRemoved"] },
+  MeetingActionItem: { required: ["id", "meetingID", "text", "quote", "segmentSeqs", "state", "updatedAt"], optional: ["owner", "due", "dueOn", "issue", "editedByPerson"] },
+  MeetingActionItemIssue: { required: ["forge", "repo", "number", "url"], optional: [] },
+  MeetingAppendRequest: { required: ["meetingID", "segments"], optional: [] },
+  MeetingAppended: { required: ["lastSeq", "sentThroughSeq"], optional: [] },
+  MeetingChangedNotification: { required: ["meetingID", "lastSeq"], optional: ["meeting", "notes", "actionItems"] },
+  MeetingListRequest: { required: [], optional: ["cursor", "limit"] },
+  MeetingNotes: { required: ["meetingID", "markdown", "revision", "updatedAt", "updatedBy"], optional: [] },
+  MeetingPage: { required: ["meetings"], optional: ["cursor"] },
+  MeetingRead: { required: ["meeting", "actionItems"], optional: ["notes"] },
+  MeetingRequest: { required: ["meetingID"], optional: [] },
+  MeetingSegment: { required: ["seq", "source", "audioStart", "audioEnd", "text", "speakerSettled"], optional: ["speakerIndex"] },
+  MeetingSegmentsPage: { required: ["segments", "more"], optional: [] },
+  MeetingSegmentsRequest: { required: ["meetingID", "afterSeq"], optional: ["limit"] },
+  MeetingSetActionItemRequest: { required: ["meetingID", "item"], optional: ["baseUpdatedAt"] },
+  MeetingSetNotesRequest: { required: ["meetingID", "markdown", "baseRevision"], optional: [] },
+  MeetingSetSpeakerRequest: { required: ["meetingID", "source", "index", "name"], optional: [] },
+  MeetingSetStateRequest: { required: ["meetingID", "state"], optional: [] },
+  MeetingSpeaker: { required: ["source", "index"], optional: ["name"] },
+  MeetingStartRequest: { required: ["folder", "sources"], optional: ["title", "runtimeID"] },
+  MeetingStarted: { required: ["meeting", "agentID"], optional: [] },
   MessageSender: { required: ["agentID", "title"], optional: [] },
   MessagesConversation: { required: ["server", "folder", "conversation"], optional: ["replyAs"] },
   MessagesConversations: { required: ["conversations"], optional: ["cursor", "errors"] },
@@ -19819,6 +20268,8 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   OutsideAccount: { required: ["service"], optional: ["description", "address", "username", "plan", "monthlyCostUsd", "card", "secret", "twoFactor", "issue", "made", "edited", "lastOp", "tokenExpires", "notes", "projects", "addedBy", "askBeforeUse"] },
   OutsideAccounts: { required: ["accounts"], optional: [] },
   PagesChangedNotification: { required: ["folder", "folders"], optional: [] },
+  ParentNotice: { required: ["id", "about", "change", "at"], optional: ["was", "again"] },
+  ParentNotices: { required: [], optional: ["pending", "more", "sentWith", "sent"] },
   PassThroughName: { required: ["name"], optional: ["runtime", "setBy"] },
   PassThroughState: { required: ["names"], optional: [] },
   PendingMove: { required: ["target", "removeLeft", "discardChanges", "askedBy", "askedAt"], optional: [] },
@@ -20125,6 +20576,7 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   SessionMoveIn: { required: ["upload", "folder", "from"], optional: ["carryOn"] },
   SessionMovedFrom: { required: ["machine", "at"], optional: [] },
   SessionNotice: { required: ["severity", "title"], optional: ["detail"] },
+  SessionParent: { required: ["setAt", "setBy"], optional: ["id"] },
   SessionSecret: { required: ["agentID", "title", "name", "setAt"], optional: ["created", "hint", "lastOp", "backedUp", "needsApproval", "description"] },
   SessionSecretRemoveRequest: { required: ["agentID", "name"], optional: [] },
   SessionSecretSetRequest: { required: ["agentID", "name", "value"], optional: ["needsApproval", "description"] },
@@ -20143,6 +20595,7 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   SetMutedRequest: { required: ["agentID", "muted"], optional: [] },
   SetOptionRequest: { required: ["agentID", "optionID", "value"], optional: [] },
   SetPRCostCommentRequest: { required: ["folder", "prCostComment"], optional: [] },
+  SetParentRequest: { required: ["agentID", "placement"], optional: ["parentID", "expectedRevision"] },
   SetPinnedRequest: { required: ["folder", "pinned"], optional: [] },
   SetPriorityRequest: { required: ["agentID"], optional: ["priority"] },
   SetProviderRequest: { required: ["runtimeID", "providerID"], optional: [] },
@@ -20156,7 +20609,7 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   SetupRootAgain: { required: ["rest"], optional: [] },
   SetupRootCommand: { required: ["command", "hash"], optional: [] },
   SetupRootLog: { required: ["text", "cut"], optional: [] },
-  SetupScript: { required: ["name", "present", "approvals", "changed", "nextSeq"], optional: ["text", "hash", "size", "problem", "approvedText", "approvedHash"] },
+  SetupScript: { required: ["name", "present", "approvals", "changed", "nextSeq"], optional: ["text", "hash", "size", "problem", "example", "approvedText", "approvedHash"] },
   SetupScriptApproval: { required: ["hash", "size"], optional: [] },
   SetupScripts: { required: ["scripts"], optional: ["folder"] },
   SetupSend: { required: ["host", "approval"], optional: [] },
@@ -20234,7 +20687,7 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   SlashCommand: { required: ["name"], optional: ["description", "inputHint"] },
   SpendCaps: { required: [], optional: ["dailyUSD"] },
   StartOptions: { required: ["values", "extraArguments"], optional: [] },
-  StartRequest: { required: ["runtimeID", "cwd", "prompt", "attachments", "startOptions", "additionalDirectories", "mcpServers", "labels"], optional: ["draftID", "worktree", "requestID", "sandbox", "priority", "persona", "levels", "purpose", "accountID", "voice", "startedFrom", "startedVia", "autoChose"] },
+  StartRequest: { required: ["runtimeID", "cwd", "prompt", "attachments", "startOptions", "additionalDirectories", "mcpServers", "labels"], optional: ["draftID", "worktree", "requestID", "sandbox", "priority", "persona", "levels", "purpose", "accountID", "voice", "startedFrom", "startedVia", "autoChose", "parentID"] },
   StartedFrom: { required: ["machine", "agent", "who"], optional: [] },
   StartedMachinePreview: { required: ["host", "name", "state", "unpushed"], optional: ["unknown"] },
   StartingPoint: { required: ["repository", "commit"], optional: [] },
@@ -20341,13 +20794,15 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   WorkReport: { required: ["outcome", "message", "at"], optional: ["block"] },
   WorkSuggestLeads: { required: ["suggestions", "more"], optional: ["errors"] },
   WorkSuggestLeadsRequest: { required: [], optional: ["folder"] },
-  WorkTimeline: { required: ["epics", "releases"], optional: ["timeZone", "backtest", "errors", "partial", "scopes"] },
+  WorkTimeline: { required: ["epics", "releases"], optional: ["timeZone", "backtest", "errors", "partial", "schedule", "scopes"] },
   WorkTimelineBacktest: { required: ["error", "width", "cuts", "holds", "epics", "at"], optional: [] },
   WorkTimelineChild: { required: ["item", "createdAt"], optional: ["stateReason", "startedAt", "closedAt", "waitsForPerson"] },
   WorkTimelineEpic: { required: ["item", "createdAt", "children", "segments"], optional: ["stateReason", "closedAt", "forecast"] },
   WorkTimelineForecast: { required: ["low", "mid", "high"], optional: ["waits"] },
   WorkTimelineRelease: { required: ["tag", "at", "repo"], optional: ["url"] },
-  WorkTimelineRequest: { required: ["project", "from", "to"], optional: ["first", "onHold"] },
+  WorkTimelineRequest: { required: ["project", "from", "to"], optional: ["first", "onHold", "places"] },
+  WorkTimelineSchedule: { required: ["places", "readAt", "rows"], optional: ["incomplete"] },
+  WorkTimelineScheduleRow: { required: ["epic"], optional: ["startedAt", "startSource", "plannedStart", "finish", "blockers", "reason"] },
   WorkTimelineSegment: { required: [], optional: ["startedAt", "closedAt"] },
   Workflow: { required: ["workflowID", "folder", "name", "triggers", "mode", "prompt", "unknownFields", "settings"], optional: ["problem", "cooldown", "hours", "enabled", "archived", "whenDone", "continueWhenBack", "muted", "runsOn"] },
   WorkflowApproval: { required: ["digest", "isNew"], optional: ["note"] },
