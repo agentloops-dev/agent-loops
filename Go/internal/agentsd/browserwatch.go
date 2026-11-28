@@ -23,9 +23,17 @@ import (
 // session holds browser:agents. Watching starts nothing: an address typed in the bar
 // (browser/navigate go) does, as an agent's first browser call will.
 
-// browserAckWait is how long a frame waits for a watcher's browser/ack before the host
-// acks it itself, so one watcher that stopped drawing does not freeze the others.
+// browserAckWait is how long a watcher with a full window goes with no browser/ack before
+// the host takes its frames as drawn, so a watcher that stopped drawing is not stuck; and
+// how long a frame that nobody watches waits before the host acks it to Chromium.
 const browserAckWait = 3 * time.Second
+
+// browserWindow is how many frames a watcher may have in flight, sent and not acked yet
+// (#7597, spike #7263). agentsd acks each frame to Chromium at once when a window watches,
+// so the round trip to a watcher does not set the frame rate; a watcher with a full window
+// gets only the newest frame when it acks. 6 keeps 18 fps up to 250 ms RTT, where 2 or 3
+// did not.
+const browserWindow = 6
 
 // browserTilePace is how soon the host acks a frame that only live tiles got (#4139): no
 // window watches the tab, so nobody else acks it, and a tile needs no more than this.
@@ -72,6 +80,55 @@ type browserWatcher struct {
 	c             *Client
 	width, height int64
 	agent         wire.UUID
+	// inFlight is the frames sent to the watcher and not acked yet, oldest first.
+	inFlight []int64
+	// held is the newest frame that did not go because the window was full; nil for none.
+	held *wire.BrowserFrame
+	// drew is when the watcher last acked a frame, or its window opened.
+	drew time.Time
+	// waking is true while a timer waits to free a full window.
+	waking bool
+}
+
+// offerLocked is frame n for the watcher: true to send it now, or it is held (the newest
+// wins) until the watcher acks one. Under bw.mu.
+func (v *browserWatcher) offerLocked(n *wire.BrowserFrame) bool {
+	if k := len(v.inFlight); k > 0 && n.Ack <= v.inFlight[k-1] {
+		// The numbers start again: a new cast.
+		v.inFlight, v.drew = nil, time.Now()
+	}
+	if len(v.inFlight) >= browserWindow {
+		v.held = n
+		return false
+	}
+	if len(v.inFlight) == 0 {
+		v.drew = time.Now()
+	}
+	v.inFlight, v.held = append(v.inFlight, n.Ack), nil
+	return true
+}
+
+// ackedLocked is the watcher's ack of frame n, and of every frame before it: it returns the
+// held frame to send now, or nil. Under bw.mu.
+func (v *browserWatcher) ackedLocked(n int64) *wire.BrowserFrame {
+	i := 0
+	for i < len(v.inFlight) && v.inFlight[i] <= n {
+		i++
+	}
+	if i == 0 {
+		return nil
+	}
+	v.inFlight, v.drew = v.inFlight[i:], time.Now()
+	return v.sendHeldLocked()
+}
+
+// sendHeldLocked takes the held frame into the window when there is room. Under bw.mu.
+func (v *browserWatcher) sendHeldLocked() *wire.BrowserFrame {
+	h := v.held
+	if h == nil || !v.offerLocked(h) {
+		return nil
+	}
+	return h
 }
 
 func (d *Daemon) registerBrowserWatch() {
@@ -87,7 +144,7 @@ func (d *Daemon) registerBrowserWatch() {
 		return wire.Empty{}, nil
 	})
 	On(d, wire.CallBrowserAck, func(ctx context.Context, c *Client, r wire.BrowserAckRequest) (wire.Empty, error) {
-		d.ackBrowserFrame(d.watchedSession(c), r.Ack)
+		d.browserWatcherAcked(c, r.Ack)
 		return wire.Empty{}, nil
 	})
 	On(d, wire.CallBrowserInput, func(ctx context.Context, c *Client, r wire.BrowserInputRequest) (wire.BrowserInputResult, error) {
@@ -148,7 +205,11 @@ func (d *Daemon) watchBrowser(c *Client, agent wire.UUID, width, height int64) w
 	}
 	before, again := w.watchers[c.ID]
 	moved := again && before.agent != agent
-	w.watchers[c.ID] = &browserWatcher{c: c, width: width, height: height, agent: agent}
+	v := &browserWatcher{c: c, width: width, height: height, agent: agent}
+	if again && !moved {
+		v.inFlight, v.held, v.drew, v.waking = before.inFlight, before.held, before.drew, before.waking
+	}
+	w.watchers[c.ID] = v
 	var dropped *browser.Cast
 	if moved {
 		dropped = w.dropScreenIfUnwatchedLocked(before.agent)
@@ -384,8 +445,9 @@ func (d *Daemon) sessionTabChanged(agent wire.UUID) {
 	d.startBrowserCast(agent)
 }
 
-// browserFrame sends a frame to every watcher of its screen, and acks it itself when no
-// watcher does in browserAckWait.
+// browserFrame sends a frame to every watcher of its screen that has room in its window, and
+// holds it for the others. With a watcher, it acks the frame to Chromium at once (#7597);
+// with none, after browserAckWait (or browserTilePace for a live tile).
 func (d *Daemon) browserFrame(gen int, f browser.Frame) {
 	w := &d.bw
 	w.mu.Lock()
@@ -395,24 +457,95 @@ func (d *Daemon) browserFrame(gen int, f browser.Frame) {
 		return
 	}
 	n := wire.BrowserFrame{Image: wire.Data(f.JPEG), Ack: f.Ack, Width: f.Width, Height: f.Height}
-	sc.pending, sc.last = f.Ack, &n
-	cs := w.clientsLocked(agent)
-	driver, title := sc.driver, sc.title
+	sc.last = &n
+	var send []*Client
+	var wake []*browserWatcher
+	watched := false
+	for _, v := range w.watchers {
+		if v.agent != agent {
+			continue
+		}
+		watched = true
+		if v.offerLocked(&n) {
+			send = append(send, v.c)
+		} else if !v.waking {
+			v.waking = true
+			wake = append(wake, v)
+		}
+	}
+	sc.pending = 0
+	if !watched {
+		sc.pending = f.Ack
+	}
+	cast, driver, title := sc.cast, sc.driver, sc.title
 	w.mu.Unlock()
-	for _, c := range cs {
+	for _, c := range send {
 		Notify(c, wire.NotifyBrowserFrame, n)
+	}
+	for _, v := range wake {
+		d.wakeBrowserWatcherLater(v, browserAckWait)
+	}
+	if watched && cast != nil {
+		d.goJob("ack browser frame", func() { cast.Ack(f.Ack) })
 	}
 	wait := browserAckWait
 	if driver != "" {
 		width, height := int64(f.Width), int64(f.Height)
 		tiled := d.sendLive(wire.LiveFrame{Source: wire.LiveSourceBrowser, AgentID: driver, Image: liveImage(f.JPEG),
 			Width: &width, Height: &height, Title: optional(title)})
-		if tiled && len(cs) == 0 {
+		if tiled && !watched {
 			// Only tiles have it, and they do not ack.
 			wait = browserTilePace
 		}
 	}
-	time.AfterFunc(wait, d.jobFunc("browserwatch timer", func() { d.ackBrowserFrame(agent, f.Ack) }))
+	if !watched {
+		time.AfterFunc(wait, d.jobFunc("browserwatch timer", func() { d.ackBrowserFrame(agent, f.Ack) }))
+	}
+}
+
+// browserWatcherAcked is c's browser/ack of frame n: its window frees, and the frame it
+// missed while the window was full, if any, goes now.
+func (d *Daemon) browserWatcherAcked(c *Client, n int64) {
+	w := &d.bw
+	w.mu.Lock()
+	v := w.watchers[c.ID]
+	if v == nil || n == 0 {
+		w.mu.Unlock()
+		return
+	}
+	held := v.ackedLocked(n)
+	w.mu.Unlock()
+	if held != nil {
+		Notify(c, wire.NotifyBrowserFrame, *held)
+	}
+}
+
+// wakeBrowserWatcherLater frees v's full window after browserAckWait with no ack, and sends
+// it the frame it missed: a watcher that stopped drawing is not stuck when it draws again.
+func (d *Daemon) wakeBrowserWatcherLater(v *browserWatcher, wait time.Duration) {
+	time.AfterFunc(wait, d.jobFunc("browserwatch window", func() {
+		w := &d.bw
+		w.mu.Lock()
+		if w.watchers[v.c.ID] != v {
+			w.mu.Unlock()
+			return
+		}
+		if left := browserAckWait - time.Since(v.drew); left > 0 && v.held != nil {
+			w.mu.Unlock()
+			d.wakeBrowserWatcherLater(v, left)
+			return
+		}
+		v.waking = false
+		var held *wire.BrowserFrame
+		if v.held != nil {
+			v.inFlight = nil
+			held = v.sendHeldLocked()
+		}
+		w.mu.Unlock()
+		if held != nil {
+			Notify(v.c, wire.NotifyBrowserFrame, *held)
+		}
+	}))
 }
 
 // browserDrove is a browser_* call of agent's (#4139): its session's tab is cast for the
@@ -449,8 +582,9 @@ func (d *Daemon) browserDriveEnded(agent wire.UUID) {
 	}
 }
 
-// ackBrowserFrame asks Chromium for the next frame of agent's screen once a watcher drew
-// frame n. A late ack, of a frame acked already, does nothing.
+// ackBrowserFrame asks Chromium for the next frame of agent's screen, which no window
+// watches, after browserAckWait or browserTilePace. A late ack, of a frame acked already,
+// does nothing.
 func (d *Daemon) ackBrowserFrame(agent wire.UUID, n int64) {
 	w := &d.bw
 	w.mu.Lock()
