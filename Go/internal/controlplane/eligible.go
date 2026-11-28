@@ -193,14 +193,29 @@ func (s *Service) eligibleFacts(ctx context.Context, h records.MachineRecord, al
 			}
 		}
 	}
+	// The reach (a DNS lookup and the dials) and machine/usage run at the same time, under one
+	// bound, so a machine that drops packets costs eligiblePatience, not their sum (#7397).
+	ctx, cancel := context.WithTimeout(ctx, eligiblePatience)
+	defer cancel()
+	usage := make(chan *wire.MachineUsageState, 1)
+	go func() { usage <- s.machineUsage(h.ID) }()
 	f.address, f.unreachable = s.reach(ctx, h.ID)
-	if answer := s.router.Ask(h.ID, wire.CallMachineUsage.Name, wire.Empty{}, eligiblePatience); answer != nil && len(answer.Result) > 0 {
-		var usage wire.MachineUsageState
-		if json.Unmarshal(answer.Result, &usage) == nil {
-			f.usage = &usage
-		}
-	}
+	f.usage = <-usage
 	return f
+}
+
+// machineUsage is what the machine says of its usage, nil when it does not answer in
+// eligiblePatience.
+func (s *Service) machineUsage(host string) *wire.MachineUsageState {
+	answer := s.router.Ask(host, wire.CallMachineUsage.Name, wire.Empty{}, eligiblePatience)
+	if answer == nil || len(answer.Result) == 0 {
+		return nil
+	}
+	var usage wire.MachineUsageState
+	if json.Unmarshal(answer.Result, &usage) != nil {
+		return nil
+	}
+	return &usage
 }
 
 // reach is where this copy reached the machine's control role, as a person reads it, and
