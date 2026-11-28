@@ -17969,6 +17969,14 @@ export interface Workflow {
    * machine of each person who turned it on.
    */
   runsOn?: string[];
+  /**
+   * to: (#6954): the sessions an agent: labelled workflow sends its words to. Present only on such
+   * a workflow, whose mode is new on the wire, so a client that does not know labelled still reads
+   * the list; a client that does shows it as labelled.
+   */
+  to?: WorkflowTo;
+  /** deliver: (#6954), for agent: labelled. Absent is next-turn. */
+  deliver?: WorkflowDeliver;
 }
 
 export interface WorkflowApproval {
@@ -17989,6 +17997,17 @@ export interface WorkflowArchiveRequest {
   archived: boolean;
 }
 
+/** One active broadcast of an agent: labelled workflow (#6954). */
+export interface WorkflowBroadcastStatus {
+  id: UUID;
+  startedAt: WireDate;
+  endsAt: WireDate;
+  /** The sessions that match it now. */
+  reachable: number;
+  /** The sessions that were told. */
+  read: number;
+}
+
 export type WorkflowCause =
   | { byHand: Record<string, never> }
   | { trigger: { _0: WorkflowTrigger } };
@@ -18006,6 +18025,17 @@ export interface WorkflowClaim {
 export interface WorkflowClaimed {
   won: boolean;
 }
+
+/**
+ * How an agent: labelled workflow's words reach a session (#6954). next-turn: with its next turn,
+ * and an idle session is not started. steer: into a running turn at once, else with its next turn.
+ * wake: also starts an idle session. steer and wake reach 20 sessions at most at once; the rest
+ * hear it with their next turn.
+ */
+export type WorkflowDeliver =
+  | "next-turn"
+  | "steer"
+  | "wake";
 
 export interface WorkflowEnableRequest {
   folder: URLString;
@@ -18215,6 +18245,26 @@ export interface WorkflowSummary {
    * (#5462), such as "Approved by you on Studio, 2026-11-14".
    */
   approvedFrom?: string;
+  /**
+   * An agent: labelled workflow's broadcasts that are active (#6954), at most 10, the newest first.
+   * Who read each is not sent.
+   */
+  broadcasts?: WorkflowBroadcastStatus[];
+}
+
+/**
+ * to: (#6954, the spike #6952): a session matches when it is in the workflow's folder, has every
+ * label of labels, none of notLabels, and the runtime and account when they are given.
+ */
+export interface WorkflowTo {
+  /** Each a session label the session must have. At least one. */
+  labels: string[];
+  /** not-labels: a session with any of them does not match. */
+  notLabels?: string[];
+  /** The runtime that ran the session, also when Auto chose it. */
+  runtime?: string;
+  /** An account profile's id, or default for the runtime's own sign-in. */
+  account?: string;
 }
 
 export type WorkflowTrigger = WorkflowTriggerStored;
@@ -20804,10 +20854,11 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   WorkTimelineSchedule: { required: ["places", "readAt", "rows"], optional: ["incomplete"] },
   WorkTimelineScheduleRow: { required: ["epic"], optional: ["startedAt", "startSource", "plannedStart", "finish", "blockers", "reason"] },
   WorkTimelineSegment: { required: [], optional: ["startedAt", "closedAt"] },
-  Workflow: { required: ["workflowID", "folder", "name", "triggers", "mode", "prompt", "unknownFields", "settings"], optional: ["problem", "cooldown", "hours", "enabled", "archived", "whenDone", "continueWhenBack", "muted", "runsOn"] },
+  Workflow: { required: ["workflowID", "folder", "name", "triggers", "mode", "prompt", "unknownFields", "settings"], optional: ["problem", "cooldown", "hours", "enabled", "archived", "whenDone", "continueWhenBack", "muted", "runsOn", "to", "deliver"] },
   WorkflowApproval: { required: ["digest", "isNew"], optional: ["note"] },
   WorkflowApproveRequest: { required: ["folder", "workflowID", "digest"], optional: [] },
   WorkflowArchiveRequest: { required: ["folder", "workflowID", "archived"], optional: [] },
+  WorkflowBroadcastStatus: { required: ["id", "startedAt", "endsAt", "reachable", "read"], optional: [] },
   WorkflowClaim: { required: ["workflow", "trigger"], optional: [] },
   WorkflowClaimed: { required: ["won"], optional: [] },
   WorkflowEnableRequest: { required: ["folder", "workflowID", "enabled"], optional: [] },
@@ -20820,7 +20871,8 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   WorkflowSchedule: { required: ["minutes", "hours", "startMinute", "endMinute", "days"], optional: [] },
   WorkflowSettings: { required: ["options", "labels"], optional: ["permissionMode", "runtimeID", "model", "effort", "permissionRequests", "sandbox"] },
   WorkflowSettingsRequest: { required: ["folder", "workflowID", "settings"], optional: ["cooldown", "hours", "labels", "whenDone", "continueWhenBack", "runsOn"] },
-  WorkflowSummary: { required: ["workflow", "isArchived", "isEnabled", "nextFireAtByTrigger", "isRunning", "holdsAFire", "queued"], optional: ["scope", "content", "overLimit", "totalLimit", "nextFireAt", "lastOutcome", "causingEvent", "causingEventName", "hearsFor", "readyMadeUpdatedAt", "newerReadyMade", "awaitingApproval", "deniedHere", "lastFiredAt", "lastFiredBy", "cooldownEndsAt", "hoursOpenAt", "offReason", "standingAgentID", "mcpTriggers", "approvedFrom"] },
+  WorkflowSummary: { required: ["workflow", "isArchived", "isEnabled", "nextFireAtByTrigger", "isRunning", "holdsAFire", "queued"], optional: ["scope", "content", "overLimit", "totalLimit", "nextFireAt", "lastOutcome", "causingEvent", "causingEventName", "hearsFor", "readyMadeUpdatedAt", "newerReadyMade", "awaitingApproval", "deniedHere", "lastFiredAt", "lastFiredBy", "cooldownEndsAt", "hoursOpenAt", "offReason", "standingAgentID", "mcpTriggers", "approvedFrom", "broadcasts"] },
+  WorkflowTo: { required: ["labels"], optional: ["notLabels", "runtime", "account"] },
   WorkflowWriteRequest: { required: ["workflowID", "content"], optional: [] },
   WorkflowsListRequest: { required: [], optional: ["folder", "scope"] },
   WorktreeRemovalRequest: { required: ["root", "confirmed", "folder"], optional: [] },

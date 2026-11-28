@@ -122,7 +122,7 @@ counting again from the next agent that works.
 
 | Event | Filter by | Details | What it means |
 | --- | --- | --- | --- |
-| `workflow.ran` | — | workflow, agent | A workflow started an agent. |
+| `workflow.ran` | — | workflow, agent | A workflow started an agent. An `agent: labelled` workflow starts none (#6954): its event has `broadcast`, `deliver`, `told`, `told_sessions`, `next_turn`, `not_told` and `ends_at` instead of `agent`. See [Send to labelled sessions](workflows.md#send-to-labelled-sessions). |
 | `workflow.completed` | — | workflow, agent, outcome | A workflow's run finished. `outcome` is its agent's report's, when it made one. |
 | `workflow.refused` | — | workflow, reason | A workflow did not run, and why. `reason` is `run_in_flight`, `queue_full`, `chain_too_deep`, `archived`, `over_limit`, `unreadable`, `trigger_not_supported`, `agent_unavailable`, `no_triggering_agent`, `missed_while_closed`, `folder_gone`, `day_limit_reached`, `setting_refused` or `awaiting_approval`. |
 

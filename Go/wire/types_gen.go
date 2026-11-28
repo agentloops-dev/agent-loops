@@ -18866,6 +18866,12 @@ type Workflow struct {
 
 	// runs-on: (#1761, FR-034), which replaced hosts:: labels a machine must all have to run it: its id, its os (macos, linux), its provider, and its user's or bot's name. None runs on every machine of each person who turned it on.
 	RunsOn []string `json:"runsOn,omitzero"`
+
+	// to: (#6954): the sessions an agent: labelled workflow sends its words to. Present only on such a workflow, whose mode is new on the wire, so a client that does not know labelled still reads the list; a client that does shows it as labelled.
+	To *WorkflowTo `json:"to,omitzero"`
+
+	// deliver: (#6954), for agent: labelled. Absent is next-turn.
+	Deliver *WorkflowDeliver `json:"deliver,omitzero"`
 }
 
 type WorkflowApproval struct {
@@ -18892,6 +18898,21 @@ type WorkflowArchiveRequest struct {
 	Archived bool `json:"archived"`
 }
 
+// One active broadcast of an agent: labelled workflow (#6954).
+type WorkflowBroadcastStatus struct {
+	ID UUID `json:"id"`
+
+	StartedAt Date `json:"startedAt"`
+
+	EndsAt Date `json:"endsAt"`
+
+	// The sessions that match it now.
+	Reachable int64 `json:"reachable"`
+
+	// The sessions that were told.
+	Read int64 `json:"read"`
+}
+
 type WorkflowCause struct {
 	ByHand *struct{} `json:"byHand,omitzero"`
 
@@ -18913,6 +18934,13 @@ type WorkflowClaim struct {
 type WorkflowClaimed struct {
 	Won bool `json:"won"`
 }
+
+// How an agent: labelled workflow's words reach a session (#6954). next-turn: with its next turn, and an idle session is not started. steer: into a running turn at once, else with its next turn. wake: also starts an idle session. steer and wake reach 20 sessions at most at once; the rest hear it with their next turn.
+type WorkflowDeliver string
+
+const WorkflowDeliverNextTurn WorkflowDeliver = "next-turn"
+const WorkflowDeliverSteer WorkflowDeliver = "steer"
+const WorkflowDeliverWake WorkflowDeliver = "wake"
 
 type WorkflowEnableRequest struct {
 	Folder URL `json:"folder"`
@@ -19228,6 +19256,9 @@ type WorkflowSummary struct {
 
 	// Where this machine's approval came from when it is another machine's of the same person (#5462), such as "Approved by you on Studio, 2026-11-14".
 	ApprovedFrom *string `json:"approvedFrom,omitzero"`
+
+	// An agent: labelled workflow's broadcasts that are active (#6954), at most 10, the newest first. Who read each is not sent.
+	Broadcasts []WorkflowBroadcastStatus `json:"broadcasts,omitzero"`
 }
 
 // UnmarshalJSON reads a field that is missing as its default.
@@ -19239,6 +19270,21 @@ func (v *WorkflowSummary) UnmarshalJSON(b []byte) error {
 	}
 	*v = WorkflowSummary(p)
 	return nil
+}
+
+// to: (#6954, the spike #6952): a session matches when it is in the workflow's folder, has every label of labels, none of notLabels, and the runtime and account when they are given.
+type WorkflowTo struct {
+	// Each a session label the session must have. At least one.
+	Labels []string `json:"labels"`
+
+	// not-labels: a session with any of them does not match.
+	NotLabels []string `json:"notLabels,omitzero"`
+
+	// The runtime that ran the session, also when Auto chose it.
+	Runtime *string `json:"runtime,omitzero"`
+
+	// An account profile's id, or default for the runtime's own sign-in.
+	Account *string `json:"account,omitzero"`
 }
 
 type WorkflowTrigger WorkflowTriggerStored

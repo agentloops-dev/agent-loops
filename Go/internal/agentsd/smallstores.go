@@ -30,6 +30,7 @@ const (
 
 func (d *Daemon) sweepSmallStores(now time.Time) {
 	d.sweepGoneWorkflowStates(now)
+	d.sweepBroadcasts(now)
 	gone := d.goneFolderTest()
 	d.sweepMCPApprovals(gone, now)
 	d.sweepPluginApprovals(gone, now)
